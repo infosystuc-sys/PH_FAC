@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#f2f1ed; }
+  body { font-family:'IBM Plex Sans', system-ui, sans-serif; color:#17191d; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; }
+  a { color:#2b4fd0; text-decoration:none; }
+  a:hover { color:#1b39a3; text-decoration:underline; }
+  input, select, textarea, button { font-family:inherit; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background:#d6d3cc; border-radius:6px; border:3px solid #f2f1ed; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes pulseRow { 0%,100% { opacity:.55 } 50% { opacity:1 } }
+  @keyframes riseIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+</style>
+</helmet>
+
+<div style="height:100vh; overflow:hidden; display:flex; flex-direction:column; background:#f2f1ed;">
+
+  <header style="display:flex; align-items:center; gap:20px; padding:0 24px; height:56px; background:#17191d; color:#fff; flex:none;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="width:22px; height:22px; border-radius:5px; background:#2b4fd0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;">C</div>
+      <span style="font-size:14px; font-weight:600; letter-spacing:-0.01em;">Comprobantes</span>
+      <span style="font-size:11px; color:#8b8f97; border-left:1px solid #33363d; padding-left:10px;">Cuentas a pagar</span>
+    </div>
+    <div style="flex:1;"></div>
+    <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:#b9bcc2;">
+      <span style="width:7px; height:7px; border-radius:50%; background:#3ea37c;"></span>
+      Tango · BD PRODUCCION
+    </div>
+    <div style="display:flex; align-items:center; gap:9px; padding-left:16px; border-left:1px solid #33363d;">
+      <div style="width:26px; height:26px; border-radius:50%; background:#3b3e45; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600;">MP</div>
+      <span style="font-size:12.5px;">M. Peralta</span>
+    </div>
+  </header>
+
+  <sc-if value="{{ isInbox }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1; min-height:0; overflow-y:auto; display:block; padding:26px 28px 40px; max-width:1560px; width:100%; margin:0 auto;">
+
+    <div style="display:flex; align-items:flex-end; gap:18px; margin-bottom:22px;">
+      <div>
+        <h1 style="margin:0 0 4px; font-size:23px; font-weight:600; letter-spacing:-0.02em;">Bandeja de comprobantes</h1>
+        <p style="margin:0; font-size:13px; color:#6b7078;">Importá los PDF, revisá lo que leyó la IA y registralo en Tango.</p>
+      </div>
+      <div style="flex:1;"></div>
+      <button onClick="{{ openImport }}" style="display:flex; align-items:center; gap:8px; height:38px; padding:0 17px; background:#17191d; color:#fff; border:none; border-radius:7px; font-size:13.5px; font-weight:500; cursor:pointer;" style-hover="background:#2b4fd0">
+        <span style="font-size:16px; line-height:1;">+</span> Importar PDF
+      </button>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:20px;">
+      <div style="background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:15px 17px;">
+        <div style="font-size:11.5px; color:#7b7f87; letter-spacing:0.03em; text-transform:uppercase; margin-bottom:8px;">Pendientes de revisión</div>
+        <div style="font-family:'IBM Plex Mono'; font-size:27px; font-weight:600; letter-spacing:-0.02em;">{{ kpiPend }}</div>
+      </div>
+      <div style="background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:15px 17px;">
+        <div style="font-size:11.5px; color:#7b7f87; letter-spacing:0.03em; text-transform:uppercase; margin-bottom:8px;">En observación</div>
+        <div style="font-family:'IBM Plex Mono'; font-size:27px; font-weight:600; letter-spacing:-0.02em; color:#8a5a00;">{{ kpiObs }}</div>
+      </div>
+      <div style="background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:15px 17px;">
+        <div style="font-size:11.5px; color:#7b7f87; letter-spacing:0.03em; text-transform:uppercase; margin-bottom:8px;">Registrados hoy</div>
+        <div style="font-family:'IBM Plex Mono'; font-size:27px; font-weight:600; letter-spacing:-0.02em;">{{ kpiReg }}</div>
+      </div>
+      <div style="background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:15px 17px;">
+        <div style="font-size:11.5px; color:#7b7f87; letter-spacing:0.03em; text-transform:uppercase; margin-bottom:8px;">Importe pendiente</div>
+        <div style="font-family:'IBM Plex Mono'; font-size:27px; font-weight:600; letter-spacing:-0.02em;">{{ kpiImporte }}</div>
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+        <button onClick="{{ t.onClick }}" style="{{ t.style }}">{{ t.label }} <span style="{{ t.countStyle }}">{{ t.count }}</span></button>
+      </sc-for>
+      <div style="flex:1;"></div>
+      <div style="display:flex; align-items:center; gap:7px; background:#fff; border:1px solid #e3e1dc; border-radius:7px; height:34px; padding:0 12px; min-width:260px;">
+        <span style="color:#9a9ea6; font-size:13px;">⌕</span>
+        <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="Buscar proveedor, CUIT o número" style="border:none; outline:none; font-size:13px; flex:1; background:transparent; color:#17191d;" />
+      </div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #e3e1dc; border-radius:10px; overflow-x:auto;">
+      <div style="display:grid; grid-template-columns:170px 92px 148px 100px minmax(200px, 1fr) 132px 132px 96px 44px; min-width:1010px; gap:0; padding:0 16px; height:38px; align-items:center; background:#faf9f7; border-bottom:1px solid #e3e1dc; font-size:11px; letter-spacing:0.05em; text-transform:uppercase; color:#82868e; font-weight:500;">
+        <div>Estado</div><div>Tipo</div><div>Comprobante</div><div>Fecha</div><div>Proveedor</div><div>CUIT</div><div style="text-align:right;">Total</div><div style="text-align:center;">Confianza</div><div></div>
+      </div>
+      <sc-for list="{{ rows }}" as="r" hint-placeholder-count="8">
+        <div onClick="{{ r.onOpen }}" style="{{ r.rowStyle }}" style-hover="background:#f7f6f3">
+          <div><span style="{{ r.badgeStyle }}">{{ r.estadoLabel }}</span></div>
+          <div style="font-size:13px; color:#4a4e56;">{{ r.tipo }}</div>
+          <div style="font-family:'IBM Plex Mono'; font-size:12.5px; color:#17191d;">{{ r.nro }}</div>
+          <div style="font-family:'IBM Plex Mono'; font-size:12.5px; color:#5c6068;">{{ r.fecha }}</div>
+          <div style="font-size:13.5px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:14px;">{{ r.proveedor }}</div>
+          <div style="font-family:'IBM Plex Mono'; font-size:12.5px; color:#5c6068;">{{ r.cuit }}</div>
+          <div style="font-family:'IBM Plex Mono'; font-size:13px; text-align:right; font-weight:500;">{{ r.total }}</div>
+          <div style="display:flex; justify-content:center;"><span style="{{ r.confStyle }}">{{ r.confLabel }}</span></div>
+          <div style="text-align:right; color:#b0b4bb; font-size:15px;">›</div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:52px; text-align:center; color:#8b8f97; font-size:13.5px;">No hay comprobantes con este filtro.</div>
+      </sc-if>
+    </div>
+
+    <div style="margin-top:12px; font-size:12px; color:#8b8f97;">{{ rowsCount }} comprobantes · última sincronización con Tango {{ lastSync }}</div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ isReview }}" hint-placeholder-val="{{ false }}">
+  <div style="flex:1; display:flex; flex-direction:column; min-height:0;">
+
+    <div style="display:flex; align-items:center; gap:16px; padding:12px 24px; background:#fff; border-bottom:1px solid #e3e1dc; flex:none;">
+      <button onClick="{{ goInbox }}" style="height:32px; padding:0 12px; background:#f2f1ed; border:1px solid #e3e1dc; border-radius:6px; font-size:12.5px; cursor:pointer; color:#4a4e56;" style-hover="background:#e9e7e2">← Bandeja</button>
+      <div style="display:flex; align-items:baseline; gap:12px;">
+        <span style="font-size:15.5px; font-weight:600; letter-spacing:-0.01em;">{{ docProveedor }}</span>
+        <span style="font-family:'IBM Plex Mono'; font-size:13px; color:#5c6068;">{{ docNro }}</span>
+        <span style="{{ docBadgeStyle }}">{{ docEstadoLabel }}</span>
+      </div>
+      <div style="flex:1;"></div>
+      <div style="display:flex; align-items:center; gap:9px;">
+        <button onClick="{{ openObs }}" style="height:36px; padding:0 15px; background:#fff; border:1px solid #e0cfa4; color:#8a5a00; border-radius:7px; font-size:13px; font-weight:500; cursor:pointer;" style-hover="background:#fdf6e7">Marcar en observación</button>
+        <button onClick="{{ onPrimary }}" style="{{ primaryStyle }}" style-hover="opacity:.88">{{ primaryLabel }}</button>
+      </div>
+    </div>
+
+    <div style="flex:1; display:grid; grid-template-columns:minmax(420px, 44%) 1fr; min-height:0;">
+
+      <div style="background:#e6e4df; border-right:1px solid #d8d5cf; overflow:auto; padding:22px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <span style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:#7b7f87;">{{ docFile }}</span>
+          <span style="font-size:11.5px; color:#7b7f87;">Página 1 de 1</span>
+        </div>
+
+        <div style="background:#fff; box-shadow:0 2px 14px rgba(0,0,0,.13); padding:28px 30px; font-size:11px; color:#2a2d33; min-height:640px;">
+          <div style="display:grid; grid-template-columns:1fr 56px 1fr; border-bottom:2px solid #17191d; padding-bottom:12px; align-items:start;">
+            <div>
+              <div style="{{ hlProv }}">
+                <div style="font-size:15px; font-weight:700; letter-spacing:-0.01em;">{{ pdfProveedor }}</div>
+              </div>
+              <div style="color:#5c6068; margin-top:5px; line-height:1.6;">Av. Corrientes 2847 — CABA<br />IVA Responsable Inscripto</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="border:1.5px solid #17191d; width:44px; height:44px; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700;">{{ pdfLetra }}</div>
+              <div style="font-size:8.5px; margin-top:3px;">CÓD. {{ pdfCodigo }}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:14px; font-weight:700;">FACTURA</div>
+              <div style="{{ hlNro }}">
+                <div style="font-family:'IBM Plex Mono'; font-size:12px; margin-top:5px;">{{ pdfNro }}</div>
+              </div>
+              <div style="{{ hlFecha }}">
+                <div style="margin-top:4px; color:#5c6068;">Fecha: {{ pdfFecha }}</div>
+              </div>
+              <div style="{{ hlCuit }}">
+                <div style="color:#5c6068;">CUIT: {{ pdfCuit }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:12px 0; border-bottom:1px solid #d8d5cf; color:#5c6068; line-height:1.7;">
+            <div>
+              <div style="color:#17191d; font-weight:600; margin-bottom:3px;">Cliente</div>
+              DISTRIBUIDORA DEL SUR S.A.<br />CUIT 30-71204558-3<br />IVA Responsable Inscripto
+            </div>
+            <div style="text-align:right;">
+              <div style="color:#17191d; font-weight:600; margin-bottom:3px;">Condición de venta</div>
+              Cuenta corriente 30 días<br />O/C 2026-00841<br />Remito R 0004-00019233
+            </div>
+          </div>
+
+          <div style="margin-top:14px;">
+            <div style="display:grid; grid-template-columns:56px 1fr 52px 74px 84px; gap:6px; padding:6px 0; border-bottom:1px solid #17191d; font-weight:600; font-size:9.5px; text-transform:uppercase; letter-spacing:0.03em;">
+              <div>Código</div><div>Descripción</div><div style="text-align:right;">Cant.</div><div style="text-align:right;">P. Unit.</div><div style="text-align:right;">Importe</div>
+            </div>
+            <sc-for list="{{ pdfItems }}" as="it" hint-placeholder-count="4">
+              <div style="display:grid; grid-template-columns:56px 1fr 52px 74px 84px; gap:6px; padding:7px 0; border-bottom:1px solid #ecebe7; font-family:'IBM Plex Mono'; font-size:10px;">
+                <div>{{ it.cod }}</div><div style="font-family:'IBM Plex Sans'; font-size:10.5px;">{{ it.desc }}</div><div style="text-align:right;">{{ it.cant }}</div><div style="text-align:right;">{{ it.pu }}</div><div style="text-align:right;">{{ it.imp }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; margin-top:18px;">
+            <div style="{{ hlTotales }}">
+              <div style="width:246px; font-family:'IBM Plex Mono'; font-size:10.5px;">
+                <sc-for list="{{ pdfTotales }}" as="tt" hint-placeholder-count="5">
+                  <div style="display:flex; justify-content:space-between; padding:3.5px 0; border-bottom:1px solid #f0efec;">
+                    <span style="font-family:'IBM Plex Sans'; color:#5c6068;">{{ tt.label }}</span><span>{{ tt.value }}</span>
+                  </div>
+                </sc-for>
+                <div style="display:flex; justify-content:space-between; padding:8px 0 0; font-size:13px; font-weight:600;">
+                  <span style="font-family:'IBM Plex Sans';">TOTAL</span><span>{{ pdfTotal }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="{{ hlCae }}">
+            <div style="margin-top:28px; padding-top:10px; border-top:1px solid #d8d5cf; display:flex; justify-content:space-between; font-family:'IBM Plex Mono'; font-size:10px; color:#5c6068;">
+              <span>CAE Nº {{ pdfCae }}</span><span>Vto. CAE {{ pdfVtoCae }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="overflow:auto; background:#f7f6f3;">
+        <div style="padding:20px 24px 60px; max-width:760px;">
+
+          <div style="display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:12px 15px; margin-bottom:16px;">
+            <div style="width:26px; height:26px; border-radius:6px; background:#eceaf6; color:#4a3fa8; display:flex; align-items:center; justify-content:center; font-size:13px; flex:none;">✦</div>
+            <div style="flex:1;">
+              <div style="font-size:13px; font-weight:500;">Lectura automática completada</div>
+              <div style="font-size:12px; color:#7b7f87; margin-top:1px;">{{ iaResumen }}</div>
+            </div>
+            <button onClick="{{ reprocess }}" style="height:30px; padding:0 12px; background:#f2f1ed; border:1px solid #e3e1dc; border-radius:6px; font-size:12px; cursor:pointer; color:#4a4e56;" style-hover="background:#e9e7e2">Reprocesar</button>
+          </div>
+
+          <div style="background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:4px 16px 14px; margin-bottom:16px;">
+            <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:#82868e; padding:13px 0 10px; border-bottom:1px solid #eeece8;">Validaciones</div>
+            <sc-for list="{{ validaciones }}" as="v" hint-placeholder-count="4">
+              <div style="display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid #f4f3f0;">
+                <span style="{{ v.dotStyle }}">{{ v.icon }}</span>
+                <div style="flex:1;">
+                  <div style="font-size:13px; font-weight:500;">{{ v.title }}</div>
+                  <div style="font-size:12.5px; color:#7b7f87; margin-top:2px;">{{ v.detail }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+            <div style="background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:4px 16px 18px; margin-bottom:16px;">
+              <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:#82868e; padding:13px 0 12px; border-bottom:1px solid #eeece8; margin-bottom:14px;">{{ g.title }}</div>
+              <div style="display:grid; grid-template-columns:repeat(6, 1fr); gap:12px;">
+                <sc-for list="{{ g.fields }}" as="f" hint-placeholder-count="6">
+                  <div style="{{ f.cellStyle }}">
+                    <div style="display:flex; align-items:center; gap:6px; margin-bottom:5px;">
+                      <label style="font-size:11.5px; color:#7b7f87;">{{ f.label }}</label>
+                      <span style="{{ f.confStyle }}">{{ f.confLabel }}</span>
+                    </div>
+                    <input value="{{ f.value }}" onChange="{{ f.onChange }}" onFocus="{{ f.onFocus }}" onBlur="{{ f.onBlur }}" readOnly="{{ f.readOnly }}" style="{{ f.inputStyle }}" style-focus="border-color:#2b4fd0; box-shadow:0 0 0 3px rgba(43,79,208,.12)" />
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+
+          <div style="background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:4px 16px 16px;">
+            <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:#82868e; padding:13px 0 10px; border-bottom:1px solid #eeece8;">Renglones detectados</div>
+            <div style="display:grid; grid-template-columns:70px 1fr 60px 96px 104px; gap:8px; padding:11px 0 8px; font-size:11px; color:#82868e; text-transform:uppercase; letter-spacing:0.04em;">
+              <div>Código</div><div>Descripción</div><div style="text-align:right;">Cant.</div><div style="text-align:right;">P. unitario</div><div style="text-align:right;">Importe</div>
+            </div>
+            <sc-for list="{{ pdfItems }}" as="it" hint-placeholder-count="4">
+              <div style="display:grid; grid-template-columns:70px 1fr 60px 96px 104px; gap:8px; padding:9px 0; border-top:1px solid #f4f3f0; font-size:12.5px; align-items:center;">
+                <div style="font-family:'IBM Plex Mono'; font-size:12px;">{{ it.cod }}</div>
+                <div>{{ it.desc }}</div>
+                <div style="font-family:'IBM Plex Mono'; text-align:right;">{{ it.cant }}</div>
+                <div style="font-family:'IBM Plex Mono'; text-align:right;">{{ it.pu }}</div>
+                <div style="font-family:'IBM Plex Mono'; text-align:right; font-weight:500;">{{ it.imp }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="background:#fff; border:1px solid #e3e1dc; border-radius:9px; padding:4px 16px 16px; margin-top:16px;">
+            <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:#82868e; padding:13px 0 10px; border-bottom:1px solid #eeece8;">Historial</div>
+            <sc-for list="{{ historial }}" as="h" hint-placeholder-count="3">
+              <div style="display:flex; gap:12px; padding:10px 0; border-bottom:1px solid #f4f3f0;">
+                <span style="font-family:'IBM Plex Mono'; font-size:11.5px; color:#9a9ea6; width:104px; flex:none;">{{ h.time }}</span>
+                <span style="font-size:12.5px; flex:1;">{{ h.text }}</span>
+                <span style="font-size:12px; color:#9a9ea6;">{{ h.who }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ showImport }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; inset:0; background:rgba(23,25,29,.45); display:flex; align-items:center; justify-content:center; z-index:60;">
+      <div style="width:620px; background:#fff; border-radius:12px; padding:24px; animation:riseIn .18s ease-out;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+          <h2 style="margin:0; font-size:17px; font-weight:600; letter-spacing:-0.01em;">Importar comprobantes</h2>
+          <button onClick="{{ closeImport }}" style="width:28px; height:28px; border:none; background:#f2f1ed; border-radius:6px; cursor:pointer; color:#6b7078; font-size:14px;">✕</button>
+        </div>
+        <div onClick="{{ simulateUpload }}" style="border:1.5px dashed #c9c6c0; border-radius:10px; padding:34px; text-align:center; cursor:pointer; background:#faf9f7;" style-hover="border-color:#2b4fd0; background:#f4f6fd">
+          <div style="font-size:26px; color:#b0b4bb; margin-bottom:8px;">⇪</div>
+          <div style="font-size:14px; font-weight:500; margin-bottom:4px;">Arrastrá los PDF acá</div>
+          <div style="font-size:12.5px; color:#7b7f87;">o hacé clic para elegirlos · hasta 50 archivos · PDF, máx. 10 MB c/u</div>
+        </div>
+        <sc-if value="{{ uploading }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:16px;">
+            <sc-for list="{{ uploadFiles }}" as="u" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid #e3e1dc; border-radius:7px; margin-bottom:7px;">
+                <span style="font-size:12px; color:#b03a2b; font-weight:600;">PDF</span>
+                <span style="flex:1; font-size:12.5px;">{{ u.name }}</span>
+                <span style="{{ u.stateStyle }}">{{ u.state }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <div style="display:flex; justify-content:flex-end; gap:9px; margin-top:18px;">
+          <button onClick="{{ closeImport }}" style="height:36px; padding:0 15px; background:#f2f1ed; border:1px solid #e3e1dc; border-radius:7px; font-size:13px; cursor:pointer;">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ showObs }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; inset:0; background:rgba(23,25,29,.45); display:flex; align-items:center; justify-content:center; z-index:60;">
+      <div style="width:520px; background:#fff; border-radius:12px; padding:24px; animation:riseIn .18s ease-out;">
+        <h2 style="margin:0 0 6px; font-size:17px; font-weight:600; letter-spacing:-0.01em;">Marcar en observación</h2>
+        <p style="margin:0 0 16px; font-size:13px; color:#7b7f87;">El comprobante queda pendiente y no se registra en Tango hasta resolverlo.</p>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
+          <sc-for list="{{ motivos }}" as="m" hint-placeholder-count="4">
+            <button onClick="{{ m.onClick }}" style="{{ m.style }}">{{ m.label }}</button>
+          </sc-for>
+        </div>
+        <textarea value="{{ obsNota }}" onChange="{{ onObsNota }}" placeholder="Nota para el equipo (opcional)" style="width:100%; height:74px; border:1px solid #e3e1dc; border-radius:7px; padding:10px 12px; font-size:13px; resize:none; outline:none; color:#17191d;"></textarea>
+        <div style="display:flex; justify-content:flex-end; gap:9px; margin-top:16px;">
+          <button onClick="{{ closeObs }}" style="height:36px; padding:0 15px; background:#f2f1ed; border:1px solid #e3e1dc; border-radius:7px; font-size:13px; cursor:pointer;">Cancelar</button>
+          <button onClick="{{ confirmObs }}" style="height:36px; padding:0 17px; background:#8a5a00; color:#fff; border:none; border-radius:7px; font-size:13px; font-weight:500; cursor:pointer;">Marcar en observación</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; left:50%; bottom:28px; transform:translateX(-50%); background:#17191d; color:#fff; padding:12px 20px; border-radius:9px; font-size:13px; z-index:70; animation:riseIn .2s ease-out; box-shadow:0 6px 24px rgba(0,0,0,.22);">{{ toast }}</div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;mostrarConfianza&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Comportamiento&quot;},&quot;densidad&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;cómoda&quot;,&quot;compacta&quot;],&quot;default&quot;:&quot;cómoda&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Comportamiento&quot;}}">
+const ESTADOS = {
+  procesando:  { label: 'Procesando IA', bg: '#eceaf6', fg: '#4a3fa8' },
+  leido:       { label: 'Pendiente de revisión', bg: '#e7eef9', fg: '#2b4fd0' },
+  observacion: { label: 'En observación', bg: '#fbf0dc', fg: '#8a5a00' },
+  confirmado:  { label: 'Confirmado', bg: '#e3f1ea', fg: '#1c7355' },
+  registrado:  { label: 'Registrado en Tango', bg: '#17191d', fg: '#ffffff' },
+  error:       { label: 'Error de lectura', bg: '#fae7e3', fg: '#a03526' }
+};
+
+const DOCS = [
+  { id:'C-1042', tipo:'Factura A', nro:'0003-00018742', fecha:'29/07/2026', proveedor:'Aceros Rivadavia S.A.', cuit:'30-64872913-7', total:2847550.28, estado:'leido', conf:0.72, file:'FC_A_0003-00018742.pdf' },
+  { id:'C-1041', tipo:'Factura A', nro:'0012-00004417', fecha:'29/07/2026', proveedor:'Logística Andina S.R.L.', cuit:'30-71029384-2', total:486230.00, estado:'leido', conf:0.96, file:'logistica_andina_jul.pdf' },
+  { id:'C-1040', tipo:'Nota de débito A', nro:'0004-00000912', fecha:'28/07/2026', proveedor:'Papelera Central S.A.', cuit:'33-70918273-9', total:74120.55, estado:'leido', conf:0.88, file:'ND_0004-912.pdf' },
+  { id:'C-1039', tipo:'Factura B', nro:'0007-00033120', fecha:'28/07/2026', proveedor:'Servicios Integrales Cuyo', cuit:'27-28471930-4', total:198400.00, estado:'observacion', conf:0.81, file:'sic_28-07.pdf' },
+  { id:'C-1038', tipo:'Factura A', nro:'0001-00092884', fecha:'28/07/2026', proveedor:'Distribuidora Norte S.A.', cuit:'30-59283746-1', total:1204880.90, estado:'observacion', conf:0.64, file:'dnorte_92884.pdf' },
+  { id:'C-1037', tipo:'Factura A', nro:'0005-00011203', fecha:'27/07/2026', proveedor:'Insumos Técnicos S.R.L.', cuit:'30-70283746-5', total:912340.10, estado:'confirmado', conf:0.94, file:'insumos_11203.pdf' },
+  { id:'C-1036', tipo:'Factura C', nro:'0002-00000784', fecha:'27/07/2026', proveedor:'Marta Giménez (monotributo)', cuit:'27-24837192-8', total:145000.00, estado:'confirmado', conf:0.91, file:'mg_784.pdf' },
+  { id:'C-1035', tipo:'Factura A', nro:'0009-00027741', fecha:'27/07/2026', proveedor:'Metalúrgica del Plata S.A.', cuit:'30-61928374-6', total:3410990.00, estado:'registrado', conf:0.98, file:'mdp_27741.pdf' },
+  { id:'C-1034', tipo:'Factura A', nro:'0003-00018698', fecha:'26/07/2026', proveedor:'Aceros Rivadavia S.A.', cuit:'30-64872913-7', total:1988420.75, estado:'registrado', conf:0.97, file:'FC_A_0003-00018698.pdf' },
+  { id:'C-1033', tipo:'Factura B', nro:'0011-00005530', fecha:'26/07/2026', proveedor:'Energía y Clima S.R.L.', cuit:'30-71847362-0', total:327600.00, estado:'registrado', conf:0.93, file:'eyc_5530.pdf' },
+  { id:'C-1032', tipo:'Factura A', nro:'0006-00014402', fecha:'25/07/2026', proveedor:'Transporte Litoral S.A.', cuit:'30-58273649-3', total:762150.40, estado:'registrado', conf:0.95, file:'litoral_14402.pdf' },
+  { id:'C-1031', tipo:'Factura A', nro:'—', fecha:'25/07/2026', proveedor:'PDF ilegible (escaneo)', cuit:'—', total:0, estado:'error', conf:0.18, file:'scan_2507_004.pdf' }
+];
+
+const MOTIVOS = ['Diferencia de importe con la O/C', 'Proveedor inexistente en Tango', 'Falta remito asociado', 'CAE vencido o inválido', 'Precio distinto al acordado'];
+
+const money = (n) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+class Component extends DCLogic {
+  state = {
+    view: 'inbox', filter: 'todos', query: '', docs: DOCS.slice(),
+    selId: null, edits: {}, hl: null, showImport: false, uploading: false,
+    uploadFiles: [], showObs: false, obsMotivo: null, obsNota: '', toast: null,
+    hist: {}
+  };
+
+  toast(t) {
+    clearTimeout(this._t);
+    this.setState({ toast: t });
+    this._t = setTimeout(() => this.setState({ toast: null }), 2600);
+  }
+
+  sel() { return this.state.docs.find(d => d.id === this.state.selId) || this.state.docs[0]; }
+
+  setEstado(id, estado, nota) {
+    this.setState(s => ({
+      docs: s.docs.map(d => d.id === id ? Object.assign({}, d, { estado }) : d),
+      hist: Object.assign({}, s.hist, { [id]: (s.hist[id] || []).concat([{ time: '01/08 ' + new Date().toTimeString().slice(0, 5), text: nota, who: 'M. Peralta' }]) })
+    }));
+  }
+
+  fieldDefs(d) {
+    const neto = d.total / 1.21;
+    return [
+      { title: 'Comprobante', fields: [
+        { k: 'tipo', label: 'Tipo', v: d.tipo, c: 0.99, span: 2 },
+        { k: 'ptovta', label: 'Punto de venta', v: d.nro.split('-')[0], c: 0.98, span: 2 },
+        { k: 'nro', label: 'Número', v: d.nro.split('-')[1] || '—', c: 0.97, span: 2 },
+        { k: 'fecha', label: 'Fecha de emisión', v: d.fecha, c: 0.96, span: 2 },
+        { k: 'cae', label: 'CAE', v: '75028419304472', c: d.conf < 0.8 ? 0.58 : 0.95, span: 2 },
+        { k: 'vtocae', label: 'Vto. CAE', v: '08/08/2026', c: 0.92, span: 2 },
+        { k: 'moneda', label: 'Moneda', v: 'Pesos', c: 0.99, span: 2 },
+        { k: 'cotiz', label: 'Cotización', v: '1,0000', c: 0.99, span: 2 },
+        { k: 'oc', label: 'Orden de compra', v: '2026-00841', c: 0.74, span: 2 }
+      ]},
+      { title: 'Proveedor', fields: [
+        { k: 'razon', label: 'Razón social', v: d.proveedor, c: 0.97, span: 3 },
+        { k: 'cuit', label: 'CUIT', v: d.cuit, c: 0.99, span: 3 },
+        { k: 'condiva', label: 'Condición IVA', v: 'Responsable Inscripto', c: 0.95, span: 2 },
+        { k: 'condpago', label: 'Condición de pago', v: 'Cta. cte. 30 días', c: 0.86, span: 2 },
+        { k: 'vtopago', label: 'Vencimiento', v: '28/08/2026', c: 0.86, span: 2 }
+      ]},
+      { title: 'Importes', fields: [
+        { k: 'neto', label: 'Neto gravado 21%', v: money(neto), c: 0.93, span: 2 },
+        { k: 'iva21', label: 'IVA 21%', v: money(neto * 0.21), c: 0.93, span: 2 },
+        { k: 'iva105', label: 'IVA 10,5%', v: '0,00', c: 0.9, span: 2 },
+        { k: 'exento', label: 'No gravado / exento', v: '0,00', c: 0.9, span: 2 },
+        { k: 'perciva', label: 'Percepción IVA', v: '0,00', c: 0.88, span: 2 },
+        { k: 'perciibb', label: 'Percepción IIBB', v: d.conf < 0.8 ? '0,00' : money(d.total * 0.015), c: d.conf < 0.8 ? 0.41 : 0.87, span: 2 },
+        { k: 'total', label: 'Total del comprobante', v: money(d.total), c: 0.99, span: 3 },
+        { k: 'imputado', label: 'Total imputado', v: money(d.total), c: 1, span: 3, ro: true }
+      ]},
+      { title: 'Imputación en Tango', fields: [
+        { k: 'codprov', label: 'Cód. proveedor Tango', v: d.conf < 0.7 ? '' : 'PR-' + d.cuit.slice(3, 8), c: 1, span: 2 },
+        { k: 'talonario', label: 'Talonario', v: 'FC COMPRAS', c: 1, span: 2 },
+        { k: 'cond', label: 'Condición de compra', v: '30 DÍAS', c: 1, span: 2 },
+        { k: 'cuenta', label: 'Cuenta contable', v: '4.1.01.001 Mercaderías', c: 1, span: 3 },
+        { k: 'cc', label: 'Centro de costo', v: 'ADM — Administración', c: 1, span: 3 }
+      ]}
+    ];
+  }
+
+  validaciones(d) {
+    const ok = { icon: '✓', bg: '#e3f1ea', fg: '#1c7355' };
+    const warn = { icon: '!', bg: '#fbf0dc', fg: '#8a5a00' };
+    const err = { icon: '✕', bg: '#fae7e3', fg: '#a03526' };
+    const v = [
+      Object.assign({ title: 'Proveedor encontrado en Tango', detail: d.conf < 0.7 ? 'Sin coincidencia por CUIT ' + d.cuit + '. Elegí el proveedor manualmente.' : 'Coincidencia exacta por CUIT ' + d.cuit + '.' }, d.conf < 0.7 ? err : ok),
+      Object.assign({ title: 'Sin duplicados', detail: 'No existe otro comprobante del mismo proveedor con este número.' }, ok),
+      Object.assign({ title: 'Totales', detail: d.conf < 0.8 ? 'La suma de renglones difiere en $ 12.480,00 del total leído.' : 'La suma de renglones e impuestos coincide con el total.' }, d.conf < 0.8 ? warn : ok),
+      Object.assign({ title: 'CAE', detail: 'CAE válido, vence el 08/08/2026.' }, ok)
+    ];
+    return v;
+  }
+
+  renderVals() {
+    const s = this.state;
+    const showConf = this.props.mostrarConfianza ?? true;
+    const dense = (this.props.densidad ?? 'cómoda') === 'compacta';
+    const d = this.sel();
+    const est = ESTADOS[d.estado] || ESTADOS.leido;
+
+    const badge = (e) => {
+      const c = ESTADOS[e] || ESTADOS.leido;
+      return { display: 'inline-flex', alignItems: 'center', height: '21px', padding: '0 9px', borderRadius: '11px', background: c.bg, color: c.fg, fontSize: '11.5px', fontWeight: 500, whiteSpace: 'nowrap' };
+    };
+
+    const counts = { todos: s.docs.length };
+    Object.keys(ESTADOS).forEach(k => { counts[k] = s.docs.filter(x => x.estado === k).length; });
+
+    const tabDefs = [['todos', 'Todos'], ['leido', 'Pendientes'], ['observacion', 'En observación'], ['confirmado', 'Confirmados'], ['registrado', 'Registrados'], ['error', 'Con error']];
+    const tabs = tabDefs.map(([k, label]) => ({
+      label, count: counts[k] || 0,
+      onClick: () => this.setState({ filter: k }),
+      style: { display: 'flex', alignItems: 'center', gap: '7px', height: '34px', padding: '0 13px', borderRadius: '7px', border: '1px solid ' + (s.filter === k ? '#17191d' : '#e3e1dc'), background: s.filter === k ? '#17191d' : '#fff', color: s.filter === k ? '#fff' : '#4a4e56', fontSize: '13px', cursor: 'pointer' },
+      countStyle: { fontFamily: 'IBM Plex Mono', fontSize: '11.5px', color: s.filter === k ? '#a8abb2' : '#9a9ea6' }
+    }));
+
+    const q = s.query.toLowerCase().trim();
+    const list = s.docs.filter(x => (s.filter === 'todos' || x.estado === s.filter) && (!q || (x.proveedor + x.cuit + x.nro).toLowerCase().includes(q)));
+
+    const confChip = (c) => {
+      const low = c < 0.8, mid = c < 0.93;
+      return {
+        label: Math.round(c * 100) + '%',
+        style: { display: 'inline-flex', alignItems: 'center', height: '19px', padding: '0 7px', borderRadius: '10px', fontFamily: 'IBM Plex Mono', fontSize: '11px', background: low ? '#fae7e3' : mid ? '#fbf0dc' : '#eef0f2', color: low ? '#a03526' : mid ? '#8a5a00' : '#6b7078', opacity: showConf ? 1 : 0 }
+      };
+    };
+
+    const rows = list.map(x => {
+      const cc = confChip(x.conf);
+      return {
+        estadoLabel: (ESTADOS[x.estado] || ESTADOS.leido).label, badgeStyle: badge(x.estado),
+        tipo: x.tipo, nro: x.nro, fecha: x.fecha, proveedor: x.proveedor, cuit: x.cuit,
+        total: x.total ? '$ ' + money(x.total) : '—',
+        confLabel: cc.label, confStyle: cc.style,
+        rowStyle: { display: 'grid', gridTemplateColumns: '170px 92px 148px 100px minmax(200px, 1fr) 132px 132px 96px 44px', minWidth: '1010px', alignItems: 'center', padding: dense ? '0 16px' : '0 16px', height: dense ? '40px' : '50px', borderBottom: '1px solid #f0efec', cursor: 'pointer' },
+        onOpen: () => this.setState({ view: 'review', selId: x.id, hl: null })
+      };
+    });
+
+    const groups = this.fieldDefs(d).map(g => ({
+      title: g.title,
+      fields: g.fields.map(f => {
+        const val = (s.edits[d.id] || {})[f.k];
+        const cc = confChip(f.c);
+        const low = f.c < 0.8;
+        return {
+          label: f.label,
+          value: val !== undefined ? val : f.v,
+          readOnly: !!f.ro,
+          confLabel: f.c >= 0.999 ? '' : cc.label,
+          confStyle: Object.assign({}, cc.style, { display: f.c >= 0.999 || !showConf ? 'none' : 'inline-flex' }),
+          cellStyle: { gridColumn: 'span ' + f.span },
+          inputStyle: { width: '100%', height: '36px', padding: '0 11px', border: '1px solid ' + (low ? '#e6b9b0' : '#dcdad5'), background: f.ro ? '#f7f6f3' : low ? '#fdf6f4' : '#fff', borderRadius: '7px', fontSize: '13.5px', fontFamily: /neto|iva|total|perc|cuit|cae|cotiz|exento|nro|ptovta/.test(f.k) ? 'IBM Plex Mono' : 'IBM Plex Sans', color: '#17191d', outline: 'none' },
+          onFocus: () => this.setState({ hl: f.k }),
+          onBlur: () => this.setState({ hl: null }),
+          onChange: (e) => {
+            const v = e.target.value;
+            this.setState(st => ({ edits: Object.assign({}, st.edits, { [d.id]: Object.assign({}, st.edits[d.id], { [f.k]: v }) }) }));
+          }
+        };
+      })
+    }));
+
+    const hl = (keys) => ({ background: keys.includes(s.hl) ? 'rgba(43,79,208,.13)' : 'transparent', outline: keys.includes(s.hl) ? '2px solid rgba(43,79,208,.5)' : '2px solid transparent', borderRadius: '4px', transition: 'background .15s, outline-color .15s', padding: '2px 4px', margin: '-2px -4px' });
+
+    const neto = d.total / 1.21;
+    const canConfirm = d.estado === 'leido' || d.estado === 'observacion';
+    const canRegister = d.estado === 'confirmado';
+
+    return {
+      isInbox: s.view === 'inbox', isReview: s.view === 'review',
+      tabs, rows, rowsCount: rows.length, empty: rows.length === 0, query: s.query,
+      onQuery: (e) => this.setState({ query: e.target.value }),
+      lastSync: 'hoy 09:42',
+      kpiPend: counts.leido, kpiObs: counts.observacion, kpiReg: counts.registrado,
+      kpiImporte: '$ ' + money(s.docs.filter(x => x.estado === 'leido' || x.estado === 'observacion').reduce((a, b) => a + b.total, 0)),
+
+      goInbox: () => this.setState({ view: 'inbox' }),
+      docProveedor: d.proveedor, docNro: d.tipo + ' ' + d.nro, docFile: d.file,
+      docEstadoLabel: est.label, docBadgeStyle: badge(d.estado),
+      iaResumen: 'Claude leyó 31 campos en 2,4 s · confianza promedio ' + Math.round(d.conf * 100) + '% · modelo facturas-AR v3',
+      reprocess: () => this.toast('Reprocesando el PDF con la IA…'),
+
+      groups, validaciones: this.validaciones(d).map(v => ({
+        title: v.title, detail: v.detail, icon: v.icon,
+        dotStyle: { width: '18px', height: '18px', borderRadius: '50%', background: v.bg, color: v.fg, fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', marginTop: '1px', fontWeight: 700 }
+      })),
+
+      pdfProveedor: d.proveedor, pdfNro: d.nro, pdfFecha: d.fecha, pdfCuit: d.cuit,
+      pdfLetra: d.tipo.indexOf('B') > 0 ? 'B' : d.tipo.indexOf('C') > 0 ? 'C' : 'A',
+      pdfCodigo: d.tipo.indexOf('B') > 0 ? '006' : d.tipo.indexOf('C') > 0 ? '011' : '001',
+      pdfCae: '75028419304472', pdfVtoCae: '08/08/2026', pdfTotal: '$ ' + money(d.total),
+      pdfItems: [
+        { cod: 'A-4471', desc: 'Chapa laminada en frío 1,2 mm — 1000x2000', cant: '48,00', pu: money(d.total * 0.012), imp: money(d.total * 0.576) },
+        { cod: 'A-2210', desc: 'Perfil ángulo 40x40x3 — barra 6 m', cant: '25,00', pu: money(d.total * 0.009), imp: money(d.total * 0.225) },
+        { cod: 'S-0091', desc: 'Corte y plegado según plano 2026-114', cant: '1,00', pu: money(d.total * 0.11), imp: money(d.total * 0.11) },
+        { cod: 'F-0002', desc: 'Flete y acarreo', cant: '1,00', pu: money(d.total * 0.015), imp: money(d.total * 0.015) }
+      ],
+      pdfTotales: [
+        { label: 'Subtotal neto gravado', value: money(neto) },
+        { label: 'IVA 21%', value: money(neto * 0.21) },
+        { label: 'Percepción IIBB CABA', value: money(d.total * 0.015) }
+      ],
+      hlProv: hl(['razon']), hlNro: hl(['nro', 'ptovta', 'tipo']), hlFecha: hl(['fecha']),
+      hlCuit: hl(['cuit', 'condiva']), hlTotales: hl(['neto', 'iva21', 'iva105', 'total', 'perciibb', 'perciva', 'exento', 'imputado']),
+      hlCae: hl(['cae', 'vtocae']),
+
+      primaryLabel: canRegister ? 'Registrar en Tango' : canConfirm ? 'Confirmar datos' : 'Ver asiento en Tango',
+      primaryStyle: { height: '36px', padding: '0 18px', background: canRegister ? '#1c7355' : canConfirm ? '#17191d' : '#f2f1ed', color: canRegister || canConfirm ? '#fff' : '#4a4e56', border: canRegister || canConfirm ? 'none' : '1px solid #e3e1dc', borderRadius: '7px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' },
+      onPrimary: () => {
+        if (canConfirm) { this.setEstado(d.id, 'confirmado', 'Datos confirmados por el operador'); this.toast('Comprobante confirmado. Listo para registrar en Tango.'); }
+        else if (canRegister) { this.setEstado(d.id, 'registrado', 'Registrado en Tango — asiento COMP 0001-00047221'); this.toast('Registrado en Tango · COMP 0001-00047221'); this.setState({ view: 'inbox' }); }
+        else this.toast('Asiento COMP 0001-00047221 en Compras / Tango.');
+      },
+
+      historial: [{ time: '01/08 09:12', text: 'PDF importado desde carga manual', who: 'M. Peralta' }, { time: '01/08 09:12', text: 'Lectura automática con IA — 31 campos', who: 'Sistema' }].concat((s.hist[d.id] || [])),
+
+      showImport: s.showImport, uploading: s.uploading, uploadFiles: s.uploadFiles,
+      openImport: () => this.setState({ showImport: true, uploading: false, uploadFiles: [] }),
+      closeImport: () => this.setState({ showImport: false }),
+      simulateUpload: () => {
+        const files = [{ name: 'FC_A_0003-00018801.pdf' }, { name: 'proveedor_sur_julio.pdf' }, { name: 'ND_0004-000913.pdf' }];
+        const paint = (st) => files.map(f => ({ name: f.name, state: st, stateStyle: { fontSize: '11.5px', color: st === 'Listo' ? '#1c7355' : '#4a3fa8', fontWeight: 500 } }));
+        this.setState({ uploading: true, uploadFiles: paint('Leyendo con IA…') });
+        setTimeout(() => this.setState({ uploadFiles: paint('Listo') }), 1500);
+        setTimeout(() => {
+          const nuevos = [
+            { id: 'C-1045', tipo: 'Factura A', nro: '0003-00018801', fecha: '01/08/2026', proveedor: 'Aceros Rivadavia S.A.', cuit: '30-64872913-7', total: 1653200.00, estado: 'leido', conf: 0.95, file: 'FC_A_0003-00018801.pdf' },
+            { id: 'C-1044', tipo: 'Factura B', nro: '0008-00002214', fecha: '01/08/2026', proveedor: 'Proveedor Sur S.R.L.', cuit: '30-70918273-4', total: 289400.00, estado: 'leido', conf: 0.76, file: 'proveedor_sur_julio.pdf' },
+            { id: 'C-1043', tipo: 'Nota de débito A', nro: '0004-00000913', fecha: '01/08/2026', proveedor: 'Papelera Central S.A.', cuit: '33-70918273-9', total: 41800.00, estado: 'leido', conf: 0.9, file: 'ND_0004-000913.pdf' }
+          ];
+          this.setState(st => ({ docs: nuevos.concat(st.docs), showImport: false, filter: 'leido' }));
+          this.toast('3 comprobantes importados y leídos por la IA.');
+        }, 2400);
+      },
+
+      showObs: s.showObs, obsNota: s.obsNota,
+      openObs: () => this.setState({ showObs: true, obsMotivo: null, obsNota: '' }),
+      closeObs: () => this.setState({ showObs: false }),
+      onObsNota: (e) => this.setState({ obsNota: e.target.value }),
+      motivos: MOTIVOS.map(m => ({
+        label: m, onClick: () => this.setState({ obsMotivo: m }),
+        style: { textAlign: 'left', padding: '10px 13px', borderRadius: '7px', border: '1px solid ' + (s.obsMotivo === m ? '#2b4fd0' : '#e3e1dc'), background: s.obsMotivo === m ? '#f4f6fd' : '#fff', fontSize: '13px', cursor: 'pointer', color: '#17191d' }
+      })),
+      confirmObs: () => {
+        this.setEstado(d.id, 'observacion', 'En observación: ' + (s.obsMotivo || 'sin motivo'));
+        this.setState({ showObs: false, view: 'inbox' });
+        this.toast('Comprobante marcado en observación.');
+      },
+
+      toast: s.toast
+    };
+  }
+}
+
+</script>
+</body>
+</html>
