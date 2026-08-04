@@ -161,7 +161,7 @@ export async function contarPorEstado(query: string): Promise<Conteos> {
 /** Inserta un comprobante minimo. Es para los tests, no para la app. */
 export async function insertarComprobantePrueba(
   tx: sql.Transaction,
-  datos: Partial<FilaBandeja> & { estado: Estado },
+  datos: Partial<FilaBandeja> & { estado: Estado; fechaRegistro?: Date },
 ): Promise<number> {
   const r = await tx
     .request()
@@ -175,14 +175,15 @@ export async function insertarComprobantePrueba(
     .input('razon', sql.NVarChar(200), datos.razonSocial ?? null)
     .input('cuit', sql.VarChar(15), datos.cuit ?? null)
     .input('total', sql.Decimal(19, 4), datos.total ?? null)
+    .input('fechaRegistro', sql.DateTime2, datos.fechaRegistro ?? null)
     .input('usuario', sql.NVarChar(60), usuarioActual())
     .query(`
       INSERT INTO PHF_COMPROBANTE
         (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, TIPO, PUNTO_VENTA,
-         NUMERO, RAZON_SOCIAL, CUIT, TOTAL, USUARIO_ALTA)
+         NUMERO, RAZON_SOCIAL, CUIT, TOTAL, FECHA_REGISTRO, USUARIO_ALTA)
       OUTPUT INSERTED.ID
       VALUES (@nombre, @ruta, @hash, @estado, @tipo, @pv,
-              @numero, @razon, @cuit, @total, @usuario)
+              @numero, @razon, @cuit, @total, @fechaRegistro, @usuario)
     `)
   return Number(r.recordset[0].ID)
 }

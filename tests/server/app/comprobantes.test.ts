@@ -74,6 +74,48 @@ describe('listarComprobantes', () => {
     })
   })
 
+  it('busca por razon social con varias palabras, conservando el espacio', async () => {
+    // "metalurgica del" solo matchea si @like conserva el espacio entre
+    // palabras. Si el patron colapsara los espacios, este LIKE dejaria de
+    // ser un substring valido de "METALURGICA DEL SUR SRL".
+    await conRollback(async (tx) => {
+      await sembrar(tx)
+      const r = await listarComprobantesEn(tx, { filtro: 'todos', query: 'metalurgica del' })
+      expect(r.total).toBe(1)
+      expect(r.filas[0].razonSocial).toBe('METALURGICA DEL SUR SRL')
+    })
+  })
+
+  it('busca por CUIT con guiones y encuentra uno guardado sin guiones', async () => {
+    await conRollback(async (tx) => {
+      await sembrar(tx)
+      const r = await listarComprobantesEn(tx, { filtro: 'todos', query: '30-64872913-7' })
+      expect(r.total).toBe(1)
+      expect(r.filas[0].razonSocial).toBe('DISTRIBUIDORA NORTE SA')
+    })
+  })
+
+  it('busca sin guiones y encuentra un CUIT guardado con guiones', async () => {
+    // En el maestro de Tango los CUIT se guardan con guiones (23-23292431-4),
+    // asi que la app tiene que encontrarlos aunque el operador busque sin
+    // guiones. Esto solo funciona si el REPLACE tambien se aplica sobre la
+    // columna CUIT, no solo sobre la query.
+    await conRollback(async (tx) => {
+      await sembrar(tx)
+      await insertarComprobantePrueba(tx, {
+        estado: 'leido',
+        razonSocial: 'INSUMOS DEL LITORAL SA',
+        cuit: '23-23292431-4',
+        tipo: 'FAC A',
+        numero: '0002-00000555',
+        total: 75000,
+      })
+      const r = await listarComprobantesEn(tx, { filtro: 'todos', query: '23232924314' })
+      expect(r.total).toBe(1)
+      expect(r.filas[0].razonSocial).toBe('INSUMOS DEL LITORAL SA')
+    })
+  })
+
   it('busca por numero de comprobante', async () => {
     await conRollback(async (tx) => {
       await sembrar(tx)
@@ -98,6 +140,25 @@ describe('listarComprobantes', () => {
       expect(r.total).toBe(3)
     })
   })
+
+  it('la segunda pagina trae el resto sin duplicar ni saltear filas', async () => {
+    await conRollback(async (tx) => {
+      await sembrar(tx)
+      const pagina1 = await listarComprobantesEn(tx, { filtro: 'todos', query: '', limite: 2, offset: 0 })
+      const pagina2 = await listarComprobantesEn(tx, { filtro: 'todos', query: '', limite: 2, offset: 2 })
+
+      expect(pagina1.filas).toHaveLength(2)
+      expect(pagina2.filas).toHaveLength(1)
+      expect(pagina2.total).toBe(3)
+
+      const idsPagina1 = pagina1.filas.map((f) => f.id)
+      const idsPagina2 = pagina2.filas.map((f) => f.id)
+      // sin duplicados entre paginas
+      expect(idsPagina1.filter((id) => idsPagina2.includes(id))).toHaveLength(0)
+      // juntas cubren las 3 filas sembradas
+      expect(new Set([...idsPagina1, ...idsPagina2]).size).toBe(3)
+    })
+  })
 })
 
 describe('obtenerKpis', () => {
@@ -108,6 +169,36 @@ describe('obtenerKpis', () => {
       expect(k.pendientes).toBe(1)
       expect(k.enObservacion).toBe(1)
       expect(k.importePendiente).toBe(150000)
+    })
+  })
+
+  it('cuenta registrados hoy y excluye los registrados en otra fecha', async () => {
+    await conRollback(async (tx) => {
+      const hoy = new Date()
+      const ayer = new Date()
+      ayer.setDate(ayer.getDate() - 1)
+
+      await insertarComprobantePrueba(tx, {
+        estado: 'registrado',
+        razonSocial: 'REGISTRADO HOY SA',
+        cuit: '30111111112',
+        tipo: 'FAC A',
+        numero: '0001-00000001',
+        total: 1000,
+        fechaRegistro: hoy,
+      })
+      await insertarComprobantePrueba(tx, {
+        estado: 'registrado',
+        razonSocial: 'REGISTRADO AYER SA',
+        cuit: '30222222223',
+        tipo: 'FAC A',
+        numero: '0001-00000002',
+        total: 2000,
+        fechaRegistro: ayer,
+      })
+
+      const k = await obtenerKpisEn(tx)
+      expect(k.registradosHoy).toBe(1)
     })
   })
 })
