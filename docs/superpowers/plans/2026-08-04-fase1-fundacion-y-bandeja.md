@@ -2472,7 +2472,7 @@ sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P Axoft -d PUNTO_HOGAR_1 -Q "DELETE 
 Run: `pnpm dev`
 
 Verificar en `http://localhost:3000/comprobantes`, con la ventana en 1280px o más:
-- Los 4 KPIs muestran 2 pendientes, 1 en observación, 1 registrado hoy, y `$ 1.863.171,25` de importe pendiente.
+- Los 4 KPIs muestran 2 pendientes, 1 en observación, 1 registrado hoy, y `$ 1.862.971,25` de importe pendiente (1.284.500,50 + 486.320,00 de los pendientes, más 92.150,75 del que está en observación).
 - Los 6 tabs muestran sus conteos, y al hacer clic la tabla filtra y la URL cambia.
 - Escribir "metalurgica" en el buscador deja una sola fila, con un cuarto de segundo de demora.
 - Escribir "30-64872913-7" también encuentra, porque la búsqueda ignora los guiones.
