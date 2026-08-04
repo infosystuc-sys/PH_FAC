@@ -21,7 +21,7 @@ export async function HeaderGlobal() {
       <div className={styles.derecha}>
         <span
           className={styles.punto}
-          style={{ background: conexion.ok ? '#3ea37c' : '#a03526' }}
+          style={{ background: conexion.ok ? 'var(--conexion-ok)' : 'var(--error)' }}
         />
         <span className={styles.conexion}>
           {conexion.ok ? `Tango · BD ${base}` : 'Sin conexión a Tango'}
