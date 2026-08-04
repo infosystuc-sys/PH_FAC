@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { HeaderGlobal } from '@/components/header-global'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es-AR">
-      <body>{children}</body>
+      <body style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+        <HeaderGlobal />
+        {children}
+      </body>
     </html>
   )
 }
