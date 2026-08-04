@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { ORDEN_TABS, type ClaveTab } from '@/lib/estados'
 import type { Conteos } from '@/server/app/comprobantes'
 import styles from './filtros.module.css'
@@ -13,24 +13,31 @@ export function Filtros({ filtro, query, conteos }: {
 }) {
   const router = useRouter()
   const params = useSearchParams()
+  // El timeout del debounce puede disparar despues de que el operador ya
+  // cambio de tab. Si leyera el `params` cerrado en el momento en que se
+  // agendo el timeout, reconstruiria la URL a partir del filtro viejo y
+  // revertiria el tab recien elegido. Por eso lee esta ref -- actualizada
+  // en cada render -- en vez del `params` capturado por el closure.
+  const paramsRef = useRef(params)
+  paramsRef.current = params
+
   const [texto, setTexto] = useState(query)
   const [, startTransition] = useTransition()
 
-  function navegar(next: URLSearchParams) {
+  const navegar = useCallback((next: URLSearchParams) => {
     startTransition(() => router.replace(`/comprobantes?${next.toString()}`))
-  }
+  }, [router, startTransition])
 
   useEffect(() => {
     if (texto === query) return
     const t = setTimeout(() => {
-      const next = new URLSearchParams(params.toString())
+      const next = new URLSearchParams(paramsRef.current.toString())
       if (texto) next.set('q', texto)
       else next.delete('q')
       navegar(next)
     }, 250)
     return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [texto])
+  }, [texto, query, navegar])
 
   function cambiarFiltro(clave: ClaveTab) {
     const next = new URLSearchParams(params.toString())

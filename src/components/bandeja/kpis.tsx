@@ -5,7 +5,7 @@ import styles from './kpis.module.css'
 export function FilaKpis({ kpis }: { kpis: Kpis }) {
   const tarjetas = [
     { label: 'Pendientes de revisión', valor: String(kpis.pendientes) },
-    { label: 'En observación', valor: String(kpis.enObservacion), color: '#8a5a00' },
+    { label: 'En observación', valor: String(kpis.enObservacion), color: 'var(--alerta)' },
     { label: 'Registrados hoy', valor: String(kpis.registradosHoy) },
     { label: 'Importe pendiente', valor: formatMoneda(kpis.importePendiente) },
   ]

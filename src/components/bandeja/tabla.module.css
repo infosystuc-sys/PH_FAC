@@ -37,7 +37,7 @@
 }
 
 .fila:hover {
-  background: #f7f6f3;
+  background: var(--fondo-panel);
 }
 
 .tipo {
