@@ -1,0 +1,62 @@
+.fila {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 7px;
+  font-size: 13px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  color: #4a4e56;
+}
+
+.tabActivo {
+  background: var(--oscuro);
+  border-color: var(--oscuro);
+  color: #fff;
+}
+
+.count {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--texto-6);
+}
+
+.countActivo {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: #a8abb2;
+}
+
+.buscador {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 260px;
+  height: 34px;
+  padding: 0 12px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 7px;
+}
+
+.lupa {
+  color: var(--texto-6);
+}
+
+.input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--texto);
+}
