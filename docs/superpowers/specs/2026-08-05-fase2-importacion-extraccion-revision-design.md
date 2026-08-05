@@ -84,8 +84,10 @@ De ese catálogo se derivan tres cosas, sin repetir la lista:
 
 | Clave | Label | Span | Origen |
 |---|---|---|---|
-| `codprovee` | Cód. proveedor Tango | 2 | Resuelto por `buscarProveedorPorCuit`. Solo lectura |
-| `condcompra` | Condición de compra | 2 | Select contra `listarCondicionesCompra` |
+| `codprovee` | Cód. proveedor Tango | 3 | Resuelto por `buscarProveedorPorCuit`. Solo lectura |
+| `condcompra` | Condición de compra | 3 | Select contra `listarCondicionesCompra` |
+
+Van a span 3 y no a 2 como en el `design/README.md`: sacado el talonario, dos campos de 2 dejaban la fila a un tercio. Cada grupo suma un múltiplo de 6, que es el ancho de la grilla.
 
 Ninguno lo extrae la IA. `codprovee` se resuelve del CUIT extraído; si no hay match queda vacío y la Fase 3 lo trata como error bloqueante.
 
