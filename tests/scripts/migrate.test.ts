@@ -209,7 +209,7 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
   })
 
   it('agrega una columna que falta sin tocar el resto de la tabla', async () => {
-    const prefijo = `TMPCOL${Date.now()}_`
+    const prefijo = prefijoUnico()
     const pool = await getPool()
     const tabla = `${prefijo}COMPROBANTE`
 
@@ -238,8 +238,8 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
     // en `columnas`, para el camino de reparacion. Este test es lo que evita
     // que esas dos declaraciones se separen.
     const pool = await getPool()
-    const pA = `TMPNEW${Date.now()}_`
-    const pB = `TMPREP${Date.now()}_`
+    const pA = prefijoUnico()
+    const pB = prefijoUnico()
 
     try {
       await migrar(pA)

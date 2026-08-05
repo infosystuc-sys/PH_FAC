@@ -205,15 +205,17 @@ async function columnasFaltantes(
 }
 
 /**
- * Crea las tablas que falten y repara los indices que falten en las que ya
- * existen. Para una tabla ausente, CREATE TABLE + todos sus CREATE INDEX
- * corren en una sola transaccion: si el CREATE TABLE pasa pero un CREATE
- * INDEX del mismo batch falla, el rollback se lleva puesta tambien la
- * tabla, para que la proxima corrida la vuelva a intentar completa en vez
- * de saltearla para siempre por el chequeo de idempotencia. Para una tabla
- * que ya existe pero le faltan indices, se emiten *solo* los CREATE INDEX
- * faltantes -- nunca se reintenta el CREATE TABLE contra una tabla que ya
- * esta ahi. Devuelve los nombres de las tablas creadas (no las reparadas).
+ * Crea las tablas que falten y repara, en las que ya existen, las columnas
+ * y los indices que falten. Para una tabla ausente, CREATE TABLE + todos
+ * sus CREATE INDEX corren en una sola transaccion: si el CREATE TABLE pasa
+ * pero un CREATE INDEX del mismo batch falla, el rollback se lleva puesta
+ * tambien la tabla, para que la proxima corrida la vuelva a intentar
+ * completa en vez de saltearla para siempre por el chequeo de idempotencia.
+ * Para una tabla que ya existe pero le faltan columnas y/o indices, nunca
+ * se reintenta el CREATE TABLE -- se emiten *solo* los ALTER TABLE ADD y
+ * los CREATE INDEX faltantes, primero las columnas y despues los indices,
+ * porque un indice futuro podria apoyarse en una columna nueva. Devuelve
+ * los nombres de las tablas creadas (no las reparadas).
  */
 export async function migrarDefiniciones(
   definiciones: Definicion[],
