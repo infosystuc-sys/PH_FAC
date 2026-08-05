@@ -1,13 +1,13 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-04
+**Última actualización:** 2026-08-04 (capa de lectura de Tango completa)
 **Rama:** `master` (ojo: se llama `master`, no `main` — `git init` la creó así)
 
 ---
 
 ## Fase 1: completa e integrada
 
-Las 8 tareas de la Fase 1 están terminadas, revisadas e integradas a `master` en el merge `3d56303`. **60 tests en verde.**
+Las 8 tareas de la Fase 1 están terminadas, revisadas e integradas a `master` en el merge `3d56303`. Con las cuatro lecturas de Tango que faltaban, **88 tests en verde.**
 
 Lo que quedó funcionando:
 
@@ -33,7 +33,7 @@ cd /d/APP/PH_FAC && git status --short && pnpm test
 
 Cada fase lleva su propio plan. El diseño completo está en `docs/superpowers/specs/2026-08-04-importador-facturas-tango-design.md`.
 
-**Antes de arrancar la Fase 2** hay que cargar la API key de Anthropic en `D:\APP\PH_FAC\.env.local`, en la variable `ANTHROPIC_API_KEY`, que hoy está vacía.
+La API key de Anthropic ya está cargada en `ANTHROPIC_API_KEY`, en `D:\APP\PH_FAC\.env.local` (verificado el 2026-08-04). La Fase 2 no tiene bloqueos.
 
 ---
 
@@ -47,17 +47,42 @@ Verificado contra la base. `buscarProveedorPorCuit` ya es determinístico —ord
 
 La resolución real es de la **Fase 3**: cuando el CUIT matchea más de un proveedor, la app tiene que mostrarle las coincidencias al operador para que elija. Si no se hace, la Fase 4 termina imputando una factura a la cuenta corriente del proveedor equivocado, en el ERP real, y sin ningún síntoma visible: la razón social que muestra la pantalla es la del proveedor que la app eligió, así que se ve coherente.
 
-### 2. El spec declara cinco lecturas de Tango y solo se implementó una
+### 2. ~~El spec declara cinco lecturas de Tango y solo se implementó una~~ — CERRADO
 
-El spec §4 pide: proveedores por CUIT y razón social, **remitos pendientes de facturar por proveedor**, **condiciones de compra**, **alícuotas de IVA** y **códigos de impuesto**. El plan de la Fase 1 angostó eso a solo proveedores y nadie lo dejó asentado en su momento.
-
-La Fase 2 no puede arrancar suponiendo que la capa de lectura de Tango está terminada. Son cuatro consultas más contra tablas del ERP que hay que descubrir, verificar contra la base y testear.
+Resuelto el 2026-08-04. Las cinco lecturas del spec §4 están implementadas y testeadas contra la base. Ver "La capa de lectura de Tango" más abajo.
 
 ### 3. La contraseña de SQL Server está en el historial de git
 
 La saqué de todos los archivos trackeados, pero estuvo commiteada en los commits anteriores a `37d6a9b`. **No hay remoto configurado, así que nunca salió de este disco.**
 
 Si en algún momento se publica el repo, hay que rotar la contraseña del usuario `Axoft` en SQL Server, o reescribir el historial antes de publicar. Es una decisión que queda pendiente y hay que tomarla **antes** del primer push, no después.
+
+---
+
+## La capa de lectura de Tango
+
+Las cinco lecturas del spec §4 están completas, en `src/server/tango/`, con **28 tests** contra la base real.
+
+| Módulo | Función | Tablas |
+|---|---|---|
+| `proveedores.ts` | `buscarProveedorPorCuit`, `buscarProveedoresPorRazonSocial` | `CPA01` |
+| `condicionesCompra.ts` | `listarCondicionesCompra`, `buscarCondicionCompra` | `CONDICION_COMPRA`, `CPA49` |
+| `impuestos.ts` | `listarAlicuotasIva`, `listarCodigosImpuesto` | `CPA14` |
+| `remitos.ts` | `buscarRemitosPendientes` | `STA14`, `STA20`, `STA11` |
+
+### Qué tablas se pueden tocar
+
+La documentación oficial de Axoft lista las tablas por módulo. Son la referencia:
+
+- Compras — <https://ayudas.axoft.com/21ar/documentos/operacion/tablas_oper/tablascompras_oper/>
+- Stock — <https://ayudas.axoft.com/21ar/documentos/operacion/tablas_oper/tablastock_oper/>
+
+**`CTA09` y `CTA11` no figuran en ningún módulo.** Son tablas de Tango Central, el espejo para consolidación entre sucursales, igual que `CTA05`/`CTA06`/`CTA07` respecto de `CPA04`/`CPA18`/`CPA46`. No son la fuente de verdad y no hay que leerlas ni escribirlas. La primera versión de `remitos.ts` se escribió contra `CTA09`/`CTA11` y se rehízo contra `STA14`/`STA20`.
+
+### Dos correcciones al spec
+
+1. **§9 paso 7 dice `UPDATE CTA11.FALTA_REM`. Está mal por partida doble:** `CTA11` no tiene ninguna columna `FALTA_REM`, y no es la tabla que hay que actualizar. Lo que Tango mantiene son `STA20.CANT_FACTU` y `STA20.CANT_PEND`, más `STA14.ESTADO_MOV`. Hay que corregirlo antes de la Fase 4.
+2. **§266 define el remito pendiente sobre `CTA09`.** La definición correcta es sobre `STA14`: cabecera con `TCOMP_IN_S = 'RP'` y `ESTADO_MOV = 'P'`, con al menos un renglón de `STA20` con `CANT_PEND > 0`.
 
 ---
 
@@ -79,3 +104,12 @@ Si en algún momento se publica el repo, hay que rotar la contraseña del usuari
 - Un ingreso de factura de compra en Tango toca **11 tablas**, no una. Están listadas en el spec §2.
 - El 77% de las facturas se cargan solo con cabecera. De las que tienen renglones, el 98,3% están atadas a un remito previo: el stock ya se movió cuando entró el remito, la factura solo se le asocia.
 - `useUTC: false` en la config de `mssql` es load-bearing: sin eso, una columna `DATE` vuelve como UTC y todas las fechas se muestran un día antes. Hay un test que lo protege.
+
+Lo que salió de implementar las cuatro lecturas que faltaban:
+
+- **`CPA14` es un solo maestro para dos cosas.** La documentación lo llama "Códigos de impuestos". La partición es `TIPO_ALI`: `IV` son las alícuotas que van en los cinco slots de IVA de la cabecera (`CPA04.COD_IVA1..5`), y `IB`/`II`/`OT` son los códigos que van en `CPA18`. Verificado: `CPA18` usa 15 códigos distintos, `CPA14` tiene exactamente 15 filas no-`IV`, y ninguna fila de `CPA18` apunta a una `IV`. Los códigos 40 y 60 de la factura de referencia son `IMP INT` (`II`) y `PERCEPCION IIBB TUC` (`IB`).
+- **`STA20.CANT_PEND` no se puede derivar.** `CANTIDAD - CANT_FACTU - CANT_DEV` da distinto en 380 renglones de `RP`. Hay que leer la columna.
+- **`STA20.PRECIO` viene en 0 en los 13.933 renglones de remito de proveedor.** El precio real está en `PRECIO_REM`.
+- **`STA14` y `CTA09` no son intercambiables.** `STA14` tiene 11.877 filas y `NRO_SUCURS = 0` en todos los `RP`, sin números repetidos. `CTA09` tiene 140.915, dos sucursales (1001 y 1002) y 56 `NCOMP_IN_S` repetidos entre ellas: ahí el join necesita `NRO_SUCURS`, y `CPA48` —que no tiene esa columna— no alcanza para desambiguar.
+- **Condiciones de compra en dos niveles.** `CONDICION_COMPRA` es la cabecera (36 filas, una por condición); `CPA49` son los renglones de cuotas (68). `CPA01.COND_COMPR` vale 0 en 640 de los 666 proveedores y no hay condición con ese código: 0 significa "sin condición".
+- **Hoy hay 13 remitos pendientes de facturar, de 10 proveedores.** Los tests descubren el proveedor en `beforeAll` en vez de hardcodearlo, porque esos remitos se van a facturar.
