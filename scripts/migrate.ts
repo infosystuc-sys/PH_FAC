@@ -1,11 +1,13 @@
 import { config as cargarEnv } from 'dotenv'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import sql from 'mssql'
 import { getPool, cerrarPool } from '../src/server/db/pool'
+import { conTransaccion } from '../src/server/db/tx'
 
 cargarEnv({ path: '.env.local' })
 
-type Definicion = { tabla: string; ddl: string }
+type Definicion = { tabla: string; ddl: string; indices?: string[] }
 
 const DEFINICIONES: Definicion[] = [
   {
@@ -44,6 +46,7 @@ const DEFINICIONES: Definicion[] = [
       CREATE INDEX IX_PHF_COMP_DUP ON PHF_COMPROBANTE (COD_PROVEE, TIPO, NUMERO);
       CREATE INDEX IX_PHF_COMP_CUIT ON PHF_COMPROBANTE (CUIT);
     `,
+    indices: ['IX_PHF_COMP_ESTADO', 'IX_PHF_COMP_DUP', 'IX_PHF_COMP_CUIT'],
   },
   {
     tabla: 'PHF_CAMPO',
@@ -99,27 +102,86 @@ const DEFINICIONES: Definicion[] = [
       );
       CREATE INDEX IX_PHF_AUD_COMP ON PHF_AUDITORIA (COMPROBANTE_ID, FECHA);
     `,
+    indices: ['IX_PHF_AUD_COMP'],
   },
 ]
 
-/** Crea las tablas que falten. Devuelve los nombres de las creadas. */
-export async function migrar(): Promise<string[]> {
+/**
+ * Todos los nombres de tabla, constraint e indice de las DEFINICIONES
+ * contienen la substring "PHF_" (tabla, PK, FK, DF, CK, IX...), asi que un
+ * reemplazo global de esa substring alcanza para renombrar todo de forma
+ * consistente -- incluidas las referencias FK entre tablas propias -- sin
+ * que un prefijo de prueba distinto choque nunca con un nombre real de la
+ * base productiva.
+ */
+function conPrefijo(texto: string, prefijo: string): string {
+  return texto.replaceAll('PHF_', prefijo)
+}
+
+async function existeTabla(pool: sql.ConnectionPool, tabla: string): Promise<boolean> {
+  const r = await pool
+    .request()
+    .input('t', tabla)
+    .query('SELECT COUNT(*) AS n FROM sys.tables WHERE name = @t')
+  return r.recordset[0].n > 0
+}
+
+/** true si a la tabla le falta alguno de los indices esperados (o la tabla misma). */
+async function tablaIncompleta(
+  pool: sql.ConnectionPool,
+  tabla: string,
+  indicesEsperados: string[],
+): Promise<boolean> {
+  if (!(await existeTabla(pool, tabla))) return true
+  if (indicesEsperados.length === 0) return false
+
+  const req = pool.request().input('t', tabla)
+  const placeholders = indicesEsperados.map((nombre, i) => {
+    req.input(`i${i}`, nombre)
+    return `@i${i}`
+  })
+  const r = await req.query(`
+    SELECT COUNT(*) AS n
+    FROM sys.indexes i
+    JOIN sys.tables t ON t.object_id = i.object_id
+    WHERE t.name = @t AND i.name IN (${placeholders.join(', ')})
+  `)
+  return Number(r.recordset[0].n) < indicesEsperados.length
+}
+
+/**
+ * Crea las tablas que falten (tabla ausente o con algun indice esperado
+ * faltante). Cada tabla se crea en su propia transaccion: si el CREATE
+ * TABLE pasa pero un CREATE INDEX del mismo batch falla, el rollback se
+ * lleva puesta tambien la tabla, para que la proxima corrida la vuelva a
+ * intentar completa en lugar de saltearla para siempre por el chequeo de
+ * idempotencia. Devuelve los nombres de las tablas creadas.
+ */
+export async function migrarDefiniciones(
+  definiciones: Definicion[],
+  prefijo = 'PHF_',
+): Promise<string[]> {
   const pool = await getPool()
   const creadas: string[] = []
 
-  for (const { tabla, ddl } of DEFINICIONES) {
-    const existe = await pool
-      .request()
-      .input('t', tabla)
-      .query('SELECT COUNT(*) AS n FROM sys.tables WHERE name = @t')
+  for (const { tabla: tablaBase, ddl, indices } of definiciones) {
+    const tabla = conPrefijo(tablaBase, prefijo)
+    const indicesEsperados = (indices ?? []).map((i) => conPrefijo(i, prefijo))
 
-    if (existe.recordset[0].n > 0) continue
+    if (!(await tablaIncompleta(pool, tabla, indicesEsperados))) continue
 
-    await pool.request().batch(ddl)
+    await conTransaccion(async (tx) => {
+      await tx.request().batch(conPrefijo(ddl, prefijo))
+    })
     creadas.push(tabla)
   }
 
   return creadas
+}
+
+/** Crea las cuatro tablas propias que falten. Devuelve los nombres de las creadas. */
+export async function migrar(prefijo = 'PHF_'): Promise<string[]> {
+  return migrarDefiniciones(DEFINICIONES, prefijo)
 }
 
 // Deteccion de ejecucion directa (vs. import desde los tests). Comparar
