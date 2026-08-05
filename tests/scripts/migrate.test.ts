@@ -54,30 +54,34 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
   const prefijosUsados: string[] = []
 
   afterAll(async () => {
-    const pool = await getPool()
-    // Los hijos (FK con ON DELETE CASCADE) tienen que caer antes que
-    // PHF_COMPROBANTE, que es la tabla referenciada.
-    const sufijosEnOrden = ['CAMPO', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ROTA']
-    for (const prefijo of prefijosUsados) {
-      for (const sufijo of sufijosEnOrden) {
-        const tabla = `${prefijo}${sufijo}`
-        await pool
-          .request()
-          .batch(`IF OBJECT_ID('dbo.${tabla}') IS NOT NULL DROP TABLE ${tabla}`)
+    try {
+      const pool = await getPool()
+      // Los hijos (FK con ON DELETE CASCADE) tienen que caer antes que
+      // PHF_COMPROBANTE, que es la tabla referenciada.
+      const sufijosEnOrden = ['CAMPO', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ROTA']
+      for (const prefijo of prefijosUsados) {
+        for (const sufijo of sufijosEnOrden) {
+          const tabla = `${prefijo}${sufijo}`
+          await pool
+            .request()
+            .batch(`IF OBJECT_ID('dbo.${tabla}') IS NOT NULL DROP TABLE ${tabla}`)
+        }
       }
-    }
 
-    // Red de seguridad: confirmar que no quedo nada huerfano con ninguno de
-    // los prefijos de prueba usados en esta corrida.
-    for (const prefijo of prefijosUsados) {
-      const r = await pool
-        .request()
-        .input('patron', `${prefijo}%`)
-        .query('SELECT COUNT(*) AS n FROM sys.tables WHERE name LIKE @patron')
-      expect(r.recordset[0].n).toBe(0)
+      // Red de seguridad: confirmar que no quedo nada huerfano con ninguno
+      // de los prefijos de prueba usados en esta corrida.
+      for (const prefijo of prefijosUsados) {
+        const r = await pool
+          .request()
+          .input('patron', `${prefijo}%`)
+          .query('SELECT COUNT(*) AS n FROM sys.tables WHERE name LIKE @patron')
+        expect(r.recordset[0].n).toBe(0)
+      }
+    } finally {
+      // Si la asercion de arriba falla, el pool tiene que cerrarse igual --
+      // si no, vitest puede colgarse en vez de reportar el fallo limpio.
+      await cerrarPool()
     }
-
-    await cerrarPool()
   })
 
   function prefijoUnico(): string {
@@ -123,14 +127,16 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
     const definicionRota = [
       {
         tabla: 'PHF_ROTA',
-        ddl: `
+        ddlTabla: `
           CREATE TABLE PHF_ROTA (
             ID INT IDENTITY(1,1) NOT NULL,
             A  INT NOT NULL,
             CONSTRAINT PK_PHF_ROTA PRIMARY KEY (ID)
           );
-          CREATE INDEX IX_PHF_ROTA_MAL ON PHF_ROTA (COLUMNA_QUE_NO_EXISTE);
         `,
+        indices: [
+          { nombre: 'IX_PHF_ROTA_MAL', ddl: 'CREATE INDEX IX_PHF_ROTA_MAL ON PHF_ROTA (COLUMNA_QUE_NO_EXISTE);' },
+        ],
       },
     ]
 
@@ -145,5 +151,40 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
       .input('t', `${prefijo}ROTA`)
       .query('SELECT COUNT(*) AS n FROM sys.tables WHERE name = @t')
     expect(r.recordset[0].n).toBe(0)
+  })
+
+  it('repara una tabla existente a la que le falta un indice, sin tocar el CREATE TABLE', async () => {
+    const prefijo = prefijoUnico()
+    await migrar(prefijo)
+
+    const pool = await getPool()
+    const tablaComp = `${prefijo}COMPROBANTE`
+    const indiceCaido = 'IX_PHF_COMP_ESTADO'.replace('PHF_', prefijo)
+
+    // Simula el escenario del bug: la tabla existe pero le falta un indice
+    // (esquema restaurado de una version vieja, o alguien dropeo el indice
+    // a mano).
+    await pool.request().batch(`DROP INDEX ${indiceCaido} ON ${tablaComp}`)
+
+    const antesDeReparar = await pool
+      .request()
+      .input('t', indiceCaido)
+      .query('SELECT COUNT(*) AS n FROM sys.indexes WHERE name = @t')
+    expect(antesDeReparar.recordset[0].n).toBe(0)
+
+    // Antes del fix, este migrar() volvia a intentar el CREATE TABLE
+    // completo contra una tabla que ya existe y fallaba duro (error 2714).
+    await expect(migrar(prefijo)).resolves.not.toThrow()
+
+    const idx = await pool
+      .request()
+      .input('t', indiceCaido)
+      .query('SELECT COUNT(*) AS n FROM sys.indexes WHERE name = @t')
+    expect(idx.recordset[0].n).toBe(1)
+
+    // Correr de nuevo no debe fallar ni volver a intentar nada: el indice
+    // ya esta reparado.
+    const segunda = await migrar(prefijo)
+    expect(segunda).toEqual([])
   })
 })

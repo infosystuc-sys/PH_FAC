@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { listarComprobantes, obtenerKpis, contarPorEstado } from '@/server/app/comprobantes'
 import type { ClaveTab } from '@/lib/estados'
 import { ORDEN_TABS } from '@/lib/estados'
@@ -39,6 +40,21 @@ export default async function BandejaPage({
   ])
 
   const totalPaginas = Math.max(1, Math.ceil(total / LIMITE_PAGINA))
+
+  // La pagina pedida puede quedar fuera de rango si el total encogio (o si
+  // vino de un bookmark/URL a mano) despues de que ya se conocia `pagina`
+  // por el searchParam. Recien aca, con `total` en mano, se puede detectar.
+  // Con total === 0 no hay ninguna pagina valida a la que mandarlo: la
+  // bandeja vacia se muestra tal cual, sin redirigir (evita un ciclo).
+  if (total > 0 && pagina > totalPaginas) {
+    const next = new URLSearchParams()
+    if (filtro !== 'todos') next.set('filtro', filtro)
+    if (query) next.set('q', query)
+    if (totalPaginas > 1) next.set('pagina', String(totalPaginas))
+    const qs = next.toString()
+    redirect(`/comprobantes${qs ? `?${qs}` : ''}`)
+  }
+
   const desde = total === 0 ? 0 : offset + 1
   const hasta = total === 0 ? 0 : Math.min(offset + filas.length, total)
 

@@ -47,6 +47,7 @@
   font-weight: 500;
   border: none;
   border-radius: 7px;
+  cursor: pointer;
 }
 
 .boton:hover {

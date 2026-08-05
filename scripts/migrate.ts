@@ -7,12 +7,18 @@ import { conTransaccion } from '../src/server/db/tx'
 
 cargarEnv({ path: '.env.local' })
 
-type Definicion = { tabla: string; ddl: string; indices?: string[] }
+type IndiceDef = { nombre: string; ddl: string }
+// `ddlTabla` es solo el CREATE TABLE (sin los indices), para que el camino
+// de reparacion -- tabla existente a la que le falta un indice -- pueda
+// emitir unicamente los CREATE INDEX que faltan sin volver a tocar la
+// tabla. `indices` trae, por indice, su nombre (para el chequeo de
+// idempotencia) y su propio DDL (para poder emitirlo suelto).
+type Definicion = { tabla: string; ddlTabla: string; indices?: IndiceDef[] }
 
 const DEFINICIONES: Definicion[] = [
   {
     tabla: 'PHF_COMPROBANTE',
-    ddl: `
+    ddlTabla: `
       CREATE TABLE PHF_COMPROBANTE (
         ID                  INT IDENTITY(1,1) NOT NULL,
         ARCHIVO_NOMBRE      NVARCHAR(260)  NOT NULL,
@@ -42,15 +48,19 @@ const DEFINICIONES: Definicion[] = [
         CONSTRAINT CK_PHF_COMP_ESTADO CHECK (ESTADO IN
           ('procesando','leido','observacion','confirmado','registrado','error'))
       );
-      CREATE INDEX IX_PHF_COMP_ESTADO ON PHF_COMPROBANTE (ESTADO);
-      CREATE INDEX IX_PHF_COMP_DUP ON PHF_COMPROBANTE (COD_PROVEE, TIPO, NUMERO);
-      CREATE INDEX IX_PHF_COMP_CUIT ON PHF_COMPROBANTE (CUIT);
     `,
-    indices: ['IX_PHF_COMP_ESTADO', 'IX_PHF_COMP_DUP', 'IX_PHF_COMP_CUIT'],
+    indices: [
+      { nombre: 'IX_PHF_COMP_ESTADO', ddl: 'CREATE INDEX IX_PHF_COMP_ESTADO ON PHF_COMPROBANTE (ESTADO);' },
+      {
+        nombre: 'IX_PHF_COMP_DUP',
+        ddl: 'CREATE INDEX IX_PHF_COMP_DUP ON PHF_COMPROBANTE (COD_PROVEE, TIPO, NUMERO);',
+      },
+      { nombre: 'IX_PHF_COMP_CUIT', ddl: 'CREATE INDEX IX_PHF_COMP_CUIT ON PHF_COMPROBANTE (CUIT);' },
+    ],
   },
   {
     tabla: 'PHF_CAMPO',
-    ddl: `
+    ddlTabla: `
       CREATE TABLE PHF_CAMPO (
         ID                     INT IDENTITY(1,1) NOT NULL,
         COMPROBANTE_ID         INT            NOT NULL,
@@ -68,7 +78,7 @@ const DEFINICIONES: Definicion[] = [
   },
   {
     tabla: 'PHF_RENGLON',
-    ddl: `
+    ddlTabla: `
       CREATE TABLE PHF_RENGLON (
         ID                  INT IDENTITY(1,1) NOT NULL,
         COMPROBANTE_ID      INT            NOT NULL,
@@ -89,7 +99,7 @@ const DEFINICIONES: Definicion[] = [
   },
   {
     tabla: 'PHF_AUDITORIA',
-    ddl: `
+    ddlTabla: `
       CREATE TABLE PHF_AUDITORIA (
         ID              INT IDENTITY(1,1) NOT NULL,
         COMPROBANTE_ID  INT            NOT NULL,
@@ -100,9 +110,8 @@ const DEFINICIONES: Definicion[] = [
         CONSTRAINT FK_PHF_AUD_COMP FOREIGN KEY (COMPROBANTE_ID)
           REFERENCES PHF_COMPROBANTE (ID) ON DELETE CASCADE
       );
-      CREATE INDEX IX_PHF_AUD_COMP ON PHF_AUDITORIA (COMPROBANTE_ID, FECHA);
     `,
-    indices: ['IX_PHF_AUD_COMP'],
+    indices: [{ nombre: 'IX_PHF_AUD_COMP', ddl: 'CREATE INDEX IX_PHF_AUD_COMP ON PHF_AUDITORIA (COMPROBANTE_ID, FECHA);' }],
   },
 ]
 
@@ -126,14 +135,13 @@ async function existeTabla(pool: sql.ConnectionPool, tabla: string): Promise<boo
   return r.recordset[0].n > 0
 }
 
-/** true si a la tabla le falta alguno de los indices esperados (o la tabla misma). */
-async function tablaIncompleta(
+/** Nombres, de entre `indicesEsperados`, que no existen todavia en `tabla`. */
+async function indicesFaltantes(
   pool: sql.ConnectionPool,
   tabla: string,
   indicesEsperados: string[],
-): Promise<boolean> {
-  if (!(await existeTabla(pool, tabla))) return true
-  if (indicesEsperados.length === 0) return false
+): Promise<string[]> {
+  if (indicesEsperados.length === 0) return []
 
   const req = pool.request().input('t', tabla)
   const placeholders = indicesEsperados.map((nombre, i) => {
@@ -141,21 +149,25 @@ async function tablaIncompleta(
     return `@i${i}`
   })
   const r = await req.query(`
-    SELECT COUNT(*) AS n
+    SELECT i.name AS nombre
     FROM sys.indexes i
     JOIN sys.tables t ON t.object_id = i.object_id
     WHERE t.name = @t AND i.name IN (${placeholders.join(', ')})
   `)
-  return Number(r.recordset[0].n) < indicesEsperados.length
+  const presentes = new Set(r.recordset.map((row: { nombre: string }) => row.nombre))
+  return indicesEsperados.filter((n) => !presentes.has(n))
 }
 
 /**
- * Crea las tablas que falten (tabla ausente o con algun indice esperado
- * faltante). Cada tabla se crea en su propia transaccion: si el CREATE
- * TABLE pasa pero un CREATE INDEX del mismo batch falla, el rollback se
- * lleva puesta tambien la tabla, para que la proxima corrida la vuelva a
- * intentar completa en lugar de saltearla para siempre por el chequeo de
- * idempotencia. Devuelve los nombres de las tablas creadas.
+ * Crea las tablas que falten y repara los indices que falten en las que ya
+ * existen. Para una tabla ausente, CREATE TABLE + todos sus CREATE INDEX
+ * corren en una sola transaccion: si el CREATE TABLE pasa pero un CREATE
+ * INDEX del mismo batch falla, el rollback se lleva puesta tambien la
+ * tabla, para que la proxima corrida la vuelva a intentar completa en vez
+ * de saltearla para siempre por el chequeo de idempotencia. Para una tabla
+ * que ya existe pero le faltan indices, se emiten *solo* los CREATE INDEX
+ * faltantes -- nunca se reintenta el CREATE TABLE contra una tabla que ya
+ * esta ahi. Devuelve los nombres de las tablas creadas (no las reparadas).
  */
 export async function migrarDefiniciones(
   definiciones: Definicion[],
@@ -164,16 +176,36 @@ export async function migrarDefiniciones(
   const pool = await getPool()
   const creadas: string[] = []
 
-  for (const { tabla: tablaBase, ddl, indices } of definiciones) {
+  for (const { tabla: tablaBase, ddlTabla, indices } of definiciones) {
     const tabla = conPrefijo(tablaBase, prefijo)
-    const indicesEsperados = (indices ?? []).map((i) => conPrefijo(i, prefijo))
+    const indicesDef = (indices ?? []).map((i) => ({
+      nombre: conPrefijo(i.nombre, prefijo),
+      ddl: conPrefijo(i.ddl, prefijo),
+    }))
 
-    if (!(await tablaIncompleta(pool, tabla, indicesEsperados))) continue
+    if (!(await existeTabla(pool, tabla))) {
+      await conTransaccion(async (tx) => {
+        const ddlCompleto = [conPrefijo(ddlTabla, prefijo), ...indicesDef.map((i) => i.ddl)].join('\n')
+        await tx.request().batch(ddlCompleto)
+      })
+      creadas.push(tabla)
+      continue
+    }
+
+    const faltantes = await indicesFaltantes(
+      pool,
+      tabla,
+      indicesDef.map((i) => i.nombre),
+    )
+    if (faltantes.length === 0) continue
 
     await conTransaccion(async (tx) => {
-      await tx.request().batch(conPrefijo(ddl, prefijo))
+      const ddlIndicesFaltantes = indicesDef
+        .filter((i) => faltantes.includes(i.nombre))
+        .map((i) => i.ddl)
+        .join('\n')
+      await tx.request().batch(ddlIndicesFaltantes)
     })
-    creadas.push(tabla)
   }
 
   return creadas
