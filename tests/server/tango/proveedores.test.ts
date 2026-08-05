@@ -55,8 +55,11 @@ describe('buscarProveedoresPorRazonSocial', () => {
   })
 
   it('respeta el limite', async () => {
-    const r = await buscarProveedoresPorRazonSocial(razonReal.slice(0, 2), 3)
-    expect(r.length).toBeLessThanOrEqual(3)
+    // 'SA' matchea mas de 100 proveedores en CPA01 (verificado contra la
+    // base). Si buscarProveedoresPorRazonSocial tuviera un bug que la hiciera
+    // devolver [], toBeLessThanOrEqual(3) pasaria igual; toBe(3) no.
+    const r = await buscarProveedoresPorRazonSocial('SA', 3)
+    expect(r.length).toBe(3)
   })
 
   it('devuelve vacio con texto de menos de dos caracteres', async () => {

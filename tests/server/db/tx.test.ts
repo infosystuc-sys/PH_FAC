@@ -17,11 +17,30 @@ describe('helpers de transaccion', () => {
   })
 
   it('conTransaccion propaga el error y hace rollback', async () => {
-    await expect(
-      conTransaccion(async () => {
-        throw new Error('boom')
-      }),
-    ).rejects.toThrow('boom')
+    // Misma tecnica que 'conRollback no deja rastro de lo escrito': un CREATE
+    // TABLE es DDL transaccional, asi que si el rollback funciono, sys.tables
+    // no deberia ver la tabla desde ninguna conexion del pool despues.
+    const tabla = `PHF_test_tx2_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+    const pool = await getPool()
+
+    try {
+      await expect(
+        conTransaccion(async (tx) => {
+          await tx.request().batch(`CREATE TABLE ${tabla} (a INT)`)
+          throw new Error('boom')
+        }),
+      ).rejects.toThrow('boom')
+
+      const despues = await pool
+        .request()
+        .input('tabla', sql.VarChar, tabla)
+        .query('SELECT COUNT(*) AS n FROM sys.tables WHERE name = @tabla')
+      expect(despues.recordset[0].n).toBe(0)
+    } finally {
+      await pool
+        .request()
+        .batch(`IF OBJECT_ID('dbo.${tabla}') IS NOT NULL DROP TABLE ${tabla}`)
+    }
   })
 
   it('conRollback no deja rastro de lo escrito', async () => {
