@@ -23,7 +23,7 @@ Todo lo de esta sección fue comprobado contra el servidor, no supuesto.
 | Ítem | Valor |
 |---|---|
 | Servidor | `INFOSYS01\AXSQLSERVER` — SQL Server 2019 Developer Edition (15.0.2000.5) |
-| Credenciales | `Axoft` / `Axoft` |
+| Credenciales | usuario `Axoft` / contraseña `<ver .env.local>` |
 | Base | `PUNTO_HOGAR_1` — 3.102 tablas (Tango Gestión) |
 | Node | 22.20.0 |
 | .NET | 9.0.305 (no se usa) |

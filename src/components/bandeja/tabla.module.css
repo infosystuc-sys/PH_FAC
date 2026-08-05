@@ -1,0 +1,95 @@
+.contenedor {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.scroll {
+  min-width: 1010px;
+}
+
+.header,
+.fila {
+  display: grid;
+  grid-template-columns: 170px 92px 148px 100px minmax(200px, 1fr) 132px 132px 96px 44px;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.header {
+  height: 38px;
+  background: var(--fondo-header-tabla);
+  border-bottom: 1px solid var(--borde);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--texto-4);
+  font-weight: 500;
+}
+
+.fila {
+  height: 50px;
+  border-bottom: 1px solid var(--borde-sutil);
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+.fila:hover {
+  background: var(--fondo-panel);
+}
+
+.tipo {
+  font-size: 13px;
+  color: #4a4e56;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--texto);
+}
+
+.monoTenue {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--texto-2);
+}
+
+.proveedor {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 14px;
+}
+
+.total {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.derecha {
+  text-align: right;
+}
+
+.centro {
+  text-align: center;
+}
+
+.chevron {
+  font-size: 15px;
+  color: #b0b4bb;
+  text-align: right;
+}
+
+.vacio {
+  padding: 52px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--texto-5);
+}

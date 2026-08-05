@@ -1,0 +1,190 @@
+import sql from 'mssql'
+import { getPool } from '../db/pool'
+import type { Estado, ClaveTab } from '@/lib/estados'
+import { usuarioActual } from '@/lib/usuario'
+
+export type FilaBandeja = {
+  id: number
+  estado: Estado
+  tipo: string | null
+  puntoVenta: string | null
+  numero: string | null
+  fechaEmision: Date | null
+  razonSocial: string | null
+  cuit: string | null
+  total: number | null
+  confianzaPromedio: number | null
+}
+
+export type Kpis = {
+  pendientes: number
+  enObservacion: number
+  registradosHoy: number
+  importePendiente: number
+}
+
+export type Conteos = Record<ClaveTab, number>
+
+export type OpcionesListado = {
+  filtro: ClaveTab
+  query: string
+  limite?: number
+  offset?: number
+}
+
+type Ejecutor = { request(): sql.Request }
+
+// Dos patrones distintos: el de texto conserva espacios y guiones para que
+// "metalurgica del" siga matcheando la razon social; el de CUIT los saca de
+// los dos lados para que "30-64872913-7" encuentre al que esta guardado sin
+// guiones, y al reves.
+const WHERE_BUSQUEDA = `
+  (@q = ''
+   OR RAZON_SOCIAL LIKE @like
+   OR NUMERO LIKE @like
+   OR REPLACE(REPLACE(REPLACE(ISNULL(CUIT,''), '-', ''), ' ', ''), '.', '') LIKE @likeCuit)
+`
+
+function pedido(e: Ejecutor, filtro: ClaveTab, query: string): sql.Request {
+  const q = query.trim()
+  return e
+    .request()
+    .input('q', sql.NVarChar(200), q)
+    .input('like', sql.NVarChar(210), `%${q}%`)
+    .input('likeCuit', sql.NVarChar(210), `%${q.replace(/[-\s.]/g, '')}%`)
+    .input('estado', sql.VarChar(20), filtro === 'todos' ? null : filtro)
+}
+
+const WHERE_ESTADO = `(@estado IS NULL OR ESTADO = @estado)`
+
+function aFila(row: Record<string, unknown>): FilaBandeja {
+  return {
+    id: Number(row.ID),
+    estado: String(row.ESTADO) as Estado,
+    tipo: row.TIPO ? String(row.TIPO) : null,
+    puntoVenta: row.PUNTO_VENTA ? String(row.PUNTO_VENTA) : null,
+    numero: row.NUMERO ? String(row.NUMERO) : null,
+    fechaEmision: row.FECHA_EMISION ? new Date(row.FECHA_EMISION as string) : null,
+    razonSocial: row.RAZON_SOCIAL ? String(row.RAZON_SOCIAL) : null,
+    cuit: row.CUIT ? String(row.CUIT) : null,
+    total: row.TOTAL === null || row.TOTAL === undefined ? null : Number(row.TOTAL),
+    confianzaPromedio:
+      row.CONFIANZA_PROMEDIO === null || row.CONFIANZA_PROMEDIO === undefined
+        ? null
+        : Number(row.CONFIANZA_PROMEDIO),
+  }
+}
+
+export async function listarComprobantesEn(
+  e: Ejecutor,
+  { filtro, query, limite = 100, offset = 0 }: OpcionesListado,
+): Promise<{ filas: FilaBandeja[]; total: number }> {
+  const r = await pedido(e, filtro, query)
+    .input('lim', sql.Int, limite)
+    .input('off', sql.Int, offset)
+    .query<Record<string, unknown>>(`
+      SELECT ID, ESTADO, TIPO, PUNTO_VENTA, NUMERO, FECHA_EMISION,
+             RAZON_SOCIAL, CUIT, TOTAL, CONFIANZA_PROMEDIO
+      FROM PHF_COMPROBANTE
+      WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA}
+      ORDER BY FECHA_ALTA DESC, ID DESC
+      OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY;
+
+      SELECT COUNT(*) AS total
+      FROM PHF_COMPROBANTE
+      WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA};
+    `)
+
+  return {
+    filas: r.recordsets[0].map(aFila),
+    total: Number((r.recordsets[1] as Record<string, unknown>[])[0].total),
+  }
+}
+
+export async function listarComprobantes(opts: OpcionesListado) {
+  return listarComprobantesEn(await getPool(), opts)
+}
+
+export async function obtenerKpisEn(e: Ejecutor): Promise<Kpis> {
+  const r = await e.request().query(`
+    SELECT
+      SUM(CASE WHEN ESTADO = 'leido' THEN 1 ELSE 0 END)       AS pendientes,
+      SUM(CASE WHEN ESTADO = 'observacion' THEN 1 ELSE 0 END) AS enObservacion,
+      SUM(CASE WHEN ESTADO = 'registrado'
+                AND CAST(FECHA_REGISTRO AS DATE) = CAST(SYSDATETIME() AS DATE)
+               THEN 1 ELSE 0 END)                             AS registradosHoy,
+      ISNULL(SUM(CASE WHEN ESTADO IN ('leido','observacion')
+                      THEN ISNULL(TOTAL, 0) ELSE 0 END), 0)   AS importePendiente
+    FROM PHF_COMPROBANTE
+  `)
+  const k = r.recordset[0]
+  return {
+    pendientes: Number(k.pendientes ?? 0),
+    enObservacion: Number(k.enObservacion ?? 0),
+    registradosHoy: Number(k.registradosHoy ?? 0),
+    importePendiente: Number(k.importePendiente ?? 0),
+  }
+}
+
+export async function obtenerKpis(): Promise<Kpis> {
+  return obtenerKpisEn(await getPool())
+}
+
+export async function contarPorEstadoEn(e: Ejecutor, query: string): Promise<Conteos> {
+  const r = await pedido(e, 'todos', query).query(`
+    SELECT ESTADO, COUNT(*) AS n
+    FROM PHF_COMPROBANTE
+    WHERE ${WHERE_BUSQUEDA}
+    GROUP BY ESTADO
+  `)
+
+  const c: Conteos = {
+    todos: 0,
+    procesando: 0,
+    leido: 0,
+    observacion: 0,
+    confirmado: 0,
+    registrado: 0,
+    error: 0,
+  }
+  for (const row of r.recordset) {
+    c[String(row.ESTADO) as Estado] = Number(row.n)
+    c.todos += Number(row.n)
+  }
+  return c
+}
+
+export async function contarPorEstado(query: string): Promise<Conteos> {
+  return contarPorEstadoEn(await getPool(), query)
+}
+
+/** Inserta un comprobante minimo. Es para los tests, no para la app. */
+export async function insertarComprobantePrueba(
+  tx: sql.Transaction,
+  datos: Partial<FilaBandeja> & { estado: Estado; fechaRegistro?: Date },
+): Promise<number> {
+  const r = await tx
+    .request()
+    .input('nombre', sql.NVarChar(260), `prueba-${Date.now()}-${Math.random()}.pdf`)
+    .input('ruta', sql.NVarChar(500), 'prueba')
+    .input('hash', sql.Char(64), '0'.repeat(64))
+    .input('estado', sql.VarChar(20), datos.estado)
+    .input('tipo', sql.VarChar(10), datos.tipo ?? null)
+    .input('pv', sql.VarChar(10), datos.puntoVenta ?? null)
+    .input('numero', sql.VarChar(20), datos.numero ?? null)
+    .input('razon', sql.NVarChar(200), datos.razonSocial ?? null)
+    .input('cuit', sql.VarChar(15), datos.cuit ?? null)
+    .input('total', sql.Decimal(19, 4), datos.total ?? null)
+    .input('fechaEmision', sql.Date, datos.fechaEmision ?? null)
+    .input('fechaRegistro', sql.DateTime2, datos.fechaRegistro ?? null)
+    .input('usuario', sql.NVarChar(60), usuarioActual())
+    .query(`
+      INSERT INTO PHF_COMPROBANTE
+        (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, TIPO, PUNTO_VENTA,
+         NUMERO, RAZON_SOCIAL, CUIT, TOTAL, FECHA_EMISION, FECHA_REGISTRO, USUARIO_ALTA)
+      OUTPUT INSERTED.ID
+      VALUES (@nombre, @ruta, @hash, @estado, @tipo, @pv,
+              @numero, @razon, @cuit, @total, @fechaEmision, @fechaRegistro, @usuario)
+    `)
+  return Number(r.recordset[0].ID)
+}

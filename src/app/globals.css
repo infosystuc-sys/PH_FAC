@@ -1,0 +1,92 @@
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
+:root {
+  --fondo-app: #f2f1ed;
+  --fondo-panel: #f7f6f3;
+  --fondo-pdf: #e6e4df;
+  --superficie: #ffffff;
+  --fondo-header-tabla: #faf9f7;
+
+  --texto: #17191d;
+  --texto-2: #5c6068;
+  --texto-3: #7b7f87;
+  --texto-4: #82868e;
+  --texto-5: #8b8f97;
+  --texto-6: #9a9ea6;
+
+  --borde: #e3e1dc;
+  --borde-input: #dcdad5;
+  --borde-sutil: #f0efec;
+  --borde-sutil-2: #f4f3f0;
+  --borde-sutil-3: #eeece8;
+  --borde-pdf: #d8d5cf;
+  --borde-dashed: #c9c6c0;
+
+  --acento: #2b4fd0;
+  --acento-hover: #1b39a3;
+  --acento-tenue: #e7eef9;
+  --acento-tenue-2: #f4f6fd;
+
+  --exito: #1c7355;
+  --exito-fondo: #e3f1ea;
+  --conexion-ok: #3ea37c;
+
+  --alerta: #8a5a00;
+  --alerta-fondo: #fbf0dc;
+  --alerta-borde: #e0cfa4;
+  --alerta-hover: #fdf6e7;
+
+  --error: #a03526;
+  --error-fondo: #fae7e3;
+  --error-borde: #e6b9b0;
+  --error-input-fondo: #fdf6f4;
+
+  --ia: #4a3fa8;
+  --ia-fondo: #eceaf6;
+
+  --oscuro: #17191d;
+  --oscuro-2: #33363d;
+  --oscuro-3: #3b3e45;
+  --oscuro-texto: #b9bcc2;
+
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--fondo-app);
+  color: var(--texto);
+  font-family: var(--sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+}

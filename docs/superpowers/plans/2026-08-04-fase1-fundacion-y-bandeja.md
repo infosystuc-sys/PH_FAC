@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Base de datos: `PUNTO_HOGAR_1` en `INFOSYS01\AXSQLSERVER`, usuario `Axoft`, contraseña `Axoft`. Instancia con nombre: requiere SQL Browser activo (UDP 1434).
+- Base de datos: `PUNTO_HOGAR_1` en `INFOSYS01\AXSQLSERVER`, usuario `Axoft`, contraseña `<ver .env.local>`. Instancia con nombre: requiere SQL Browser activo (UDP 1434).
 - Todas las tablas propias llevan prefijo `PHF_`. Ninguna otra tabla se crea en la base.
 - Ningún módulo fuera de `src/server/tango/` puede emitir SQL contra tablas `CPA*`, `CTA*`, `STA*`, `GVA*` o `SBA*`.
 - En Fase 1 **no se escribe nada** en tablas de Tango. Solo lectura.
@@ -163,7 +163,7 @@ SQLSERVER_HOST=INFOSYS01
 SQLSERVER_INSTANCE=AXSQLSERVER
 SQLSERVER_DB=PUNTO_HOGAR_1
 SQLSERVER_USER=Axoft
-SQLSERVER_PASSWORD=
+SQLSERVER_PASSWORD=<ver .env.local>
 
 # Carpeta donde se guardan los PDF importados
 PHF_STORAGE_DIR=D:\APP\PH_FAC\storage
@@ -1063,7 +1063,7 @@ Las columnas de `CPA01` verificadas contra la base: `COD_PROVEE`, `N_CUIT`, `CON
 
 Run:
 ```bash
-sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P Axoft -d PUNTO_HOGAR_1 -h -1 -W -Q "SET NOCOUNT ON; SELECT name FROM sys.columns WHERE object_id=OBJECT_ID('CPA01') ORDER BY column_id;"
+sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P "<ver .env.local>" -d PUNTO_HOGAR_1 -h -1 -W -Q "SET NOCOUNT ON; SELECT name FROM sys.columns WHERE object_id=OBJECT_ID('CPA01') ORDER BY column_id;"
 ```
 Expected: una lista de columnas. Identificar la de razón social (candidatas habituales en Tango: `NOM_PROVEE`, `RAZON_SOCI`). Usar el nombre real en los pasos siguientes; donde este plan dice `NOM_PROVEE`, reemplazar por el que devuelva esta consulta.
 
@@ -2464,7 +2464,7 @@ Expected: `Sembrados 6 comprobantes de muestra.`
 
 Para borrarlos cuando ya no hagan falta:
 ```bash
-sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P Axoft -d PUNTO_HOGAR_1 -Q "DELETE FROM PHF_COMPROBANTE WHERE USUARIO_ALTA = 'seed'"
+sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P "<ver .env.local>" -d PUNTO_HOGAR_1 -Q "DELETE FROM PHF_COMPROBANTE WHERE USUARIO_ALTA = 'seed'"
 ```
 
 - [ ] **Step 7: Verificar la bandeja en el navegador**
@@ -2472,7 +2472,7 @@ sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P Axoft -d PUNTO_HOGAR_1 -Q "DELETE 
 Run: `pnpm dev`
 
 Verificar en `http://localhost:3000/comprobantes`, con la ventana en 1280px o más:
-- Los 4 KPIs muestran 2 pendientes, 1 en observación, 1 registrado hoy, y `$ 1.863.171,25` de importe pendiente.
+- Los 4 KPIs muestran 2 pendientes, 1 en observación, 1 registrado hoy, y `$ 1.862.971,25` de importe pendiente (1.284.500,50 + 486.320,00 de los pendientes, más 92.150,75 del que está en observación).
 - Los 6 tabs muestran sus conteos, y al hacer clic la tabla filtra y la URL cambia.
 - Escribir "metalurgica" en el buscador deja una sola fila, con un cuarto de segundo de demora.
 - Escribir "30-64872913-7" también encuentra, porque la búsqueda ignora los guiones.

@@ -1,0 +1,42 @@
+.fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -4px 0 0;
+}
+
+.texto {
+  font-size: 12px;
+  color: var(--texto-5);
+}
+
+.controles {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.boton {
+  height: 31px;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  color: var(--texto-2);
+  font-size: 12.5px;
+}
+
+.boton:hover:not(:disabled) {
+  background: var(--fondo-panel);
+}
+
+.boton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.indicador {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--texto-6);
+}
