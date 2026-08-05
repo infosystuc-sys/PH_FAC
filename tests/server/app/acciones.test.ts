@@ -2,8 +2,8 @@ import { describe, it, expect, afterAll } from 'vitest'
 import sql from 'mssql'
 import { rm } from 'node:fs/promises'
 import { conRollback } from '@/server/db/tx'
-import { cerrarPool } from '@/server/db/pool'
-import { importarComprobanteEn } from '@/server/app/acciones'
+import { cerrarPool, getPool } from '@/server/db/pool'
+import { importarComprobanteEn, importarComprobantes } from '@/server/app/acciones'
 import { obtenerDetalleEn } from '@/server/app/detalle'
 
 const creados: string[] = []
@@ -57,5 +57,41 @@ describe('importarComprobanteEn', () => {
         creados.push(String(r.recordset[0].ARCHIVO_RUTA))
       }
     })
+  })
+})
+
+describe('importarComprobantes', () => {
+  it('no deja ningun comprobante importado si un archivo del lote supera el limite de tamano', async () => {
+    const pool = await getPool()
+    const antes = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
+
+    const fd = new FormData()
+    fd.append('archivos', new File([PDF], 'chico.pdf', { type: 'application/pdf' }))
+    fd.append(
+      'archivos',
+      new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'grande.pdf', { type: 'application/pdf' }),
+    )
+
+    // El archivo grande es el segundo del lote: si la validacion no fuera
+    // previa a la importacion, "chico.pdf" ya habria quedado commiteado en
+    // 'procesando' antes de que el loop llegara a rechazar "grande.pdf".
+    await expect(importarComprobantes(fd)).rejects.toThrow('grande.pdf supera los 10 MB.')
+
+    const despues = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
+    expect(despues.recordset[0].n).toBe(antes.recordset[0].n)
+  })
+
+  it('rechaza un lote con un archivo que no es PDF, sin importar nada', async () => {
+    const pool = await getPool()
+    const antes = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
+
+    const fd = new FormData()
+    fd.append('archivos', new File([PDF], 'chico.pdf', { type: 'application/pdf' }))
+    fd.append('archivos', new File([Buffer.from('no es un pdf')], 'no-es-pdf.txt', { type: 'text/plain' }))
+
+    await expect(importarComprobantes(fd)).rejects.toThrow('no-es-pdf.txt no es un PDF.')
+
+    const despues = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
+    expect(despues.recordset[0].n).toBe(antes.recordset[0].n)
   })
 })

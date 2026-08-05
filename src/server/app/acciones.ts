@@ -46,11 +46,23 @@ export async function importarComprobantes(fd: FormData): Promise<{ importados: 
     throw new Error(`No se pueden importar más de ${MAX_ARCHIVOS} archivos por vez.`)
   }
 
-  let importados = 0
+  // Se valida todo el lote antes de tocar disco o base. Si se validara
+  // adentro del loop de importación, un archivo invalido a mitad de lote
+  // dejaria a los anteriores ya commiteados en 'procesando' sin que el
+  // operador se entere: el mensaje de error no dice nada de ellos, la
+  // bandeja no se refresca porque revalidatePath no llega a correr, y si
+  // el operador reintenta todo el lote esos ya importados se duplican.
   for (const archivo of archivos) {
+    if (archivo.type !== 'application/pdf') {
+      throw new Error(`${archivo.name} no es un PDF.`)
+    }
     if (archivo.size > MAX_BYTES) {
       throw new Error(`${archivo.name} supera los 10 MB.`)
     }
+  }
+
+  let importados = 0
+  for (const archivo of archivos) {
     const datos = Buffer.from(await archivo.arrayBuffer())
     await conTransaccion((tx) => importarComprobanteEn(tx, archivo.name, datos))
     importados += 1
