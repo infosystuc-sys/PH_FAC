@@ -1,8 +1,28 @@
 import { describe, it, expect, afterAll } from 'vitest'
+import sql from 'mssql'
 import { migrar, migrarDefiniciones } from '../../scripts/migrate'
 import { getPool, cerrarPool } from '@/server/db/pool'
 
 const TABLAS = ['PHF_COMPROBANTE', 'PHF_CAMPO', 'PHF_RENGLON', 'PHF_AUDITORIA']
+
+async function columnas(pool: sql.ConnectionPool, tabla: string): Promise<string[]> {
+  const r = await pool
+    .request()
+    .input('t', tabla)
+    .query(`
+      SELECT c.name AS nombre
+      FROM sys.columns c JOIN sys.tables t ON t.object_id = c.object_id
+      WHERE t.name = @t ORDER BY c.name
+    `)
+  return r.recordset.map((x: { nombre: string }) => x.nombre)
+}
+
+async function limpiarPrefijo(pool: sql.ConnectionPool, prefijo: string): Promise<void> {
+  // Orden inverso al de creacion por las FK.
+  for (const t of ['AUDITORIA', 'RENGLON', 'CAMPO', 'COMPROBANTE']) {
+    await pool.request().batch(`DROP TABLE IF EXISTS ${prefijo}${t}`)
+  }
+}
 
 describe('migracion del esquema propio', () => {
   afterAll(async () => {
@@ -186,5 +206,65 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
     // ya esta reparado.
     const segunda = await migrar(prefijo)
     expect(segunda).toEqual([])
+  })
+
+  it('agrega una columna que falta sin tocar el resto de la tabla', async () => {
+    const prefijo = `TMPCOL${Date.now()}_`
+    const pool = await getPool()
+    const tabla = `${prefijo}COMPROBANTE`
+
+    try {
+      // Se crea la tabla completa y despues se le saca una columna, para
+      // simular una base que quedo en la version anterior del esquema.
+      await migrar(prefijo)
+      await pool.request().batch(`ALTER TABLE ${tabla} DROP COLUMN EXTRACCION_MS`)
+
+      const antes = await columnas(pool, tabla)
+      expect(antes).not.toContain('EXTRACCION_MS')
+
+      await migrar(prefijo)
+
+      const despues = await columnas(pool, tabla)
+      expect(despues).toContain('EXTRACCION_MS')
+      // No se perdio nada mas en el camino.
+      expect(despues.length).toBe(antes.length + 1)
+    } finally {
+      await limpiarPrefijo(pool, prefijo)
+    }
+  })
+
+  it('la tabla creada de cero y la reparada tienen las mismas columnas', async () => {
+    // Las columnas nuevas estan declaradas dos veces -- en el CREATE TABLE y
+    // en `columnas`, para el camino de reparacion. Este test es lo que evita
+    // que esas dos declaraciones se separen.
+    const pool = await getPool()
+    const pA = `TMPNEW${Date.now()}_`
+    const pB = `TMPREP${Date.now()}_`
+
+    try {
+      await migrar(pA)
+      await migrar(pB)
+      // INTENTOS tiene un DEFAULT con nombre propio: SQL Server no deja
+      // sacar la columna sin sacar antes la constraint. Se busca el nombre
+      // en vez de asumirlo, porque `conPrefijo` lo reescribe con el
+      // prefijo de prueba (DF_PHF_COMP_INTENTOS -> DF_${pB}COMP_INTENTOS).
+      await pool.request().batch(`
+        DECLARE @constraint sysname
+        SELECT @constraint = dc.name
+        FROM sys.default_constraints dc
+        JOIN sys.columns c ON c.default_object_id = dc.object_id
+        WHERE dc.parent_object_id = OBJECT_ID('${pB}COMPROBANTE') AND c.name = 'INTENTOS'
+        EXEC('ALTER TABLE ${pB}COMPROBANTE DROP CONSTRAINT ' + @constraint)
+        ALTER TABLE ${pB}COMPROBANTE DROP COLUMN INTENTOS
+      `)
+      await migrar(pB)
+
+      expect(await columnas(pool, `${pB}COMPROBANTE`)).toEqual(
+        await columnas(pool, `${pA}COMPROBANTE`),
+      )
+    } finally {
+      await limpiarPrefijo(pool, pA)
+      await limpiarPrefijo(pool, pB)
+    }
   })
 })

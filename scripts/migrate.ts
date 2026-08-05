@@ -8,12 +8,25 @@ import { conTransaccion } from '../src/server/db/tx'
 cargarEnv({ path: '.env.local' })
 
 type IndiceDef = { nombre: string; ddl: string }
+type ColumnaDef = { nombre: string; ddl: string }
 // `ddlTabla` es solo el CREATE TABLE (sin los indices), para que el camino
 // de reparacion -- tabla existente a la que le falta un indice -- pueda
 // emitir unicamente los CREATE INDEX que faltan sin volver a tocar la
 // tabla. `indices` trae, por indice, su nombre (para el chequeo de
 // idempotencia) y su propio DDL (para poder emitirlo suelto).
-type Definicion = { tabla: string; ddlTabla: string; indices?: IndiceDef[] }
+type Definicion = {
+  tabla: string
+  ddlTabla: string
+  indices?: IndiceDef[]
+  /**
+   * Las columnas agregadas despues de la version inicial del esquema.
+   * Estan tambien en `ddlTabla`, para que una base nueva se cree completa
+   * de una; esta lista es solo el camino de reparacion de una base que
+   * quedo en la version anterior. Hay un test que verifica que las dos
+   * declaraciones no se separen.
+   */
+  columnas?: ColumnaDef[]
+}
 
 const DEFINICIONES: Definicion[] = [
   {
@@ -40,6 +53,10 @@ const DEFINICIONES: Definicion[] = [
         TANGO_T_COMP        VARCHAR(10)    NULL,
         TANGO_N_COMP        VARCHAR(20)    NULL,
         FECHA_REGISTRO      DATETIME2      NULL,
+        INTENTOS            INT            NOT NULL CONSTRAINT DF_PHF_COMP_INTENTOS DEFAULT 0,
+        ERROR_MENSAJE       NVARCHAR(1000) NULL,
+        EXTRACCION_MS       INT            NULL,
+        EXTRACCION_MODELO   VARCHAR(40)    NULL,
         FECHA_ALTA          DATETIME2      NOT NULL CONSTRAINT DF_PHF_COMP_ALTA DEFAULT SYSDATETIME(),
         USUARIO_ALTA        NVARCHAR(60)   NOT NULL,
         FECHA_MODIF         DATETIME2      NULL,
@@ -56,6 +73,12 @@ const DEFINICIONES: Definicion[] = [
         ddl: 'CREATE INDEX IX_PHF_COMP_DUP ON PHF_COMPROBANTE (COD_PROVEE, TIPO, NUMERO);',
       },
       { nombre: 'IX_PHF_COMP_CUIT', ddl: 'CREATE INDEX IX_PHF_COMP_CUIT ON PHF_COMPROBANTE (CUIT);' },
+    ],
+    columnas: [
+      { nombre: 'INTENTOS', ddl: 'INTENTOS INT NOT NULL CONSTRAINT DF_PHF_COMP_INTENTOS DEFAULT 0' },
+      { nombre: 'ERROR_MENSAJE', ddl: 'ERROR_MENSAJE NVARCHAR(1000) NULL' },
+      { nombre: 'EXTRACCION_MS', ddl: 'EXTRACCION_MS INT NULL' },
+      { nombre: 'EXTRACCION_MODELO', ddl: 'EXTRACCION_MODELO VARCHAR(40) NULL' },
     ],
   },
   {
@@ -158,6 +181,29 @@ async function indicesFaltantes(
   return indicesEsperados.filter((n) => !presentes.has(n))
 }
 
+/** Nombres, de entre `columnasEsperadas`, que no existen todavia en `tabla`. */
+async function columnasFaltantes(
+  pool: sql.ConnectionPool,
+  tabla: string,
+  columnasEsperadas: string[],
+): Promise<string[]> {
+  if (columnasEsperadas.length === 0) return []
+
+  const req = pool.request().input('t', tabla)
+  const placeholders = columnasEsperadas.map((nombre, i) => {
+    req.input(`c${i}`, nombre)
+    return `@c${i}`
+  })
+  const r = await req.query(`
+    SELECT c.name AS nombre
+    FROM sys.columns c
+    JOIN sys.tables t ON t.object_id = c.object_id
+    WHERE t.name = @t AND c.name IN (${placeholders.join(', ')})
+  `)
+  const presentes = new Set(r.recordset.map((row: { nombre: string }) => row.nombre))
+  return columnasEsperadas.filter((n) => !presentes.has(n))
+}
+
 /**
  * Crea las tablas que falten y repara los indices que falten en las que ya
  * existen. Para una tabla ausente, CREATE TABLE + todos sus CREATE INDEX
@@ -176,7 +222,7 @@ export async function migrarDefiniciones(
   const pool = await getPool()
   const creadas: string[] = []
 
-  for (const { tabla: tablaBase, ddlTabla, indices } of definiciones) {
+  for (const { tabla: tablaBase, ddlTabla, indices, columnas } of definiciones) {
     const tabla = conPrefijo(tablaBase, prefijo)
     const indicesDef = (indices ?? []).map((i) => ({
       nombre: conPrefijo(i.nombre, prefijo),
@@ -190,6 +236,30 @@ export async function migrarDefiniciones(
       })
       creadas.push(tabla)
       continue
+    }
+
+    const columnasDef = (columnas ?? []).map((x) => ({
+      nombre: conPrefijo(x.nombre, prefijo),
+      ddl: conPrefijo(x.ddl, prefijo),
+    }))
+
+    // Las columnas van antes que los indices: un indice futuro podria
+    // apoyarse en una columna nueva.
+    const colFaltantes = await columnasFaltantes(
+      pool,
+      tabla,
+      columnasDef.map((x) => x.nombre),
+    )
+    if (colFaltantes.length > 0) {
+      await conTransaccion(async (tx) => {
+        // Un solo ADD con todas: SQL Server lo resuelve en una pasada, y
+        // asi no queda una tabla a medio migrar si falla la tercera.
+        const lista = columnasDef
+          .filter((x) => colFaltantes.includes(x.nombre))
+          .map((x) => x.ddl)
+          .join(', ')
+        await tx.request().batch(`ALTER TABLE ${tabla} ADD ${lista}`)
+      })
     }
 
     const faltantes = await indicesFaltantes(
