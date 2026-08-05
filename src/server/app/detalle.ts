@@ -155,7 +155,7 @@ export async function guardarCampoEn(
     .input('clave', sql.VarChar(40), clave)
     .input('valor', sql.NVarChar(500), valor)
     .query(`
-      MERGE PHF_CAMPO AS destino
+      MERGE PHF_CAMPO WITH (HOLDLOCK) AS destino
       USING (SELECT @id AS COMPROBANTE_ID, @clave AS CLAVE) AS origen
         ON destino.COMPROBANTE_ID = origen.COMPROBANTE_ID AND destino.CLAVE = origen.CLAVE
       WHEN MATCHED THEN
