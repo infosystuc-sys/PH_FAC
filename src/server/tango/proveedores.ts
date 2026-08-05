@@ -38,12 +38,17 @@ export async function buscarProveedorPorCuit(cuit: string): Promise<Proveedor | 
   if (!norm) return null
 
   const pool = await getPool()
+  // Hay CUIT duplicados en CPA01 (verificado: 7 casos, uno con 4 filas). El
+  // ORDER BY solo garantiza que la eleccion sea determinística entre
+  // corridas, no que sea la correcta -- eso requiere ofrecerle las
+  // coincidencias al operador para que elija, que es trabajo de Fase 3.
   const r = await pool
     .request()
     .input('cuit', sql.VarChar(11), norm)
     .query(`
       ${SELECT}
       WHERE REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '') = @cuit
+      ORDER BY COD_PROVEE
     `)
 
   return r.recordset.length ? aProveedor(r.recordset[0]) : null
