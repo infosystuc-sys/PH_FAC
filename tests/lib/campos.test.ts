@@ -1,0 +1,80 @@
+import { describe, it, expect } from 'vitest'
+import {
+  CAMPOS,
+  CAMPOS_IA,
+  esClaveValida,
+  campoPorClave,
+  schemaExtraccion,
+} from '@/lib/campos'
+
+describe('catalogo de campos', () => {
+  it('no repite claves', () => {
+    const claves = CAMPOS.map((c) => c.clave)
+    expect(new Set(claves).size).toBe(claves.length)
+  })
+
+  it('ninguna clave supera los 40 caracteres de PHF_CAMPO.CLAVE', () => {
+    for (const c of CAMPOS) expect(c.clave.length).toBeLessThanOrEqual(40)
+  })
+
+  it('cada grupo suma un multiplo de 6, el ancho de la grilla', () => {
+    const porGrupo = new Map<string, number>()
+    for (const c of CAMPOS) porGrupo.set(c.grupo, (porGrupo.get(c.grupo) ?? 0) + c.span)
+    for (const [grupo, ancho] of porGrupo) {
+      expect(ancho % 6, `el grupo ${grupo} suma ${ancho}`).toBe(0)
+    }
+  })
+
+  it('la IA extrae 21 campos', () => {
+    expect(CAMPOS_IA.length).toBe(21)
+  })
+
+  it('los campos calculados y de imputacion no los extrae la IA', () => {
+    for (const clave of ['imputado', 'codprovee', 'condcompra']) {
+      expect(campoPorClave(clave)!.extraePorIA).toBe(false)
+    }
+  })
+
+  it('reconoce una clave del catalogo y rechaza una inventada', () => {
+    expect(esClaveValida('cuit')).toBe(true)
+    expect(esClaveValida('no_existe')).toBe(false)
+  })
+})
+
+describe('schemaExtraccion', () => {
+  it('pide exactamente los campos que extrae la IA', () => {
+    const s = schemaExtraccion() as any
+    const props = Object.keys(s.properties.campos.properties)
+    expect(props.sort()).toEqual(CAMPOS_IA.map((c) => c.clave).sort())
+    expect(s.properties.campos.required.sort()).toEqual(props.sort())
+  })
+
+  it('cierra todos los objetos con additionalProperties false', () => {
+    // Structured outputs lo exige en cada objeto del schema.
+    const objetos: any[] = []
+    const recorrer = (n: any) => {
+      if (n === null || typeof n !== 'object') return
+      if (n.type === 'object') objetos.push(n)
+      for (const v of Object.values(n)) recorrer(v)
+    }
+    recorrer(schemaExtraccion())
+    expect(objetos.length).toBeGreaterThan(0)
+    for (const o of objetos) expect(o.additionalProperties).toBe(false)
+  })
+
+  it('modela el valor ausente con anyOf string|null, no con type array', () => {
+    // La lista de features soportadas incluye anyOf pero no uniones por
+    // array de tipos: `{"type": ["string","null"]}` no esta garantizado.
+    const s = schemaExtraccion() as any
+    const cuit = s.properties.campos.properties.cuit
+    expect(cuit.properties.valor.anyOf).toEqual([{ type: 'string' }, { type: 'null' }])
+    expect(cuit.properties.confianza.type).toBe('number')
+  })
+
+  it('pide los cinco datos de cada renglon', () => {
+    const s = schemaExtraccion() as any
+    expect(s.properties.renglones.items.required.sort()).toEqual(
+      ['cantidad', 'codigo', 'descripcion', 'importe', 'precioUnitario'].sort(),
+    )
+  })
+})
