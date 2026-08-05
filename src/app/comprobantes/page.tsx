@@ -4,29 +4,43 @@ import { ORDEN_TABS } from '@/lib/estados'
 import { FilaKpis } from '@/components/bandeja/kpis'
 import { Filtros } from '@/components/bandeja/filtros'
 import { Tabla } from '@/components/bandeja/tabla'
+import { Paginacion } from '@/components/bandeja/paginacion'
 import styles from './bandeja.module.css'
 
 export const dynamic = 'force-dynamic'
+
+const LIMITE_PAGINA = 100
 
 function leerFiltro(v: string | undefined): ClaveTab {
   const valido = ORDEN_TABS.some((t) => t.clave === v)
   return valido ? (v as ClaveTab) : 'todos'
 }
 
+function leerPagina(v: string | undefined): number {
+  const n = Number(v)
+  return Number.isInteger(n) && n > 0 ? n : 1
+}
+
 export default async function BandejaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filtro?: string; q?: string }>
+  searchParams: Promise<{ filtro?: string; q?: string; pagina?: string }>
 }) {
   const sp = await searchParams
   const filtro = leerFiltro(sp.filtro)
   const query = sp.q ?? ''
+  const pagina = leerPagina(sp.pagina)
+  const offset = (pagina - 1) * LIMITE_PAGINA
 
   const [{ filas, total }, kpis, conteos] = await Promise.all([
-    listarComprobantes({ filtro, query }),
+    listarComprobantes({ filtro, query, limite: LIMITE_PAGINA, offset }),
     obtenerKpis(),
     contarPorEstado(query),
   ])
+
+  const totalPaginas = Math.max(1, Math.ceil(total / LIMITE_PAGINA))
+  const desde = total === 0 ? 0 : offset + 1
+  const hasta = total === 0 ? 0 : Math.min(offset + filas.length, total)
 
   return (
     <main className={styles.main}>
@@ -47,7 +61,7 @@ export default async function BandejaPage({
         <Filtros filtro={filtro} query={query} conteos={conteos} />
         <Tabla filas={filas} />
 
-        <p className={styles.pie}>{total} comprobantes</p>
+        <Paginacion pagina={pagina} totalPaginas={totalPaginas} desde={desde} hasta={hasta} total={total} />
       </div>
     </main>
   )

@@ -34,6 +34,9 @@ export function Filtros({ filtro, query, conteos }: {
       const next = new URLSearchParams(paramsRef.current.toString())
       if (texto) next.set('q', texto)
       else next.delete('q')
+      // Nueva busqueda: el resultado cambia, asi que la pagina donde estaba
+      // parado el operador puede dejar de existir. Volver a la primera.
+      next.delete('pagina')
       navegar(next)
     }, 250)
     return () => clearTimeout(t)
@@ -43,6 +46,9 @@ export function Filtros({ filtro, query, conteos }: {
     const next = new URLSearchParams(params.toString())
     if (clave === 'todos') next.delete('filtro')
     else next.set('filtro', clave)
+    // Mismo motivo que en la busqueda: otro filtro es otro resultado, y la
+    // pagina actual puede no existir mas en el.
+    next.delete('pagina')
     navegar(next)
   }
 
