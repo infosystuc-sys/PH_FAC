@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Base de datos: `PUNTO_HOGAR_1` en `INFOSYS01\AXSQLSERVER`, usuario `Axoft`, contraseña `Axoft`. Instancia con nombre: requiere SQL Browser activo (UDP 1434).
+- Base de datos: `PUNTO_HOGAR_1` en `INFOSYS01\AXSQLSERVER`, usuario `Axoft`, contraseña `<ver .env.local>`. Instancia con nombre: requiere SQL Browser activo (UDP 1434).
 - Todas las tablas propias llevan prefijo `PHF_`. Ninguna otra tabla se crea en la base.
 - Ningún módulo fuera de `src/server/tango/` puede emitir SQL contra tablas `CPA*`, `CTA*`, `STA*`, `GVA*` o `SBA*`.
 - En Fase 1 **no se escribe nada** en tablas de Tango. Solo lectura.
@@ -163,7 +163,7 @@ SQLSERVER_HOST=INFOSYS01
 SQLSERVER_INSTANCE=AXSQLSERVER
 SQLSERVER_DB=PUNTO_HOGAR_1
 SQLSERVER_USER=Axoft
-SQLSERVER_PASSWORD=
+SQLSERVER_PASSWORD=<ver .env.local>
 
 # Carpeta donde se guardan los PDF importados
 PHF_STORAGE_DIR=D:\APP\PH_FAC\storage
@@ -1063,7 +1063,7 @@ Las columnas de `CPA01` verificadas contra la base: `COD_PROVEE`, `N_CUIT`, `CON
 
 Run:
 ```bash
-sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P Axoft -d PUNTO_HOGAR_1 -h -1 -W -Q "SET NOCOUNT ON; SELECT name FROM sys.columns WHERE object_id=OBJECT_ID('CPA01') ORDER BY column_id;"
+sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P "<ver .env.local>" -d PUNTO_HOGAR_1 -h -1 -W -Q "SET NOCOUNT ON; SELECT name FROM sys.columns WHERE object_id=OBJECT_ID('CPA01') ORDER BY column_id;"
 ```
 Expected: una lista de columnas. Identificar la de razón social (candidatas habituales en Tango: `NOM_PROVEE`, `RAZON_SOCI`). Usar el nombre real en los pasos siguientes; donde este plan dice `NOM_PROVEE`, reemplazar por el que devuelva esta consulta.
 
@@ -2464,7 +2464,7 @@ Expected: `Sembrados 6 comprobantes de muestra.`
 
 Para borrarlos cuando ya no hagan falta:
 ```bash
-sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P Axoft -d PUNTO_HOGAR_1 -Q "DELETE FROM PHF_COMPROBANTE WHERE USUARIO_ALTA = 'seed'"
+sqlcmd -S "INFOSYS01\AXSQLSERVER" -U Axoft -P "<ver .env.local>" -d PUNTO_HOGAR_1 -Q "DELETE FROM PHF_COMPROBANTE WHERE USUARIO_ALTA = 'seed'"
 ```
 
 - [ ] **Step 7: Verificar la bandeja en el navegador**
