@@ -16,8 +16,13 @@ function leerConfig(): sql.config {
       instanceName: process.env.SQLSERVER_INSTANCE || undefined,
       encrypt: false,
       trustServerCertificate: true,
-      // Tango guarda importes en tipos DECIMAL_TG. Sin esto, mssql
-      // devuelve strings para decimales de alta precision.
+      // Con el default (true), mssql interpreta las columnas DATE/DATETIME
+      // como UTC: un DATE guardado como 2026-05-18 vuelve como
+      // 2026-05-18T00:00:00Z, y formatFecha usa getDate()/getMonth() en
+      // hora local, asi que en Argentina (UTC-3) se mostraria 17/05/2026.
+      // false le dice a mssql que interprete esas columnas en hora local,
+      // que es como Tango las guarda. No tiene relacion con precision
+      // decimal: eso lo maneja el tipo de columna, no esta opcion.
       useUTC: false,
     },
     pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
@@ -57,6 +62,8 @@ export async function probarConexion(): Promise<ResultadoConexion> {
     const r = await pool.request().query('SELECT @@VERSION AS v')
     return { ok: true, version: String(r.recordset[0].v) }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    const mensaje = err instanceof Error ? err.message : String(err)
+    console.error('probarConexion: fallo la conexion a SQL Server:', mensaje)
+    return { ok: false, error: mensaje }
   }
 }

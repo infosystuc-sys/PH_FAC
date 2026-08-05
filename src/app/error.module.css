@@ -1,0 +1,54 @@
+.main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tarjeta {
+  max-width: 420px;
+  padding: 28px 30px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 9px;
+  text-align: center;
+}
+
+.punto {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--error);
+  margin-bottom: 14px;
+}
+
+.titulo {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--texto);
+}
+
+.texto {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--texto-2);
+}
+
+.boton {
+  height: 34px;
+  padding: 0 17px;
+  background: var(--oscuro);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  border-radius: 7px;
+}
+
+.boton:hover {
+  background: var(--acento);
+}
