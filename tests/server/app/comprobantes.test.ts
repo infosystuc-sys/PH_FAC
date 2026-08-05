@@ -3,6 +3,7 @@ import sql from 'mssql'
 import { randomUUID } from 'node:crypto'
 import { conRollback } from '@/server/db/tx'
 import { cerrarPool } from '@/server/db/pool'
+import { formatFecha } from '@/lib/formato'
 import {
   listarComprobantesEn,
   obtenerKpisEn,
@@ -250,6 +251,30 @@ describe('listarComprobantes', () => {
       const r = await listarComprobantesEn(tx, { filtro: 'todos', query: marca, limite: 2, offset: 0 })
       expect(r.filas).toHaveLength(2)
       expect(r.total).toBe(3)
+    })
+  })
+
+  it('ida y vuelta de FECHA_EMISION conserva el dia en hora local', async () => {
+    // Guarda contra useUTC:true en la config del pool (ver src/server/db/pool.ts):
+    // con useUTC:true, una columna DATE guardada como 2026-05-18 volveria como
+    // 2026-05-18T00:00:00Z, y formatFecha (que usa getDate()/getMonth() locales)
+    // mostraria 17/05/2026 en Argentina (UTC-3). Este test lee una fecha
+    // conocida de ida y vuelta por la base real y verifica que el dia no se mueve.
+    await conRollback(async (tx) => {
+      const marca = marcaUnica()
+      const fechaEmision = new Date(2026, 4, 18) // 18/05/2026, medianoche local
+      await insertarComprobantePrueba(tx, {
+        estado: 'leido',
+        razonSocial: `${marca} FECHA CONOCIDA SA`,
+        cuit: cuitUnico(),
+        tipo: 'FAC A',
+        numero: `0009-${marca}`,
+        total: 1000,
+        fechaEmision,
+      })
+      const r = await listarComprobantesEn(tx, { filtro: 'todos', query: marca })
+      expect(r.total).toBe(1)
+      expect(formatFecha(r.filas[0].fechaEmision)).toBe('18/05/2026')
     })
   })
 

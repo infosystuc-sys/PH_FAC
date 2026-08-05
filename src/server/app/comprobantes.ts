@@ -175,15 +175,16 @@ export async function insertarComprobantePrueba(
     .input('razon', sql.NVarChar(200), datos.razonSocial ?? null)
     .input('cuit', sql.VarChar(15), datos.cuit ?? null)
     .input('total', sql.Decimal(19, 4), datos.total ?? null)
+    .input('fechaEmision', sql.Date, datos.fechaEmision ?? null)
     .input('fechaRegistro', sql.DateTime2, datos.fechaRegistro ?? null)
     .input('usuario', sql.NVarChar(60), usuarioActual())
     .query(`
       INSERT INTO PHF_COMPROBANTE
         (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, TIPO, PUNTO_VENTA,
-         NUMERO, RAZON_SOCIAL, CUIT, TOTAL, FECHA_REGISTRO, USUARIO_ALTA)
+         NUMERO, RAZON_SOCIAL, CUIT, TOTAL, FECHA_EMISION, FECHA_REGISTRO, USUARIO_ALTA)
       OUTPUT INSERTED.ID
       VALUES (@nombre, @ruta, @hash, @estado, @tipo, @pv,
-              @numero, @razon, @cuit, @total, @fechaRegistro, @usuario)
+              @numero, @razon, @cuit, @total, @fechaEmision, @fechaRegistro, @usuario)
     `)
   return Number(r.recordset[0].ID)
 }
