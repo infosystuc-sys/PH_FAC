@@ -1,0 +1,183 @@
+import sql from 'mssql'
+import { getPool } from '../db/pool'
+import { esClaveValida } from '@/lib/campos'
+import { usuarioActual } from '@/lib/usuario'
+import type { Extraccion } from '../ia/extraccion'
+import type { RenglonExtraido } from '@/lib/renglones'
+
+export type CampoGuardado = {
+  clave: string
+  valorIA: string | null
+  confianza: number | null
+  valorFinal: string | null
+  corregido: boolean
+}
+
+export type RenglonGuardado = RenglonExtraido & { orden: number }
+
+export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
+
+export type Detalle = {
+  campos: CampoGuardado[]
+  renglones: RenglonGuardado[]
+  auditoria: EntradaAuditoria[]
+}
+
+type Ejecutor = { request(): sql.Request }
+
+/**
+ * Reemplaza los campos y renglones del comprobante por los de `e` y
+ * devuelve la confianza promedio de los campos que vinieron con valor.
+ *
+ * Borra antes de insertar: PHF_CAMPO tiene UNIQUE (COMPROBANTE_ID, CLAVE),
+ * asi que reprocesar sin borrar violaria la constraint. Es tambien lo que
+ * hace que reprocesar descarte las correcciones manuales, que es el
+ * comportamiento que la UI advierte.
+ */
+export async function guardarExtraccionEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  extraccion: Extraccion,
+): Promise<number> {
+  await e.request().input('id', sql.Int, comprobanteId)
+    .query('DELETE FROM PHF_CAMPO WHERE COMPROBANTE_ID = @id')
+  await e.request().input('id', sql.Int, comprobanteId)
+    .query('DELETE FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id')
+
+  const conValor: number[] = []
+
+  for (const [clave, campo] of Object.entries(extraccion.campos)) {
+    if (!esClaveValida(clave)) continue
+    if (campo.valor !== null) conValor.push(campo.confianza)
+
+    await e
+      .request()
+      .input('id', sql.Int, comprobanteId)
+      .input('clave', sql.VarChar(40), clave)
+      .input('valor', sql.NVarChar(500), campo.valor)
+      .input('conf', sql.Decimal(5, 4), campo.valor === null ? null : campo.confianza)
+      .query(`
+        INSERT INTO PHF_CAMPO (COMPROBANTE_ID, CLAVE, VALOR_IA, CONFIANZA, VALOR_FINAL)
+        VALUES (@id, @clave, @valor, @conf, @valor)
+      `)
+  }
+
+  let orden = 0
+  for (const r of extraccion.renglones) {
+    orden += 1
+    await e
+      .request()
+      .input('id', sql.Int, comprobanteId)
+      .input('orden', sql.Int, orden)
+      .input('codigo', sql.NVarChar(60), r.codigo)
+      .input('desc', sql.NVarChar(500), r.descripcion)
+      .input('cant', sql.NVarChar(50), r.cantidad)
+      .input('pu', sql.NVarChar(50), r.precioUnitario)
+      .input('imp', sql.NVarChar(50), r.importe)
+      .query(`
+        INSERT INTO PHF_RENGLON
+          (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
+           CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA)
+        VALUES (@id, @orden, @codigo, @desc,
+                TRY_CONVERT(DECIMAL(19,4), REPLACE(REPLACE(@cant, '.', ''), ',', '.')),
+                TRY_CONVERT(DECIMAL(19,4), REPLACE(REPLACE(@pu, '.', ''), ',', '.')),
+                TRY_CONVERT(DECIMAL(19,4), REPLACE(REPLACE(@imp, '.', ''), ',', '.')))
+      `)
+  }
+
+  if (conValor.length === 0) return 0
+  return conValor.reduce((a, b) => a + b, 0) / conValor.length
+}
+
+export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Promise<Detalle> {
+  const r = await e
+    .request()
+    .input('id', sql.Int, comprobanteId)
+    .query<Record<string, unknown>>(`
+      SELECT CLAVE, VALOR_IA, CONFIANZA, VALOR_FINAL, CORREGIDO_POR_USUARIO
+      FROM PHF_CAMPO WHERE COMPROBANTE_ID = @id ORDER BY CLAVE;
+
+      SELECT ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
+             PRECIO_UNITARIO_IA, IMPORTE_IA
+      FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
+
+      SELECT FECHA, TEXTO, USUARIO
+      FROM PHF_AUDITORIA WHERE COMPROBANTE_ID = @id ORDER BY FECHA, ID;
+    `)
+
+  const [c, g, a] = r.recordsets as unknown as Record<string, unknown>[][]
+
+  return {
+    campos: c.map((x) => ({
+      clave: String(x.CLAVE),
+      valorIA: x.VALOR_IA === null ? null : String(x.VALOR_IA),
+      confianza: x.CONFIANZA === null ? null : Number(x.CONFIANZA),
+      valorFinal: x.VALOR_FINAL === null ? null : String(x.VALOR_FINAL),
+      corregido: Boolean(x.CORREGIDO_POR_USUARIO),
+    })),
+    renglones: g.map((x) => ({
+      orden: Number(x.ORDEN),
+      codigo: x.CODIGO_IA === null ? null : String(x.CODIGO_IA),
+      descripcion: x.DESCRIPCION_IA === null ? null : String(x.DESCRIPCION_IA),
+      cantidad: x.CANTIDAD_IA === null ? null : String(x.CANTIDAD_IA),
+      precioUnitario: x.PRECIO_UNITARIO_IA === null ? null : String(x.PRECIO_UNITARIO_IA),
+      importe: x.IMPORTE_IA === null ? null : String(x.IMPORTE_IA),
+    })),
+    auditoria: a.map((x) => ({
+      fecha: new Date(x.FECHA as string),
+      texto: String(x.TEXTO),
+      usuario: String(x.USUARIO),
+    })),
+  }
+}
+
+export async function obtenerDetalle(comprobanteId: number): Promise<Detalle> {
+  return obtenerDetalleEn(await getPool(), comprobanteId)
+}
+
+/**
+ * Escribe la corrección del operador. `VALOR_IA` no se toca nunca: es lo
+ * que permite medir después qué tan bien leyó el modelo.
+ */
+export async function guardarCampoEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  clave: string,
+  valor: string | null,
+): Promise<void> {
+  if (!esClaveValida(clave)) {
+    throw new Error(`Clave de campo desconocida: ${clave}`)
+  }
+
+  await e
+    .request()
+    .input('id', sql.Int, comprobanteId)
+    .input('clave', sql.VarChar(40), clave)
+    .input('valor', sql.NVarChar(500), valor)
+    .query(`
+      MERGE PHF_CAMPO AS destino
+      USING (SELECT @id AS COMPROBANTE_ID, @clave AS CLAVE) AS origen
+        ON destino.COMPROBANTE_ID = origen.COMPROBANTE_ID AND destino.CLAVE = origen.CLAVE
+      WHEN MATCHED THEN
+        UPDATE SET VALOR_FINAL = @valor, CORREGIDO_POR_USUARIO = 1
+      WHEN NOT MATCHED THEN
+        INSERT (COMPROBANTE_ID, CLAVE, VALOR_IA, CONFIANZA, VALOR_FINAL, CORREGIDO_POR_USUARIO)
+        VALUES (@id, @clave, NULL, NULL, @valor, 1);
+    `)
+}
+
+export async function auditarEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  texto: string,
+): Promise<void> {
+  await e
+    .request()
+    .input('id', sql.Int, comprobanteId)
+    .input('texto', sql.NVarChar(500), texto)
+    .input('usuario', sql.NVarChar(60), usuarioActual())
+    .query(`
+      INSERT INTO PHF_AUDITORIA (COMPROBANTE_ID, TEXTO, USUARIO)
+      VALUES (@id, @texto, @usuario)
+    `)
+}
