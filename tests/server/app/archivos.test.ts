@@ -42,4 +42,35 @@ describe('guardarPdf', () => {
     creados.push(ruta)
     expect(ruta.endsWith('.pdf')).toBe(true)
   })
+
+  it('rechaza traversal con backslash (Windows)', async () => {
+    const { ruta } = await guardarPdf('..\\..\\evadido.pdf', Buffer.from('x'))
+    creados.push(ruta)
+    expect(ruta.startsWith(directorioStorage())).toBe(true)
+    expect(ruta).not.toContain('..')
+  })
+
+  it('reemplaza nombres de dispositivo reservados de Windows', async () => {
+    const casos = ['CON.pdf', 'prn.pdf', 'AUX.pdf', 'nul.pdf', 'com1.pdf', 'lpt9.pdf']
+    for (const caso of casos) {
+      const { ruta } = await guardarPdf(caso, Buffer.from('x'))
+      creados.push(ruta)
+      // El nombre del dispositivo debe ser reemplazado por "comprobante"
+      const nombreArchivo = ruta.split(/[\\/]/).pop() || ''
+      expect(nombreArchivo.toLowerCase()).toContain('comprobante.pdf')
+    }
+  })
+})
+
+describe('leerPdf', () => {
+  it('lanza error si la ruta esta fuera del directorio', async () => {
+    const { ruta } = await guardarPdf('valido.pdf', Buffer.from('contenido'))
+    creados.push(ruta)
+
+    // Intentar leer un archivo fuera del directorio
+    const rutaFuera = '/etc/passwd'
+    await expect(leerPdf(rutaFuera)).rejects.toThrow(
+      'Ruta de archivo fuera del directorio de comprobantes.'
+    )
+  })
 })

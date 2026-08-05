@@ -19,7 +19,18 @@ function nombreSeguro(nombre: string): string {
   const base = path.basename(nombre).replace(/[^A-Za-z0-9._-]/g, '_')
   const limpio = base.replace(/^\.+/, '').slice(0, 120)
   if (limpio === '') return 'comprobante.pdf'
-  return limpio.toLowerCase().endsWith('.pdf') ? limpio : `${limpio}.pdf`
+
+  // Obtener la extension y el stem
+  const lowercaseLimpio = limpio.toLowerCase()
+  const hasPdf = lowercaseLimpio.endsWith('.pdf')
+  const stem = hasPdf ? limpio.slice(0, -4) : limpio
+  const ext = hasPdf ? '.pdf' : ''
+
+  // Nombres de dispositivo reservados en Windows: no se pueden crear ni escribir
+  const reservados = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
+  const nuevoStem = reservados.test(stem) ? 'comprobante' : stem
+
+  return `${nuevoStem}${ext ? ext : '.pdf'}`
 }
 
 export async function guardarPdf(
