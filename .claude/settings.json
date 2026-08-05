@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(pnpm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(sqlcmd *)",
+      "Bash(bash *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(tail *)",
+      "Bash(head *)",
+      "Bash(printf *)",
+      "Bash(echo *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(which *)",
+      "Bash(curl *)",
+      "PowerShell(Get-Service *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Test-Path *)",
+      "Read(//d/APP/PH_FAC/**)",
+      "Edit(//d/APP/PH_FAC/**)",
+      "Write(//d/APP/PH_FAC/**)",
+      "Read(//c/Users/USUARIO/.claude/plugins/**)"
+    ],
+    "deny": [
+      "Bash(git push *)"
+    ]
+  }
+}

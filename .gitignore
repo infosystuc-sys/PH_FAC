@@ -5,3 +5,4 @@ storage/
 *.log
 .superpowers/
 tsconfig.tsbuildinfo
+.claude/settings.local.json
