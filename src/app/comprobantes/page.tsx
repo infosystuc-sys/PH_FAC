@@ -6,6 +6,8 @@ import { FilaKpis } from '@/components/bandeja/kpis'
 import { Filtros } from '@/components/bandeja/filtros'
 import { Tabla } from '@/components/bandeja/tabla'
 import { Paginacion } from '@/components/bandeja/paginacion'
+import { BotonImportar } from '@/components/bandeja/importar'
+import { RefrescoAutomatico } from '@/components/bandeja/refresco'
 import styles from './bandeja.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -68,14 +70,13 @@ export default async function BandejaPage({
               Importá los PDF, revisá lo que leyó la IA y registralo en Tango.
             </p>
           </div>
-          <button type="button" className={styles.primario} disabled title="Disponible en la Fase 2">
-            + Importar PDF
-          </button>
+          <BotonImportar />
         </div>
 
         <FilaKpis kpis={kpis} />
         <Filtros filtro={filtro} query={query} conteos={conteos} />
         <Tabla filas={filas} />
+        <RefrescoAutomatico procesando={conteos.procesando} />
 
         <Paginacion pagina={pagina} totalPaginas={totalPaginas} desde={desde} hasta={hasta} total={total} />
       </div>
