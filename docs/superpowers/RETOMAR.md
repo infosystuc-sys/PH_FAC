@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-04 (capa de lectura de Tango completa)
+**Última actualización:** 2026-08-05 (capa de lectura de Tango completa; spec de la Fase 2 escrito)
 **Rama:** `master` (ojo: se llama `master`, no `main` — `git init` la creó así)
 
 ---
@@ -33,6 +33,8 @@ cd /d/APP/PH_FAC && git status --short && pnpm test
 
 Cada fase lleva su propio plan. El diseño completo está en `docs/superpowers/specs/2026-08-04-importador-facturas-tango-design.md`.
 
+**La Fase 2 ya tiene su spec propio:** `docs/superpowers/specs/2026-08-05-fase2-importacion-extraccion-revision-design.md`. Ojo con dos cosas que salieron de ahí: el alcance de la fase se amplió para incluir confirmar y auditoría (sin eso no se puede probar con el operador), y **hay que agregar cuatro columnas a `PHF_COMPROBANTE` y enseñarle a la migración a agregar columnas**, que hoy solo sabe crear tablas y reparar índices.
+
 La API key de Anthropic ya está cargada en `ANTHROPIC_API_KEY`, en `D:\APP\PH_FAC\.env.local` (verificado el 2026-08-04). La Fase 2 no tiene bloqueos.
 
 ---
@@ -49,7 +51,7 @@ La resolución real es de la **Fase 3**: cuando el CUIT matchea más de un prove
 
 ### 2. ~~El spec declara cinco lecturas de Tango y solo se implementó una~~ — CERRADO
 
-Resuelto el 2026-08-04. Las cinco lecturas del spec §4 están implementadas y testeadas contra la base. Ver "La capa de lectura de Tango" más abajo.
+Resuelto el 2026-08-05. Las cinco lecturas del spec §4 están implementadas y testeadas contra la base. Ver "La capa de lectura de Tango" más abajo.
 
 ### 3. La contraseña de SQL Server está en el historial de git
 
