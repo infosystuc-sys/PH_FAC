@@ -30,8 +30,16 @@ async function estadoDe(tx: sql.Transaction, id: number) {
 describe('tomarPendientesEn', () => {
   it('toma un comprobante recien encolado', async () => {
     await conRollback(async (tx) => {
+      // La query ordena por FECHA_ALTA ascendente: un limite fijo como 50
+      // devuelve los 50 mas viejos, y el recien insertado es el mas nuevo.
+      // Si alguna vez hay 50 o mas colgados de verdad en 'procesando' (nada
+      // raro con CONCURRENCIA = 3 drenando contra 20 a 100 comprobantes por
+      // dia), un limite fijo haria fallar este test aunque la cola funcione
+      // bien. Se mide el backlog real antes de insertar y se pide ese
+      // tamaño mas uno, para no asumir que la tabla esta vacia.
+      const backlog = await tomarPendientesEn(tx, 1_000_000)
       const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
-      const tomados = await tomarPendientesEn(tx, 50)
+      const tomados = await tomarPendientesEn(tx, backlog.length + 1)
       expect(tomados.map((x) => x.id)).toContain(id)
     })
   })
@@ -155,11 +163,18 @@ describe('resolverProveedorEn', () => {
       await resolverProveedorEn(tx, id, String(real.cuit))
 
       const d = await obtenerDetalleEn(tx, id)
-      expect(d.campos.find((c) => c.clave === 'codprovee')!.valorFinal).toBe(String(real.cod))
+      const campo = d.campos.find((c) => c.clave === 'codprovee')!
+      expect(campo.valorFinal).toBe(String(real.cod))
+      // Lo resolvio el sistema por el CUIT, no el operador: no puede quedar
+      // marcado como corregido, o se contamina la metrica de que tan bien
+      // lee el modelo.
+      expect(campo.corregido).toBe(false)
 
       const r = await tx.request().input('id', sql.Int, id)
         .query('SELECT COD_PROVEE FROM PHF_COMPROBANTE WHERE ID = @id')
       expect(String(r.recordset[0].COD_PROVEE)).toBe(String(real.cod))
+
+      expect(d.auditoria.some((a) => a.texto.includes('Proveedor resuelto por CUIT'))).toBe(true)
     })
   })
 

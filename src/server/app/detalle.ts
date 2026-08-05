@@ -136,14 +136,23 @@ export async function obtenerDetalle(comprobanteId: number): Promise<Detalle> {
 }
 
 /**
- * Escribe la corrección del operador. `VALOR_IA` no se toca nunca: es lo
- * que permite medir después qué tan bien leyó el modelo.
+ * Escribe un valor final para el campo. Por default asume que es una
+ * corrección del operador y marca `CORREGIDO_POR_USUARIO = 1` — esa
+ * columna es la única forma de distinguir después "la IA acertó" de "el
+ * operador lo corrigió", y con eso se mide qué tan bien lee el modelo.
+ * `VALOR_IA` no se toca nunca.
+ *
+ * Cuando quien resuelve el valor es el propio sistema (por ejemplo, el
+ * proveedor que se completa por CUIT en la cola) hay que pasar
+ * `{ corregidoPorUsuario: false }`: si no, se contamina esa métrica con
+ * algo que ningún humano tocó.
  */
 export async function guardarCampoEn(
   e: Ejecutor,
   comprobanteId: number,
   clave: string,
   valor: string | null,
+  { corregidoPorUsuario = true }: { corregidoPorUsuario?: boolean } = {},
 ): Promise<void> {
   if (!esClaveValida(clave)) {
     throw new Error(`Clave de campo desconocida: ${clave}`)
@@ -154,15 +163,16 @@ export async function guardarCampoEn(
     .input('id', sql.Int, comprobanteId)
     .input('clave', sql.VarChar(40), clave)
     .input('valor', sql.NVarChar(500), valor)
+    .input('corregido', sql.Bit, corregidoPorUsuario)
     .query(`
       MERGE PHF_CAMPO WITH (HOLDLOCK) AS destino
       USING (SELECT @id AS COMPROBANTE_ID, @clave AS CLAVE) AS origen
         ON destino.COMPROBANTE_ID = origen.COMPROBANTE_ID AND destino.CLAVE = origen.CLAVE
       WHEN MATCHED THEN
-        UPDATE SET VALOR_FINAL = @valor, CORREGIDO_POR_USUARIO = 1
+        UPDATE SET VALOR_FINAL = @valor, CORREGIDO_POR_USUARIO = @corregido
       WHEN NOT MATCHED THEN
         INSERT (COMPROBANTE_ID, CLAVE, VALOR_IA, CONFIANZA, VALOR_FINAL, CORREGIDO_POR_USUARIO)
-        VALUES (@id, @clave, NULL, NULL, @valor, 1);
+        VALUES (@id, @clave, NULL, NULL, @valor, @corregido);
     `)
 }
 

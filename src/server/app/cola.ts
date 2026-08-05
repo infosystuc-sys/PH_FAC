@@ -153,7 +153,10 @@ export async function resolverProveedorEn(
   const proveedor = await buscarProveedorPorCuit(cuit)
   if (!proveedor) return
 
-  await guardarCampoEn(e, id, 'codprovee', proveedor.codProvee)
+  // No es una correccion del operador: lo resolvio el sistema por el CUIT.
+  // CORREGIDO_POR_USUARIO en 1 aca contaminaria la metrica de que tan bien
+  // lee el modelo, que es para lo que existe esa columna.
+  await guardarCampoEn(e, id, 'codprovee', proveedor.codProvee, { corregidoPorUsuario: false })
 
   await e
     .request()
@@ -163,6 +166,8 @@ export async function resolverProveedorEn(
     .query(`
       UPDATE PHF_COMPROBANTE SET COD_PROVEE = @cod, RAZON_SOCIAL = @razon WHERE ID = @id
     `)
+
+  await auditarEn(e, id, `Proveedor resuelto por CUIT: ${proveedor.codProvee} — ${proveedor.razonSocial}`)
 }
 
 /** Extrae un comprobante y deja el resultado en la base. No lanza. */
