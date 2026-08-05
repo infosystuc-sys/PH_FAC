@@ -1,0 +1,34 @@
+{
+  "campos": {
+    "tipo":        { "valor": "FAC A",        "confianza": 0.99 },
+    "ptovta":      { "valor": "0011",         "confianza": 0.97 },
+    "nro":         { "valor": "00063576",     "confianza": 0.98 },
+    "fecha":       { "valor": "18/05/2026",   "confianza": 0.96 },
+    "cae":         { "valor": "76123456789012", "confianza": 0.94 },
+    "vtocae":      { "valor": "28/05/2026",   "confianza": 0.93 },
+    "moneda":      { "valor": "ARS",          "confianza": 0.99 },
+    "cotizacion":  { "valor": "1,00",         "confianza": 0.99 },
+    "ordencompra": { "valor": null,           "confianza": 0 },
+    "razon":       { "valor": "MIDEA CARRIER ARGENTINA SA", "confianza": 0.98 },
+    "cuit":        { "valor": "30-71042636-9", "confianza": 0.99 },
+    "condiva":     { "valor": "IVA Responsable Inscripto", "confianza": 0.95 },
+    "condpago":    { "valor": "CTA CTE 30 DIAS", "confianza": 0.88 },
+    "vencimiento": { "valor": "17/06/2026",   "confianza": 0.85 },
+    "neto":        { "valor": "322.982,28",   "confianza": 0.97 },
+    "iva21":       { "valor": "67.826,28",    "confianza": 0.97 },
+    "iva105":      { "valor": null,           "confianza": 0 },
+    "exento":      { "valor": null,           "confianza": 0 },
+    "perciva":     { "valor": "8.074,56",     "confianza": 0.91 },
+    "perciibb":    { "valor": "75.771,67",    "confianza": 0.9 },
+    "total":       { "valor": "484.344,26",   "confianza": 0.99 }
+  },
+  "renglones": [
+    {
+      "codigo": "106817",
+      "descripcion": "MICROONDAS MIDEA 20L DIGITAL",
+      "cantidad": "4",
+      "precioUnitario": "80.745,57",
+      "importe": "322.982,28"
+    }
+  ]
+}
