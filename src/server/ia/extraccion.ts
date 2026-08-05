@@ -141,6 +141,11 @@ export async function extraerDePdf(pdf: Buffer): Promise<ResultadoExtraccion> {
     }
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : String(err)
+    // El llamador solo recibe el mensaje recortado -- acá queda el error
+    // crudo, con stack si lo tiene, para poder diagnosticar un bug de
+    // programación (a diferencia de una lectura de PDF que salió mal) sin
+    // esperar a que la cola de la Task 6 agote los reintentos en silencio.
+    console.error(`extraerDePdf[${arranque}]: fallo la extraccion:`, err)
     return { ok: false, error: mensaje.slice(0, 900) }
   }
 }
