@@ -87,3 +87,13 @@
 .capaTexto :global(.markedContent) {
   display: contents;
 }
+
+/* design/README.md §2, línea 121: resaltado sincronizado con el campo
+   enfocado del formulario. Se apaga solo (transición) al desenfocar o al
+   cambiar de campo. */
+.resaltado {
+  background: rgba(43, 79, 208, 0.13);
+  outline: 2px solid rgba(43, 79, 208, 0.5);
+  border-radius: 4px;
+  transition: background 0.15s, outline-color 0.15s;
+}

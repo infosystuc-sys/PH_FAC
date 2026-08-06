@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
+import { coincide } from '@/lib/resaltado'
 import styles from './visor.module.css'
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -14,7 +15,15 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 // resolucion legible sin generar canvases enormes en comprobantes largos.
 const ESCALA = 1.5
 
-export function Visor({ id, nombre }: { id: number; nombre: string }) {
+export function Visor({
+  id,
+  nombre,
+  resaltar,
+}: {
+  id: number
+  nombre: string
+  resaltar: string | null
+}) {
   const contenedor = useRef<HTMLDivElement>(null)
   const [paginas, setPaginas] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -113,6 +122,24 @@ export function Visor({ id, nombre }: { id: number; nombre: string }) {
       void tareaCarga.destroy()
     }
   }, [id])
+
+  // Resalta, dentro de la capa de texto de pdf.js, los spans cuyo
+  // contenido coincide con el valor del campo enfocado. Recorre todas las
+  // hojas (no solo la primera) porque un dato puede caer en cualquier
+  // página de un comprobante largo. Si el PDF es escaneado no hay capa de
+  // texto -- `querySelectorAll` no encuentra spans y el efecto no hace
+  // nada, sin que eso sea un error.
+  useEffect(() => {
+    const capas = contenedor.current?.querySelectorAll('.capa-texto-pdf')
+    if (!capas) return
+
+    for (const capa of capas) {
+      for (const span of capa.querySelectorAll('span')) {
+        const marcar = resaltar !== null && coincide(span.textContent ?? '', resaltar)
+        span.classList.toggle(styles.resaltado, marcar)
+      }
+    }
+  }, [resaltar])
 
   return (
     <div className={styles.panel}>

@@ -20,10 +20,9 @@ const Visor = dynamic(() => import('./visor').then((m) => m.Visor), { ssr: false
 
 /**
  * Contenedor cliente del cuerpo de dos paneles. Sostiene el estado del
- * campo enfocado -- lo va a necesitar el Visor en la Task 10 para
- * resaltar la zona del PDF -- pero todavía no lo implementa: el Visor
- * de hoy no tiene esa prop (Task 10 la agrega), así que por ahora el
- * estado solo viaja hasta el callback `onEnfocar` del Formulario.
+ * campo enfocado y se lo pasa al Visor para que resalte, en la capa de
+ * texto del PDF, la zona que corresponde al campo que el operador está
+ * mirando en el Formulario.
  */
 export function Pantalla({
   comprobanteId,
@@ -34,11 +33,11 @@ export function Pantalla({
   nombreArchivo: string
   iniciales: Record<string, ValorInicial>
 }) {
-  const [, setEnfocado] = useState<string | null>(null)
+  const [enfocado, setEnfocado] = useState<string | null>(null)
 
   return (
     <div className={styles.cuerpo}>
-      <Visor id={comprobanteId} nombre={nombreArchivo} />
+      <Visor id={comprobanteId} nombre={nombreArchivo} resaltar={enfocado} />
       <Formulario comprobanteId={comprobanteId} iniciales={iniciales} onEnfocar={setEnfocado} />
     </div>
   )
