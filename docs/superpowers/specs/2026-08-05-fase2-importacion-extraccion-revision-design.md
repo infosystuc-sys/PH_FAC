@@ -92,7 +92,9 @@ Uso real de los slots, sobre 15.625 facturas: el 2 en 2.922 (19%), el 3 en 517, 
 
 **La IA extrae 29 campos**: 9 de comprobante, 5 de proveedor y 15 de importes.
 
-`imputado` es **calculado y de solo lectura**: la suma de los seis campos que lo preceden (`neto`, `iva21`, `iva105`, `exento`, `perciva`, `perciibb`). Existe para que el operador vea de un vistazo si esa suma coincide con el `total` que la IA leyó del PDF. No lo extrae la IA y no se guarda en `PHF_CAMPO`.
+`imputado` es **calculado y de solo lectura**: `neto` + `exento` + la suma de los cinco `impivaN` + `perciibb` + `impint`. Existe para que el operador vea de un vistazo si esa suma coincide con el `total` que la IA leyó del PDF. No lo extrae la IA y no se guarda en `PHF_CAMPO`.
+
+Los `porcivaN` **no entran en la suma**: son porcentajes, no importes. Es el error más fácil de cometer acá.
 
 ### Grupo "Imputación en Tango"
 
@@ -105,7 +107,7 @@ Van a span 3 y no a 2 como en el `design/README.md`: sacado el talonario, dos ca
 
 Ninguno lo extrae la IA. `codprovee` se resuelve del CUIT extraído; si no hay match queda vacío y la Fase 3 lo trata como error bloqueante.
 
-**La IA extrae 21 campos** (9 + 5 + 7). Los tres restantes se derivan o los elige el operador.
+Los tres campos que la IA **no** extrae son `imputado`, que se calcula, y `codprovee` y `condcompra`, que se resuelven o los elige el operador.
 
 ### Renglones
 
