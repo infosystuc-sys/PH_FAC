@@ -33,6 +33,16 @@ export function Visor({ id, nombre }: { id: number; nombre: string }) {
     let tareaTexto: { cancel: () => void } | null = null
 
     async function cargar() {
+      // Se resetea antes del primer await: el efecto reacciona a un cambio
+      // de `id` sin remontarse, asi que si no se limpia acá el error o la
+      // cantidad de páginas del comprobante anterior quedan pegados encima
+      // del siguiente mientras carga (o para siempre, si el siguiente sale
+      // bien y nunca vuelve a tocar `error`). Tambien se limpian ya las
+      // hojas viejas: si el comprobante nuevo falla, no tiene que quedar
+      // el PDF del anterior renderizado detras del mensaje de error.
+      setError(null)
+      setPaginas(0)
+      contenedor.current?.replaceChildren()
       try {
         const doc: PDFDocumentProxy = await tareaCarga.promise
         if (cancelado || !contenedor.current) return
