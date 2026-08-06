@@ -67,16 +67,30 @@ De ese catálogo se derivan tres cosas, sin repetir la lista:
 
 ### Grupo "Importes"
 
+**Esta sección se rehízo el 2026-08-05**, después de que una factura real de servicios no cerrara con la forma original. Ver §11.
+
+La forma sale de cómo Tango guarda realmente las alícuotas, verificado contra las 15.625 facturas de `CPA04`: **un solo neto gravado** —la suma de todas las bases— y hasta **cinco tripletas** de código, porcentaje e importe en `COD_IVA1..5` / `PORC_IVA1..5` / `IMP_IVA1..5`. Tango no guarda el neto por base.
+
 | Clave | Label | Span | Tipo | Mono |
 |---|---|---|---|---|
-| `neto` | Neto gravado 21% | 2 | decimal | sí |
-| `iva21` | IVA 21% | 2 | decimal | sí |
-| `iva105` | IVA 10,5% | 2 | decimal | sí |
-| `exento` | No gravado / exento | 2 | decimal | sí |
-| `perciva` | Percepción IVA | 2 | decimal | sí |
-| `perciibb` | Percepción IIBB | 2 | decimal | sí |
+| `neto` | Neto gravado | 3 | decimal | sí |
+| `exento` | No gravado / exento | 3 | decimal | sí |
+| `porciva1`…`porciva5` | Alícuota 1…5 | 2 c/u | decimal | sí |
+| `impiva1`…`impiva5` | Importe 1…5 | 4 c/u | decimal | sí |
+| `perciibb` | Percepción IIBB | 3 | decimal | sí |
+| `impint` | Impuesto interno | 3 | decimal | sí |
 | `total` | Total del comprobante | 3 | decimal | sí |
 | `imputado` | Total imputado | 3 | decimal | sí |
+
+Cada par `porcivaN` + `impivaN` ocupa una fila de la grilla de 6.
+
+**Los cinco slots mezclan alícuotas de IVA con percepciones de la familia IVA**, que es lo que hace Tango: el código 16 —percepción de IVA, 3%— vive en un slot, no en `CPA18`. Por eso no hay un campo `perciva` separado: es un slot más.
+
+`perciibb` e `impint` son del lado de `CPA18`, que admite hasta 5 filas por comprobante. Se modelan como campos con nombre porque son los dos casos frecuentes; un mecanismo genérico para las 5 filas de `CPA18` es trabajo de la Fase 4, cuando haya que escribirlas.
+
+Uso real de los slots, sobre 15.625 facturas: el 2 en 2.922 (19%), el 3 en 517, el 4 en 70, **el 5 en ninguna**. Las combinaciones más frecuentes son `21%` sola (11.326), `21% + percepción de IVA` (1.570) y `21% + 10,5%` (146).
+
+**La IA extrae 29 campos**: 9 de comprobante, 5 de proveedor y 15 de importes.
 
 `imputado` es **calculado y de solo lectura**: la suma de los seis campos que lo preceden (`neto`, `iva21`, `iva105`, `exento`, `perciva`, `perciibb`). Existe para que el operador vea de un vistazo si esa suma coincide con el `total` que la IA leyó del PDF. No lo extrae la IA y no se guarda en `PHF_CAMPO`.
 
@@ -225,3 +239,60 @@ La suite tiene que seguir corriendo sin `ANTHROPIC_API_KEY` cargada. Los tests m
 - **El worker en proceso muere con el server.** La repesca lo cubre, pero si el server queda caído nadie procesa. Es aceptable para una app de red interna con un operador; si en algún momento hay varias instancias, la repesca necesita un lock para que dos no tomen el mismo comprobante.
 - **La calidad de extracción en escaneos es desconocida.** El 100% de la lógica de la app funciona igual, pero la confianza promedio va a ser más baja y el operador va a corregir más. `CORREGIDO_POR_USUARIO` es lo que va a permitir cuantificarlo.
 - **`pdf.js` es una dependencia pesada en el cliente.** Se carga solo en la ruta de revisión, no en la bandeja.
+
+---
+
+## 11. Lo que enseñó la primera factura real
+
+El 2026-08-05, con las tareas 1 a 7 del plan ya implementadas, se probó la extracción contra una factura real de servicios (AMX ARGENTINA SA, la razón social de Claro). Salieron cuatro cosas que ningún test podía agarrar, porque ningún test le pega a la API — que es una restricción correcta y no se cambia.
+
+### 1. El JSON Schema rompía toda extracción
+
+La API devolvía 400 en cada llamada:
+
+> Schemas contains too many parameters with union types (26 parameters with type arrays or anyOf) […] limit: 16 parameters with unions.
+
+`schemaExtraccion()` generaba 26 uniones: un `anyOf: [string, null]` por cada campo más las cinco claves de renglón. El límite de structured outputs es 16.
+
+**Resuelto:** `valor` pasa a `{ type: 'string' }` y la cadena vacía significa "no figura". `parsearRespuesta` no necesitó cambios: su helper ya convertía `''` a `null`. Hay un test que recorre el schema entero y falla si vuelve a aparecer una unión.
+
+Lo que hizo el fallo diagnosticable en un intento fue el `console.error` del error crudo, agregado en una revisión anterior. Sin eso el mensaje llegaba recortado a 900 caracteres.
+
+### 2. Un mismo comprobante mezcla formatos de importe
+
+La factura imprime, literalmente:
+
+```
+IVA 21.0% (Neto gravado $ 186623.75) = $39.190,99
+```
+
+El neto sin separador de miles y con punto decimal; el IVA con punto de miles y coma decimal, en el mismo documento. El modelo estaba copiando bien: la regla del prompt es devolver exactamente lo impreso.
+
+El defecto estaba del lado que consume. `desnormalizarBandejaEn` convertía con `REPLACE(REPLACE(@total,'.',''),',','.')`, que contra un total impreso como `690983.02` habría dado 69.098.302 en la columna que el operador ve.
+
+**Resuelto:** `parsearImporte` en `src/lib/formato.ts` maneja los dos formatos y se usa desde JS, en vez de convertir en SQL. Un solo punto seguido de exactamente dos dígitos es decimal; cualquier otro punto es separador de miles.
+
+### 3. El grupo de importes no cubría múltiples bases
+
+Ver §3. La factura tenía dos bases imponibles y el catálogo modelaba una sola. Con las dos, los totales cierran exacto:
+
+| | |
+|---|---:|
+| neto 21% | 186.623,75 |
+| neto 27% | 343.323,75 |
+| IVA 21% | 39.190,99 |
+| IVA 27% | 92.697,41 |
+| percepción IVA | 15.898,43 |
+| percepción IIBB | 13.248,69 |
+| **suma** | **690.983,02** |
+| total leído | 690.983,02 |
+
+### 4. Los renglones de servicios no se parecen a los de mercadería
+
+Se detectaron 16 renglones con nombres de plan y montos, cuando el histórico dice que el 77% de las facturas vienen solo con cabecera y el 98,3% de los renglones están atados a un remito. Las facturas de servicios no tienen remito y sí tienen detalle.
+
+No cambia nada de la Fase 2 —los renglones se guardan igual en `PHF_RENGLON`—, pero sí es un dato para la Fase 4: **un renglón sin remito no se graba en Tango**, y en una factura de servicios eso significa que no se graba ninguno. Hay que decidir si esos comprobantes se graban solo con cabecera o si necesitan otro camino.
+
+### La lección de proceso
+
+Las cuatro salieron de correr el sistema contra un documento real, no de los tests ni de las revisiones. La verificación final del plan incorpora una extracción real contra esta factura, para que el circuito completo quede probado antes de cerrar la fase.
