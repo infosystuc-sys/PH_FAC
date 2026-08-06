@@ -133,21 +133,30 @@ function objeto(props: Record<string, unknown>) {
 /**
  * El JSON Schema de `output_config.format`. Structured outputs exige
  * `additionalProperties: false` y `required` en todos los objetos.
+ *
+ * `valores` y `confianzas` van **aplanados**, no un objeto `{valor,
+ * confianza}` por campo. Con 29 campos anidados de esa forma la API
+ * rechazaba el schema real contra un PDF real: "compiled grammar is too
+ * large" (400). 29 objetos gramaticales de dos propiedades cada uno pesan
+ * mucho más para el compilador de la gramática que dos objetos de 29
+ * propiedades cada uno, aunque la cantidad total de campos sea la misma.
+ * La semántica no cambia: misma clave, mismo campo, misma convención de
+ * cadena vacía para "no figura" -- solo se aplana la anidación.
  */
 export function schemaExtraccion(): Record<string, unknown> {
-  const campos: Record<string, unknown> = {}
+  const valores: Record<string, unknown> = {}
+  const confianzas: Record<string, unknown> = {}
   for (const x of CAMPOS_IA) {
-    campos[x.clave] = objeto({
-      valor: VALOR,
-      confianza: { type: 'number' },
-    })
+    valores[x.clave] = VALOR
+    confianzas[x.clave] = { type: 'number' }
   }
 
   const renglon: Record<string, unknown> = {}
   for (const k of CLAVES_RENGLON) renglon[k] = VALOR
 
   return objeto({
-    campos: objeto(campos),
+    valores: objeto(valores),
+    confianzas: objeto(confianzas),
     renglones: { type: 'array', items: objeto(renglon) },
   })
 }

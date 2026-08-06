@@ -39,30 +39,37 @@ function confianza(v: unknown): number {
  * schema le pide a Claude una forma exacta, pero acá se asume que puede
  * llegar cualquier cosa. Un campo de más se descarta, uno de menos se
  * completa con null. Lo único que hace fallar es que el JSON no parsee o
- * que no venga el objeto `campos`.
+ * que no venga el objeto `valores`.
+ *
+ * `valores` y `confianzas` llegan aplanados -- un string y un number por
+ * campo, en vez de un objeto `{valor, confianza}` por campo -- porque así
+ * los pide `schemaExtraccion` desde que la forma anidada rompió con
+ * "compiled grammar is too large" contra un PDF real. Si falta
+ * `confianzas` entero no se lanza: un valor sin confianza sigue siendo un
+ * valor útil, así que esas confianzas quedan en 0.
  */
 export function parsearRespuesta(texto_: string): Extraccion {
   const crudo = JSON.parse(texto_) as Record<string, unknown>
 
-  const campos_ = crudo.campos
-  if (campos_ === null || typeof campos_ !== 'object') {
-    throw new Error('La respuesta no trae el objeto `campos`.')
+  const valores_ = crudo.valores
+  if (valores_ === null || typeof valores_ !== 'object') {
+    throw new Error('La respuesta no trae el objeto `valores`.')
   }
-  const dic = campos_ as Record<string, unknown>
+  const dicValores = valores_ as Record<string, unknown>
+
+  const confianzas_ = crudo.confianzas
+  const dicConfianzas: Record<string, unknown> =
+    confianzas_ !== null && typeof confianzas_ === 'object'
+      ? (confianzas_ as Record<string, unknown>)
+      : {}
 
   const campos: Record<string, CampoExtraido> = {}
   for (const def of CAMPOS_IA) {
-    const c = dic[def.clave]
-    if (c === null || typeof c !== 'object') {
-      campos[def.clave] = { valor: null, confianza: 0 }
-      continue
-    }
-    const o = c as Record<string, unknown>
-    const valor = texto(o.valor)
+    const valor = texto(dicValores[def.clave])
     campos[def.clave] = {
       valor,
       // Un campo sin valor no aporta confianza al promedio.
-      confianza: valor === null ? 0 : confianza(o.confianza),
+      confianza: valor === null ? 0 : confianza(dicConfianzas[def.clave]),
     }
   }
 

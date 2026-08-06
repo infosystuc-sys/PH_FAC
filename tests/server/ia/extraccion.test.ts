@@ -25,21 +25,23 @@ describe('parsearRespuesta', () => {
 
   it('descarta claves que no estan en el catalogo', () => {
     const conBasura = JSON.parse(OK)
-    conBasura.campos.inventado = { valor: 'x', confianza: 1 }
+    conBasura.valores.inventado = 'x'
+    conBasura.confianzas.inventado = 1
     const e = parsearRespuesta(JSON.stringify(conBasura))
     expect(e.campos).not.toHaveProperty('inventado')
   })
 
   it('completa con null un campo que la IA omitio', () => {
     const incompleto = JSON.parse(OK)
-    delete incompleto.campos.cae
+    delete incompleto.valores.cae
+    delete incompleto.confianzas.cae
     const e = parsearRespuesta(JSON.stringify(incompleto))
     expect(e.campos.cae).toEqual({ valor: null, confianza: 0 })
   })
 
   it('acota la confianza al rango 0..1', () => {
     const fuera = JSON.parse(OK)
-    fuera.campos.total.confianza = 4.2
+    fuera.confianzas.total = 4.2
     expect(parsearRespuesta(JSON.stringify(fuera)).campos.total.confianza).toBe(1)
   })
 
@@ -47,8 +49,16 @@ describe('parsearRespuesta', () => {
     expect(() => parsearRespuesta('{ esto no es json')).toThrow()
   })
 
-  it('lanza cuando falta el objeto campos', () => {
-    expect(() => parsearRespuesta('{"renglones":[]}')).toThrow(/campos/i)
+  it('lanza cuando falta el objeto valores', () => {
+    expect(() => parsearRespuesta('{"renglones":[]}')).toThrow(/valores/i)
+  })
+
+  it('no lanza cuando falta el objeto confianzas: un valor sin confianza sigue siendo util', () => {
+    const sinConfianzas = JSON.parse(OK)
+    delete sinConfianzas.confianzas
+    const e = parsearRespuesta(JSON.stringify(sinConfianzas))
+    expect(e.campos.cuit.valor).toBe('30-71042636-9')
+    expect(e.campos.cuit.confianza).toBe(0)
   })
 
   it('ignora renglones enteramente vacios', () => {

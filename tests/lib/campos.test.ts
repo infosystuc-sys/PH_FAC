@@ -42,11 +42,17 @@ describe('catalogo de campos', () => {
 })
 
 describe('schemaExtraccion', () => {
-  it('pide exactamente los campos que extrae la IA', () => {
+  it('pide exactamente los campos que extrae la IA, en valores y en confianzas', () => {
     const s = schemaExtraccion() as any
-    const props = Object.keys(s.properties.campos.properties)
-    expect(props.sort()).toEqual(CAMPOS_IA.map((c) => c.clave).sort())
-    expect(s.properties.campos.required.sort()).toEqual(props.sort())
+    const claves = CAMPOS_IA.map((c) => c.clave).sort()
+
+    const propsValores = Object.keys(s.properties.valores.properties)
+    expect(propsValores.sort()).toEqual(claves)
+    expect(s.properties.valores.required.sort()).toEqual(claves)
+
+    const propsConfianzas = Object.keys(s.properties.confianzas.properties)
+    expect(propsConfianzas.sort()).toEqual(claves)
+    expect(s.properties.confianzas.required.sort()).toEqual(claves)
   })
 
   it('cierra todos los objetos con additionalProperties false', () => {
@@ -70,9 +76,20 @@ describe('schemaExtraccion', () => {
     // mismo trabajo sin sumar una union: parsearRespuesta la traduce a
     // null via su helper texto().
     const s = schemaExtraccion() as any
-    const cuit = s.properties.campos.properties.cuit
-    expect(cuit.properties.valor).toEqual({ type: 'string' })
-    expect(cuit.properties.confianza.type).toBe('number')
+    expect(s.properties.valores.properties.cuit).toEqual({ type: 'string' })
+    expect(s.properties.confianzas.properties.cuit.type).toBe('number')
+  })
+
+  it('aplana valores y confianzas en vez de anidar un objeto por campo', () => {
+    // Con 29 campos anidados en {valor, confianza} la API rechazo el
+    // schema real con "compiled grammar is too large" -- 29 objetos
+    // gramaticales de dos props pesan mucho mas que dos objetos de 29
+    // props cada uno. La forma aplanada no cambia la semantica (misma
+    // convencion de cadena vacia, mismas claves), solo la anidacion.
+    const s = schemaExtraccion() as any
+    expect(s.properties.campos).toBeUndefined()
+    expect(s.properties.valores.type).toBe('object')
+    expect(s.properties.confianzas.type).toBe('object')
   })
 
   it('no supera el limite de 16 uniones de tipos que exige structured outputs', () => {
