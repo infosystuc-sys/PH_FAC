@@ -62,13 +62,35 @@ describe('schemaExtraccion', () => {
     for (const o of objetos) expect(o.additionalProperties).toBe(false)
   })
 
-  it('modela el valor ausente con anyOf string|null, no con type array', () => {
-    // La lista de features soportadas incluye anyOf pero no uniones por
-    // array de tipos: `{"type": ["string","null"]}` no esta garantizado.
+  it('modela el valor ausente con cadena vacia, no con union de tipos', () => {
+    // Antes esto era `anyOf: [{type:'string'},{type:'null'}]`. Con 21 campos
+    // mas 5 claves de renglon esa union suma 26 parametros -- structured
+    // outputs rechaza el schema por encima de 16 uniones (400,
+    // "too many parameters with union types"). La cadena vacia hace el
+    // mismo trabajo sin sumar una union: parsearRespuesta la traduce a
+    // null via su helper texto().
     const s = schemaExtraccion() as any
     const cuit = s.properties.campos.properties.cuit
-    expect(cuit.properties.valor.anyOf).toEqual([{ type: 'string' }, { type: 'null' }])
+    expect(cuit.properties.valor).toEqual({ type: 'string' })
     expect(cuit.properties.confianza.type).toBe('number')
+  })
+
+  it('no supera el limite de 16 uniones de tipos que exige structured outputs', () => {
+    // Regresion: ninguna rama del schema puede tener `anyOf`, `oneOf`,
+    // `allOf` ni `type` como array. Si esto vuelve a aparecer, la API
+    // rechaza el request entero con 400 antes de llegar al modelo.
+    const uniones: unknown[] = []
+    const recorrer = (n: unknown) => {
+      if (n === null || typeof n !== 'object') return
+      const o = n as Record<string, unknown>
+      if ('anyOf' in o) uniones.push(o.anyOf)
+      if ('oneOf' in o) uniones.push(o.oneOf)
+      if ('allOf' in o) uniones.push(o.allOf)
+      if (Array.isArray(o.type)) uniones.push(o.type)
+      for (const v of Object.values(o)) recorrer(v)
+    }
+    recorrer(schemaExtraccion())
+    expect(uniones).toEqual([])
   })
 
   it('pide los cinco datos de cada renglon', () => {

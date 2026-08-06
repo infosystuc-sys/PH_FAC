@@ -95,8 +95,16 @@ export function camposDelGrupo(grupo: GrupoCampo): DefCampo[] {
   return CAMPOS.filter((x) => x.grupo === grupo)
 }
 
-/** `valor` puede venir null cuando el dato no figura en el PDF. */
-const VALOR_O_NULL = { anyOf: [{ type: 'string' }, { type: 'null' }] }
+/**
+ * `valor` es siempre string. Structured outputs limita a 16 los parámetros
+ * con unión de tipos por request (`anyOf` o `type` como array) antes de
+ * rechazar el schema por costo de compilación exponencial -- con 21 campos
+ * más 5 claves de renglón, un `anyOf: [string, null]` en cada uno suma 26 y
+ * la API devuelve 400. Por eso la convención es: cadena vacía significa
+ * "no figura en el PDF". `parsearRespuesta` ya la traduce a `null` sola
+ * (su helper `texto()` hace `t === '' ? null : t`).
+ */
+const VALOR = { type: 'string' }
 
 function objeto(props: Record<string, unknown>) {
   return {
@@ -109,20 +117,19 @@ function objeto(props: Record<string, unknown>) {
 
 /**
  * El JSON Schema de `output_config.format`. Structured outputs exige
- * `additionalProperties: false` y `required` en todos los objetos, y no
- * garantiza uniones por array de tipos -- de ahí el `anyOf`.
+ * `additionalProperties: false` y `required` en todos los objetos.
  */
 export function schemaExtraccion(): Record<string, unknown> {
   const campos: Record<string, unknown> = {}
   for (const x of CAMPOS_IA) {
     campos[x.clave] = objeto({
-      valor: VALOR_O_NULL,
+      valor: VALOR,
       confianza: { type: 'number' },
     })
   }
 
   const renglon: Record<string, unknown> = {}
-  for (const k of CLAVES_RENGLON) renglon[k] = VALOR_O_NULL
+  for (const k of CLAVES_RENGLON) renglon[k] = VALOR
 
   return objeto({
     campos: objeto(campos),
