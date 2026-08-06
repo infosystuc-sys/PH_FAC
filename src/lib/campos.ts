@@ -42,13 +42,27 @@ export const CAMPOS: DefCampo[] = [
   c('condpago',    'Condición de pago',     'proveedor',   2, 'texto',   false),
   c('vencimiento', 'Vencimiento',           'proveedor',   2, 'fecha',   true),
 
-  // Importes — 18 = 3 filas de 6
-  c('neto',        'Neto gravado 21%',      'importes',    2, 'decimal', true),
-  c('iva21',       'IVA 21%',               'importes',    2, 'decimal', true),
-  c('iva105',      'IVA 10,5%',             'importes',    2, 'decimal', true),
-  c('exento',      'No gravado / exento',   'importes',    2, 'decimal', true),
-  c('perciva',     'Percepción IVA',        'importes',    2, 'decimal', true),
-  c('perciibb',    'Percepción IIBB',       'importes',    2, 'decimal', true),
+  // Importes — 48 = 8 filas de 6. Rehecho el 2026-08-05: Tango no guarda el
+  // neto por base, guarda un neto gravado total y hasta cinco tripletas de
+  // codigo/porcentaje/importe de IVA (CPA04). Los pares porcivaN/impivaN
+  // van intercalados a proposito -- cada par ocupa una fila completa de la
+  // grilla (2 + 4 = 6) -- y mezclan alicuotas con percepciones de la
+  // familia IVA, que es como Tango las guarda de verdad. Ver design doc
+  // 2026-08-05, seccion 3 y 11.
+  c('neto',        'Neto gravado',          'importes',    3, 'decimal', true),
+  c('exento',      'No gravado / exento',   'importes',    3, 'decimal', true),
+  c('porciva1',    'Alícuota 1',            'importes',    2, 'decimal', true),
+  c('impiva1',     'Importe 1',             'importes',    4, 'decimal', true),
+  c('porciva2',    'Alícuota 2',            'importes',    2, 'decimal', true),
+  c('impiva2',     'Importe 2',             'importes',    4, 'decimal', true),
+  c('porciva3',    'Alícuota 3',            'importes',    2, 'decimal', true),
+  c('impiva3',     'Importe 3',             'importes',    4, 'decimal', true),
+  c('porciva4',    'Alícuota 4',            'importes',    2, 'decimal', true),
+  c('impiva4',     'Importe 4',             'importes',    4, 'decimal', true),
+  c('porciva5',    'Alícuota 5',            'importes',    2, 'decimal', true),
+  c('impiva5',     'Importe 5',             'importes',    4, 'decimal', true),
+  c('perciibb',    'Percepción IIBB',       'importes',    3, 'decimal', true),
+  c('impint',      'Impuesto interno',      'importes',    3, 'decimal', true),
   c('total',       'Total del comprobante', 'importes',    3, 'decimal', true),
   { clave: 'imputado', label: 'Total imputado', grupo: 'importes', span: 3,
     tipo: 'decimal', mono: true, extraePorIA: false, soloLectura: true },
@@ -98,9 +112,10 @@ export function camposDelGrupo(grupo: GrupoCampo): DefCampo[] {
 /**
  * `valor` es siempre string. Structured outputs limita a 16 los parámetros
  * con unión de tipos por request (`anyOf` o `type` como array) antes de
- * rechazar el schema por costo de compilación exponencial -- con 21 campos
- * más 5 claves de renglón, un `anyOf: [string, null]` en cada uno suma 26 y
- * la API devuelve 400. Por eso la convención es: cadena vacía significa
+ * rechazar el schema por costo de compilación exponencial. Con el catálogo
+ * original de 21 campos más 5 claves de renglón, un `anyOf: [string, null]`
+ * en cada uno ya sumaba 26 uniones y la API devolvía 400; con los 29 campos
+ * actuales sería peor. Por eso la convención es: cadena vacía significa
  * "no figura en el PDF". `parsearRespuesta` ya la traduce a `null` sola
  * (su helper `texto()` hace `t === '' ? null : t`).
  */

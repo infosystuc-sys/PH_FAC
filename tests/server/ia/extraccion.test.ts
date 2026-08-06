@@ -14,7 +14,7 @@ describe('parsearRespuesta', () => {
     expect(e.renglones[0].codigo).toBe('106817')
   })
 
-  it('devuelve los 21 campos del catalogo', () => {
+  it('devuelve los 29 campos del catalogo', () => {
     const e = parsearRespuesta(OK)
     expect(Object.keys(e.campos).sort()).toEqual(CAMPOS_IA.map((c) => c.clave).sort())
   })

@@ -25,8 +25,8 @@ describe('catalogo de campos', () => {
     }
   })
 
-  it('la IA extrae 21 campos', () => {
-    expect(CAMPOS_IA.length).toBe(21)
+  it('la IA extrae 29 campos', () => {
+    expect(CAMPOS_IA.length).toBe(29)
   })
 
   it('los campos calculados y de imputacion no los extrae la IA', () => {
