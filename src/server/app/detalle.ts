@@ -1,6 +1,7 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
 import { esClaveValida } from '@/lib/campos'
+import { parsearImporteONulo } from '@/lib/formato'
 import { usuarioActual } from '@/lib/usuario'
 import type { Extraccion } from '../ia/extraccion'
 import type { RenglonExtraido } from '@/lib/renglones'
@@ -71,17 +72,18 @@ export async function guardarExtraccionEn(
       .input('orden', sql.Int, orden)
       .input('codigo', sql.NVarChar(60), r.codigo)
       .input('desc', sql.NVarChar(500), r.descripcion)
-      .input('cant', sql.NVarChar(50), r.cantidad)
-      .input('pu', sql.NVarChar(50), r.precioUnitario)
-      .input('imp', sql.NVarChar(50), r.importe)
+      // Se parsean en JS con parsearImporteONulo -- ver el comentario en
+      // desnormalizarBandejaEn (src/server/app/cola.ts) sobre por qué un
+      // REPLACE a ciegas en SQL rompe con comprobantes que mezclan
+      // separadores en el mismo PDF.
+      .input('cant', sql.Decimal(19, 4), parsearImporteONulo(r.cantidad))
+      .input('pu', sql.Decimal(19, 4), parsearImporteONulo(r.precioUnitario))
+      .input('imp', sql.Decimal(19, 4), parsearImporteONulo(r.importe))
       .query(`
         INSERT INTO PHF_RENGLON
           (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
            CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA)
-        VALUES (@id, @orden, @codigo, @desc,
-                TRY_CONVERT(DECIMAL(19,4), REPLACE(REPLACE(@cant, '.', ''), ',', '.')),
-                TRY_CONVERT(DECIMAL(19,4), REPLACE(REPLACE(@pu, '.', ''), ',', '.')),
-                TRY_CONVERT(DECIMAL(19,4), REPLACE(REPLACE(@imp, '.', ''), ',', '.')))
+        VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp)
       `)
   }
 

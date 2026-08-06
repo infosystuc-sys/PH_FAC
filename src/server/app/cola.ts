@@ -3,7 +3,7 @@ import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
 import { extraerDePdf, type Extraccion } from '../ia/extraccion'
 import { buscarProveedorPorCuit } from '../tango/proveedores'
-import { normalizarCuit } from '@/lib/formato'
+import { normalizarCuit, parsearImporteONulo } from '@/lib/formato'
 import { guardarExtraccionEn, guardarCampoEn, auditarEn } from './detalle'
 import { leerPdf } from './archivos'
 
@@ -101,9 +101,13 @@ export async function marcarFalloEn(e: Ejecutor, id: number, error: string): Pro
  * bandeja lee de la tabla, no de PHF_CAMPO, para no hacer 21 joins por
  * fila con 100 comprobantes en pantalla.
  *
- * El total y la fecha se convierten acá porque las columnas son
- * DECIMAL(19,4) y DATE. `TRY_CONVERT` deja NULL si la IA leyó algo que no
- * parsea, en vez de hacer fallar toda la extracción por un campo.
+ * La fecha se convierte en SQL porque la columna es DATE y `TRY_CONVERT`
+ * alcanza. El total se parsea en JS con `parsearImporteONulo`: las
+ * facturas reales mezclan separadores en el mismo comprobante ("186623.75"
+ * al lado de "39.190,99"), y `REPLACE('.', '').REPLACE(',', '.')` a ciegas
+ * arruina justamente el formato sin coma. Si la IA leyó algo que no
+ * parsea, la columna queda NULL en vez de fallar toda la extracción por
+ * un campo.
  */
 export async function desnormalizarBandejaEn(
   e: Ejecutor,
@@ -119,7 +123,7 @@ export async function desnormalizarBandejaEn(
     .input('pv', sql.VarChar(10), v('ptovta')?.slice(0, 10) ?? null)
     .input('nro', sql.VarChar(20), v('nro')?.slice(0, 20) ?? null)
     .input('cuit', sql.VarChar(15), v('cuit')?.slice(0, 15) ?? null)
-    .input('total', sql.NVarChar(50), v('total'))
+    .input('total', sql.Decimal(19, 4), parsearImporteONulo(v('total')))
     .input('fecha', sql.NVarChar(20), v('fecha'))
     .query(`
       UPDATE PHF_COMPROBANTE
@@ -127,7 +131,7 @@ export async function desnormalizarBandejaEn(
           PUNTO_VENTA = @pv,
           NUMERO = @nro,
           CUIT = @cuit,
-          TOTAL = TRY_CONVERT(DECIMAL(19,4), REPLACE(REPLACE(@total, '.', ''), ',', '.')),
+          TOTAL = @total,
           FECHA_EMISION = TRY_CONVERT(DATE, @fecha, 103)
       WHERE ID = @id
     `)

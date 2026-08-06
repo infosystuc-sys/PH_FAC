@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { formatMoneda, formatFecha, formatCuit, normalizarCuit } from '@/lib/formato'
+import {
+  formatMoneda,
+  formatFecha,
+  formatCuit,
+  normalizarCuit,
+  parsearImporte,
+  parsearImporteONulo,
+} from '@/lib/formato'
 
 describe('formatMoneda', () => {
   it('formatea con separador de miles y dos decimales', () => {
@@ -54,5 +61,66 @@ describe('formatCuit', () => {
 
   it('muestra guion cuando es null', () => {
     expect(formatCuit(null)).toBe('—')
+  })
+})
+
+describe('parsearImporte', () => {
+  // Las dos primeras salieron de un comprobante real (Comprobante_147868-
+  // CLARO.pdf): la misma factura imprime el neto sin separador de miles y
+  // el IVA en formato argentino, en la misma línea.
+  it('un solo punto seguido de 2 digitos es decimal', () => {
+    expect(parsearImporte('186623.75')).toBeCloseTo(186623.75, 2)
+  })
+
+  it('formato argentino: punto de miles, coma decimal', () => {
+    expect(parsearImporte('39.190,99')).toBeCloseTo(39190.99, 2)
+  })
+
+  it('punto y coma juntos: el que aparece ultimo es el decimal', () => {
+    expect(parsearImporte('322.982,28')).toBeCloseTo(322982.28, 2)
+  })
+
+  it('formato ingles: coma de miles, punto decimal', () => {
+    expect(parsearImporte('322,982.28')).toBeCloseTo(322982.28, 2)
+  })
+
+  it('solo coma es decimal', () => {
+    expect(parsearImporte('1234,56')).toBeCloseTo(1234.56, 2)
+  })
+
+  it('un punto seguido de 3 digitos es separador de miles, no decimal', () => {
+    expect(parsearImporte('186.623')).toBeCloseTo(186623, 2)
+  })
+
+  it('varios puntos son siempre separador de miles', () => {
+    expect(parsearImporte('1.186.623')).toBeCloseTo(1186623, 2)
+  })
+
+  it('sin separadores', () => {
+    expect(parsearImporte('484344')).toBeCloseTo(484344, 2)
+  })
+
+  it('devuelve 0 cuando no parsea', () => {
+    expect(parsearImporte('ilegible')).toBe(0)
+  })
+
+  it('devuelve 0 cuando es null o undefined', () => {
+    expect(parsearImporte(null)).toBe(0)
+    expect(parsearImporte(undefined)).toBe(0)
+  })
+})
+
+describe('parsearImporteONulo', () => {
+  it('devuelve el numero cuando parsea', () => {
+    expect(parsearImporteONulo('186623.75')).toBeCloseTo(186623.75, 2)
+  })
+
+  it('devuelve null (no 0) cuando no parsea, para no grabar un dato falso', () => {
+    expect(parsearImporteONulo('ilegible')).toBeNull()
+  })
+
+  it('devuelve null cuando es null o undefined', () => {
+    expect(parsearImporteONulo(null)).toBeNull()
+    expect(parsearImporteONulo(undefined)).toBeNull()
   })
 })

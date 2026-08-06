@@ -29,3 +29,66 @@ export function formatCuit(c: string | null | undefined): string {
   if (!n) return c
   return `${n.slice(0, 2)}-${n.slice(2, 10)}-${n.slice(10)}`
 }
+
+/**
+ * Interpreta un importe tal como lo devuelve la IA. Los comprobantes
+ * reales mezclan formatos en el mismo PDF -- una factura vista puede traer
+ * "186623.75" (sin separador de miles) al lado de "39.190,99" (formato
+ * argentino) -- así que no alcanza con asumir un único separador decimal.
+ *
+ * Reglas:
+ * - Si tiene punto y coma, el que aparece último en la cadena es el
+ *   separador decimal; el otro es de miles.
+ * - Si tiene solo coma, la coma es el separador decimal.
+ * - Si tiene solo punto: un único punto seguido de exactamente dos dígitos
+ *   es decimal ("186623.75"); cualquier otro caso (varios puntos, o uno
+ *   seguido de otra cantidad de dígitos) es separador de miles ("186.623").
+ * - Lo que no da un número finito vuelve `null`, no `0`, para que el
+ *   llamador pueda distinguir "no se pudo leer" de "el importe es cero".
+ */
+function normalizarImporte(v: string): number | null {
+  const t = v.trim()
+  if (t === '') return null
+
+  const tienePunto = t.includes('.')
+  const tieneComa = t.includes(',')
+
+  let normalizado: string
+  if (tienePunto && tieneComa) {
+    normalizado =
+      t.lastIndexOf(',') > t.lastIndexOf('.')
+        ? t.replace(/\./g, '').replace(',', '.')
+        : t.replace(/,/g, '')
+  } else if (tieneComa) {
+    const i = t.lastIndexOf(',')
+    normalizado = `${t.slice(0, i).replace(/,/g, '')}.${t.slice(i + 1)}`
+  } else if (tienePunto) {
+    const partes = t.split('.')
+    const decimalUnico = partes.length === 2 && partes[1].length === 2
+    normalizado = decimalUnico ? t : t.replace(/\./g, '')
+  } else {
+    normalizado = t
+  }
+
+  const n = Number(normalizado)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Como `normalizarImporte`, pero para los puntos donde una lectura que no
+ * parsea tiene que dejar la columna en NULL en vez de contaminarla con un
+ * 0 falso -- por ejemplo, un total ilegible no es un total de $0.
+ */
+export function parsearImporteONulo(v: string | null | undefined): number | null {
+  if (v === null || v === undefined) return null
+  return normalizarImporte(v)
+}
+
+/**
+ * Version que nunca devuelve `null`: para sumar importes en JS, donde un
+ * valor ausente o ilegible tiene que aportar 0 al acumulado en vez de
+ * contaminarlo con `NaN`.
+ */
+export function parsearImporte(v: string | null | undefined): number {
+  return parsearImporteONulo(v) ?? 0
+}
