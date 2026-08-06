@@ -1,0 +1,6 @@
+.cuerpo {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(420px, 44%) 1fr;
+}

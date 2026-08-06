@@ -158,6 +158,28 @@ export async function contarPorEstado(query: string): Promise<Conteos> {
   return contarPorEstadoEn(await getPool(), query)
 }
 
+export type Encabezado = { id: number; archivoNombre: string }
+
+/**
+ * Lo mínimo para montar la pantalla de revisión: el nombre de archivo para
+ * la barra del visor, y confirmar que el comprobante existe (si no, la
+ * página muestra 404 en vez de una pantalla vacía).
+ */
+export async function obtenerEncabezadoEn(e: Ejecutor, id: number): Promise<Encabezado | null> {
+  const r = await e
+    .request()
+    .input('id', sql.Int, id)
+    .query<Record<string, unknown>>('SELECT ID, ARCHIVO_NOMBRE FROM PHF_COMPROBANTE WHERE ID = @id')
+
+  if (r.recordset.length === 0) return null
+  const row = r.recordset[0]
+  return { id: Number(row.ID), archivoNombre: String(row.ARCHIVO_NOMBRE) }
+}
+
+export async function obtenerEncabezado(id: number): Promise<Encabezado | null> {
+  return obtenerEncabezadoEn(await getPool(), id)
+}
+
 /** Inserta un comprobante minimo. Es para los tests, no para la app. */
 export async function insertarComprobantePrueba(
   tx: sql.Transaction,

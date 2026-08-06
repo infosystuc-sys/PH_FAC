@@ -1,3 +1,5 @@
+import { camposDelGrupo } from './campos'
+
 const MONEDA = new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -91,4 +93,28 @@ export function parsearImporteONulo(v: string | null | undefined): number | null
  */
 export function parsearImporte(v: string | null | undefined): number {
   return parsearImporteONulo(v) ?? 0
+}
+
+/**
+ * Claves del grupo "Importes" que entran en el total imputado. Se derivan
+ * del catálogo -- no se hardcodea la lista -- para que agregar o sacar un
+ * campo de ese grupo no desincronice la suma:
+ *
+ * - Se excluyen los `porcivaN`: el catálogo los marca `tipo: 'porcentaje'`,
+ *   no `decimal`, justamente para que esta suma los pueda descartar sin
+ *   nombrarlos uno por uno. Son alícuotas (21, 27, 3...), no importes,
+ *   y sumarlos daría un total que parece razonable pero está mal por
+ *   unas decenas.
+ * - Se excluye `imputado`: es el resultado de esta misma suma (de sólo
+ *   lectura), no un componente de ella.
+ * - Se excluye `total`: es el total leído del PDF. El imputado existe
+ *   justamente para contrastarlo contra esa lectura; sumarlo lo
+ *   duplicaría.
+ */
+const CLAVES_IMPUTADO = camposDelGrupo('importes')
+  .filter((c) => c.tipo === 'decimal' && !c.soloLectura && c.clave !== 'total')
+  .map((c) => c.clave)
+
+export function totalImputado(valores: Record<string, string | null | undefined>): number {
+  return CLAVES_IMPUTADO.reduce((acc, clave) => acc + parsearImporte(valores[clave]), 0)
 }

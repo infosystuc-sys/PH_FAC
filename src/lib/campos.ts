@@ -1,7 +1,14 @@
 import { CLAVES_RENGLON } from './renglones'
 
 export type GrupoCampo = 'comprobante' | 'proveedor' | 'importes' | 'imputacion'
-export type TipoCampo = 'texto' | 'fecha' | 'decimal'
+/**
+ * `porcentaje` es distinto de `decimal` a propósito: los `porcivaN` son
+ * alícuotas (21, 27, 3...), no importes. `totalImputado` (en formato.ts)
+ * se apoya en esta distinción para no sumarlos -- si fueran `decimal`
+ * como el resto, entrarían en la suma y el total imputado quedaría mal
+ * por unas decenas sin que nada lo señale.
+ */
+export type TipoCampo = 'texto' | 'fecha' | 'decimal' | 'porcentaje'
 
 export type DefCampo = {
   clave: string
@@ -51,15 +58,15 @@ export const CAMPOS: DefCampo[] = [
   // 2026-08-05, seccion 3 y 11.
   c('neto',        'Neto gravado',          'importes',    3, 'decimal', true),
   c('exento',      'No gravado / exento',   'importes',    3, 'decimal', true),
-  c('porciva1',    'Alícuota 1',            'importes',    2, 'decimal', true),
+  c('porciva1',    'Alícuota 1',            'importes',    2, 'porcentaje', true),
   c('impiva1',     'Importe 1',             'importes',    4, 'decimal', true),
-  c('porciva2',    'Alícuota 2',            'importes',    2, 'decimal', true),
+  c('porciva2',    'Alícuota 2',            'importes',    2, 'porcentaje', true),
   c('impiva2',     'Importe 2',             'importes',    4, 'decimal', true),
-  c('porciva3',    'Alícuota 3',            'importes',    2, 'decimal', true),
+  c('porciva3',    'Alícuota 3',            'importes',    2, 'porcentaje', true),
   c('impiva3',     'Importe 3',             'importes',    4, 'decimal', true),
-  c('porciva4',    'Alícuota 4',            'importes',    2, 'decimal', true),
+  c('porciva4',    'Alícuota 4',            'importes',    2, 'porcentaje', true),
   c('impiva4',     'Importe 4',             'importes',    4, 'decimal', true),
-  c('porciva5',    'Alícuota 5',            'importes',    2, 'decimal', true),
+  c('porciva5',    'Alícuota 5',            'importes',    2, 'porcentaje', true),
   c('impiva5',     'Importe 5',             'importes',    4, 'decimal', true),
   c('perciibb',    'Percepción IIBB',       'importes',    3, 'decimal', true),
   c('impint',      'Impuesto interno',      'importes',    3, 'decimal', true),

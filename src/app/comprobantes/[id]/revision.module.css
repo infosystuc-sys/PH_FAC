@@ -1,0 +1,30 @@
+.pantalla {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.barra {
+  flex: none;
+  padding: 12px 24px;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borde);
+}
+
+.volver {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--fondo-panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: #4a4e56;
+  text-decoration: none;
+}
+
+.volver:hover {
+  background: #e9e7e2;
+}
