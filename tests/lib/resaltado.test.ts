@@ -58,8 +58,29 @@ describe('coincide', () => {
       expect(coincide('Punto de Venta: 0011', '0011')).toBe(true)
     })
 
+    // Regresion real encontrada por la revision: el span impreso pega el
+    // punto de venta y el numero de comprobante con un guion en el medio
+    // ("0011-00147868"), no con un espacio al final como el test anterior.
+    // La pasada laxa borra ese guion sin dejar rastro y funde los dos
+    // numeros en un solo bloque de digitos ("001100147868"), donde "0011"
+    // queda pegado al "0" que sigue -- la regla de limite lo rechaza por
+    // error. La pasada estricta reemplaza el guion por un centinela no
+    // numerico en vez de borrarlo, así que la frontera entre los dos
+    // numeros sobrevive.
+    it('ptovta real ("0011") matchea contra el span real, con el numero de comprobante pegado por un guion', () => {
+      expect(coincide('0011-00147868', '0011')).toBe(true)
+    })
+
+    it('nro real ("00147868") matchea contra el mismo span, con el punto de venta pegado por un guion', () => {
+      expect(coincide('0011-00147868', '00147868')).toBe(true)
+    })
+
     it('el CUIT con guiones sigue matcheando bajo la regla de limite de numero', () => {
       expect(coincide('CUIT: 30-66328849-7', '30-66328849-7')).toBe(true)
+    })
+
+    it('el CUIT con guiones tambien matchea contra un span sin guiones (pasada laxa)', () => {
+      expect(coincide('Ing. Brutos: 30663288497', '30-66328849-7')).toBe(true)
     })
 
     it('el total de la factura sigue matcheando bajo la regla de limite de numero', () => {
