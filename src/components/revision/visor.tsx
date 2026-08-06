@@ -27,6 +27,15 @@ export function Visor({
   const contenedor = useRef<HTMLDivElement>(null)
   const [paginas, setPaginas] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  // Cuenta las páginas cuya capa de texto ya terminó de renderizarse. El
+  // efecto de resaltado la usa como dependencia: sin esto, si el operador
+  // enfoca un campo mientras todavía se están cargando las páginas
+  // siguientes de un comprobante largo, esas páginas nunca quedan
+  // resaltadas -- el efecto ya corrió (con los spans que existían en ese
+  // momento) y no vuelve a correr solo porque aparecieron más spans en el
+  // DOM. Cada página que termina su capa de texto empuja este contador,
+  // lo que dispara una nueva pasada de resaltado sobre el estado actual.
+  const [paginasConTexto, setPaginasConTexto] = useState(0)
 
   useEffect(() => {
     let cancelado = false
@@ -51,6 +60,7 @@ export function Visor({
       // el PDF del anterior renderizado detras del mensaje de error.
       setError(null)
       setPaginas(0)
+      setPaginasConTexto(0)
       contenedor.current?.replaceChildren()
       try {
         const doc: PDFDocumentProxy = await tareaCarga.promise
@@ -108,6 +118,8 @@ export function Visor({
           tareaTexto = capaTexto
           await capaTexto.render()
           tareaTexto = null
+          if (cancelado) return
+          setPaginasConTexto((p) => p + 1)
         }
       } catch {
         if (!cancelado) setError('No se pudo abrir el PDF.')
@@ -129,6 +141,14 @@ export function Visor({
   // página de un comprobante largo. Si el PDF es escaneado no hay capa de
   // texto -- `querySelectorAll` no encuentra spans y el efecto no hace
   // nada, sin que eso sea un error.
+  //
+  // `paginasConTexto` está en las dependencias aunque no se lea en el
+  // cuerpo: las capas de texto se renderizan de a una, en paralelo con
+  // este efecto, así que un campo enfocado antes de que termine de cargar
+  // el comprobante puede quedar corriendo con menos spans en el DOM que
+  // los que hay un instante después. Sin esta dependencia, las páginas
+  // que terminan de renderizarse después del enfoque quedan sin marcar
+  // hasta que el operador desenfoca y vuelve a enfocar.
   useEffect(() => {
     const capas = contenedor.current?.querySelectorAll('.capa-texto-pdf')
     if (!capas) return
@@ -139,7 +159,7 @@ export function Visor({
         span.classList.toggle(styles.resaltado, marcar)
       }
     }
-  }, [resaltar])
+  }, [resaltar, paginasConTexto])
 
   return (
     <div className={styles.panel}>
