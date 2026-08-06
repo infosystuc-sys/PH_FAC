@@ -133,7 +133,15 @@ Van a `PHF_RENGLON`, no a `PHF_CAMPO`, y no tienen confianza por campo: `codigo`
 
 ### La respuesta
 
-Por cada campo del catálogo, un objeto con `valor` (string o `null` si no figura en el PDF) y `confianza` (0 a 1). Más el array de renglones.
+**Dos objetos planos y hermanos**, más el array de renglones:
+
+- `valores` — una propiedad string por campo del catálogo. **Cadena vacía** significa "no figura en el PDF".
+- `confianzas` — una propiedad number por campo, de 0 a 1.
+- `renglones` — el array, con las cinco claves de `RenglonExtraido`.
+
+La forma es plana y no anidada por dos límites duros de la API, los dos encontrados corriendo contra un comprobante real y ninguno documentado en las fuentes que se consultaron. Están explicados en §11: **máximo 16 parámetros con uniones** —de ahí que `valor` sea siempre string y no `string | null`— y **tamaño de la gramática compilada**, que con 29 campos anidados en objetos `{ valor, confianza }` la API rechaza.
+
+`parsearRespuesta` es deliberadamente tolerante: una clave de más se descarta, una de menos se completa con `null` y confianza 0, la confianza se acota a 0..1, y un campo sin valor no aporta confianza al promedio. Si viene `valores` pero no `confianzas`, las confianzas se tratan como 0 en vez de fallar: un valor sin confianza sigue siendo un valor útil.
 
 Todo se guarda como **texto** en `VALOR_IA`. El parseo a número o fecha vive en `src/lib/`, no en la capa de IA: `VALOR_IA` y `VALOR_FINAL` son `NVARCHAR(500)` y guardan lo que el PDF dice, no una interpretación.
 
