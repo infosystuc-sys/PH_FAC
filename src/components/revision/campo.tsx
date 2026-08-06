@@ -21,9 +21,9 @@ export function Campo({
   onDesenfoque: () => void
 }) {
   const [local, setLocal] = useState(valor)
-  // Snapshot inmutable del valor con el que se montó el campo. Sirve para
-  // no autoguardar mientras `local` siga siendo ese mismo valor.
-  const inicial = useRef(valor)
+  // Se prende en el onChange del input, nunca en un efecto. Es lo que
+  // distingue "el operador escribió algo" de "este componente se montó".
+  const tocado = useRef(false)
 
   // Autosave con debounce de 500 ms. El primer render no dispara guardado:
   // sin esta guarda, simplemente abrir la pantalla marcaria los 29 campos
@@ -32,19 +32,25 @@ export function Campo({
   // silencioso (nadie lo nota en el momento) e irreversible (no hay forma
   // de distinguir despues un "corregido" real de uno falso).
   //
-  // La guarda NO puede ser un ref booleano "ya paso el primer render":
-  // React StrictMode (activo por default en el dev server) duplica a
-  // proposito la primera pasada de todo efecto -- monta, limpia, vuelve a
-  // montar -- para exponer justamente este tipo de bug. Con un flag que se
-  // apaga en la primera invocacion, la SEGUNDA pasada de StrictMode ya lo
-  // encuentra apagado y dispara un autoguardado fantasma en los 29 campos
-  // sin que el operador haya tocado nada (se confirmo en la base durante
-  // la verificacion). Comparar contra un snapshot inmutable del valor
-  // inicial es indiferente a cuantas veces se invoca el efecto: mientras
-  // `local` siga siendo el mismo valor con el que se montó, no hay nada
-  // que guardar.
+  // La guarda NO puede ser un ref booleano "ya paso el primer render" (lo
+  // era antes): React StrictMode (activo por default en el dev server)
+  // duplica a proposito la primera pasada de todo efecto -- monta, limpia,
+  // vuelve a montar -- y con un flag que se apaga en la primera invocacion
+  // la segunda ya lo encuentra apagado y dispara un guardado fantasma.
+  // Tampoco alcanza comparar `local` contra el valor inicial: si el
+  // operador escribe algo, se guarda de verdad a los 500 ms, y despues se
+  // arrepiente y borra hasta volver al valor original, `local` vuelve a
+  // ser igual al inicial y esa comparacion bloquearia justo el guardado
+  // que tiene que revertir lo que ya se grabó -- la pantalla mostraria el
+  // valor original pero la base seguiria con la corrección vieja.
+  //
+  // Por eso la guarda sigue si HUBO un onChange, no si el valor cambió: el
+  // doble montaje de Strict Mode nunca dispara un onChange (no toca el
+  // input), así que el primer render sigue sin guardar; y un revert sí es
+  // un onChange, así que se vuelve a guardar aunque el valor final
+  // coincida con el inicial.
   useEffect(() => {
-    if (local === inicial.current) return
+    if (!tocado.current) return
     const t = setTimeout(() => onCambio(local), 500)
     return () => clearTimeout(t)
   }, [local, onCambio])
@@ -76,7 +82,10 @@ export function Campo({
           .join(' ')}
         value={local}
         readOnly={def.soloLectura}
-        onChange={(e) => setLocal(e.target.value)}
+        onChange={(e) => {
+          tocado.current = true
+          setLocal(e.target.value)
+        }}
         onFocus={() => onFoco(local)}
         onBlur={onDesenfoque}
       />

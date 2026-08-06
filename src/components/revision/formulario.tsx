@@ -17,10 +17,12 @@ const MAX_SLOTS_ALICUOTA = 5
  * cinco slots siempre seria ruido permanente en la pantalla donde el
  * operador pasa el 90% del tiempo, con 20 a 100 comprobantes por día.
  *
- * Se muestran los que tienen valor más uno vacío para poder agregar uno
- * nuevo. Se calcula una sola vez a partir de los valores iniciales -- no
- * se recalcula en cada tecla -- para no reacomodar filas debajo del cursor
- * si el operador borra un slot intermedio mientras escribe.
+ * Punto de partida: los que la IA encontró con valor, más uno vacío para
+ * poder agregar uno nuevo. De acá en más el piso de `slots` (ver `cambiar`
+ * más abajo) solo crece -- nunca se recalcula desde cero ni se achica --
+ * para que completar el slot vacío revele uno nuevo (la mitad del
+ * comportamiento que hacía falta) sin reacomodar nada si el operador
+ * borra un slot intermedio mientras escribe (la otra mitad).
  */
 function contarSlotsAlicuota(iniciales: Record<string, ValorInicial>): number {
   let ultimoConValor = 0
@@ -55,13 +57,23 @@ export function Formulario({
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(iniciales).map(([k, v]) => [k, v.valor])),
   )
-  const [slots] = useState(() => contarSlotsAlicuota(iniciales))
+  const [slots, setSlots] = useState(() => contarSlotsAlicuota(iniciales))
 
   const imputado = useMemo(() => formatMoneda(totalImputado(valores)), [valores])
 
   const cambiar = useCallback(
     (clave: string, v: string) => {
       setValores((prev) => (prev[clave] === v ? prev : { ...prev, [clave]: v }))
+
+      // Si lo que se completó es un slot de alícuota y quedó con valor,
+      // el piso de slots visibles crece para revelar el próximo vacío --
+      // Math.max así nunca lo achica si en cambio se está borrando.
+      const m = RE_SLOT_ALICUOTA.exec(clave)
+      if (m && v.trim() !== '') {
+        const siguiente = Math.min(MAX_SLOTS_ALICUOTA, Number(m[1]) + 1)
+        setSlots((prev) => Math.max(prev, siguiente))
+      }
+
       void guardarCampo(comprobanteId, clave, v)
     },
     [comprobanteId],

@@ -17,7 +17,7 @@
   align-items: center;
   height: 32px;
   padding: 0 12px;
-  background: var(--fondo-panel);
+  background: var(--fondo-app);
   border: 1px solid var(--borde);
   border-radius: 6px;
   font-size: 12.5px;
