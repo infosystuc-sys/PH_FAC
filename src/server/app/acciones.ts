@@ -233,7 +233,6 @@ export async function marcarObservacionEn(
 }
 
 export async function marcarObservacion(id: number, motivo: string, nota: string): Promise<void> {
-  const pool = await getPool()
   await conTransaccion(async (tx) => {
     await marcarObservacionEn(tx, id, motivo, nota)
   })

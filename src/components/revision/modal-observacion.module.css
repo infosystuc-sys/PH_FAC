@@ -51,8 +51,8 @@
 }
 
 .motivoElegido {
-  border-color: #2b4fd0;
-  background: #f4f6fd;
+  border-color: var(--acento);
+  background: var(--acento-tenue-2);
 }
 
 .nota {
