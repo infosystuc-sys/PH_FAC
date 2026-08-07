@@ -1,0 +1,99 @@
+import { describe, it, expect } from 'vitest'
+import {
+  letraComprobante,
+  nComp,
+  validarTotales,
+  validarCae,
+  validarProveedor,
+  validarDuplicado,
+} from '@/lib/validaciones'
+
+describe('letraComprobante', () => {
+  it('reconoce la letra al final de "FAC A"', () => {
+    expect(letraComprobante('FAC A')).toBe('A')
+  })
+  it('reconoce la letra en "FACTURA A 0011-00063576"', () => {
+    expect(letraComprobante('FACTURA A 0011-00063576')).toBe('A')
+  })
+  it('reconoce la letra sola', () => {
+    expect(letraComprobante('C')).toBe('C')
+  })
+  it('es insensible a mayusculas/minusculas', () => {
+    expect(letraComprobante('factura b')).toBe('B')
+  })
+  it('devuelve null si no encuentra ninguna letra de comprobante valida', () => {
+    expect(letraComprobante('Factura electronica')).toBe(null)
+    expect(letraComprobante('')).toBe(null)
+  })
+})
+
+describe('nComp', () => {
+  it('arma el N_COMP con padding de 5 y 8 digitos', () => {
+    expect(nComp('A', '0011', '63576')).toBe('A0011800063576'.slice(0, 1) + '00011' + '00063576')
+  })
+  it('no trunca si ptovta o nro ya vienen mas largos que el padding', () => {
+    expect(nComp('A', '123456', '123456789')).toBe('A123456123456789')
+  })
+})
+
+describe('validarProveedor', () => {
+  it('ok con exactamente un match', () => {
+    expect(validarProveedor(1)).toEqual({ estado: 'ok', mensaje: 'Proveedor resuelto.' })
+  })
+  it('error sin ningun match', () => {
+    const r = validarProveedor(0)
+    expect(r.estado).toBe('error')
+  })
+  it('error con mas de un match', () => {
+    const r = validarProveedor(3)
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('3')
+  })
+})
+
+describe('validarDuplicado', () => {
+  it('ok si no hay duplicado', () => {
+    expect(validarDuplicado(false, null)).toEqual({ estado: 'ok', mensaje: 'Sin duplicados.' })
+  })
+  it('error con la referencia si hay duplicado', () => {
+    const r = validarDuplicado(true, 'comprobante interno 16591')
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('16591')
+  })
+})
+
+describe('validarTotales', () => {
+  it('ok si totalImputado coincide con el total leido (tolerancia de un centavo)', () => {
+    const v = { neto: '529.947,50', porciva1: '21.0', impiva1: '39.190,99',
+      porciva2: '27.0', impiva2: '92.697,41', porciva3: '3', impiva3: '15.898,43',
+      perciibb: '13.248,69', total: '690.983,02' }
+    expect(validarTotales(v).estado).toBe('ok')
+  })
+  it('advertencia con la diferencia exacta si no coinciden', () => {
+    const v = { neto: '100.000,00', total: '112.480,00' }
+    const r = validarTotales(v)
+    expect(r.estado).toBe('advertencia')
+    expect(r.mensaje).toContain('12.480,00')
+  })
+})
+
+describe('validarCae', () => {
+  const hoy = new Date('2026-08-07T00:00:00')
+
+  it('ok con CAE de 14 digitos y vencimiento futuro', () => {
+    expect(validarCae('76123456789012', '31/12/2026', hoy)).toEqual({ estado: 'ok', mensaje: 'CAE válido.' })
+  })
+  it('advertencia si el CAE no tiene 14 digitos', () => {
+    const r = validarCae('123', '31/12/2026', hoy)
+    expect(r.estado).toBe('advertencia')
+    expect(r.mensaje).toContain('formato')
+  })
+  it('advertencia si el CAE vencio', () => {
+    const r = validarCae('76123456789012', '01/01/2026', hoy)
+    expect(r.estado).toBe('advertencia')
+    expect(r.mensaje).toContain('vencido')
+  })
+  it('advertencia si no hay CAE', () => {
+    expect(validarCae('', '', hoy).estado).toBe('advertencia')
+  })
+})
