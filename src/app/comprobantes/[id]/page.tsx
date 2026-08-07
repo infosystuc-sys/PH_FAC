@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { obtenerEncabezado } from '@/server/app/comprobantes'
 import { obtenerDetalle } from '@/server/app/detalle'
+import { validarComprobante } from '@/server/app/validaciones'
 import { Pantalla } from '@/components/revision/pantalla'
 import { BarraAcciones } from '@/components/revision/barra-acciones'
 import { PanelProcesando } from '@/components/revision/panel-procesando'
@@ -40,6 +41,12 @@ export default async function RevisionPage({
   const detalle = await obtenerDetalle(id)
   const hayCorrecciones = detalle.campos.some((c) => c.corregido)
 
+  // Solo hace falta para la pantalla de revisión (implica leer Tango: CUIT,
+  // duplicados en CPA04). En `procesando` y `error` ni siquiera se muestra
+  // el formulario, así que evaluarla ahí sería trabajo tirado.
+  const mostrarRevision = encabezado.estado !== 'procesando' && encabezado.estado !== 'error'
+  const validaciones = mostrarRevision ? await validarComprobante(id) : null
+
   return (
     <div className={styles.pantalla}>
       <BarraAcciones
@@ -55,7 +62,7 @@ export default async function RevisionPage({
         <PanelError id={id} mensaje={encabezado.errorMensaje} hayCorrecciones={hayCorrecciones} />
       )}
 
-      {encabezado.estado !== 'procesando' && encabezado.estado !== 'error' && (
+      {mostrarRevision && validaciones && (
         <Pantalla
           key={id}
           comprobanteId={id}
@@ -77,6 +84,7 @@ export default async function RevisionPage({
           hayCorrecciones={hayCorrecciones}
           renglones={detalle.renglones}
           auditoria={detalle.auditoria}
+          validaciones={validaciones}
           // `registrado` es terminal e inmutable (mismo criterio que ya
           // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El
           // backend ya bloquea la escritura en guardarCampoEn con un no-op

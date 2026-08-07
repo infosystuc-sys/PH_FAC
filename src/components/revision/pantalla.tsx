@@ -4,9 +4,11 @@ import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Formulario, type ValorInicial } from './formulario'
 import { AvisoIA } from './aviso-ia'
+import { PanelValidaciones } from './validaciones'
 import { Renglones } from './renglones'
 import { Historial } from './historial'
 import type { RenglonGuardado, EntradaAuditoria } from '@/server/app/detalle'
+import type { Validaciones } from '@/server/app/validaciones'
 import styles from './pantalla.module.css'
 
 /**
@@ -49,6 +51,7 @@ export function Pantalla({
   hayCorrecciones,
   renglones,
   auditoria,
+  validaciones,
   soloLectura = false,
 }: {
   comprobanteId: number
@@ -61,6 +64,7 @@ export function Pantalla({
   hayCorrecciones: boolean
   renglones: RenglonGuardado[]
   auditoria: EntradaAuditoria[]
+  validaciones: Validaciones
   // Comprobante `registrado`: terminal e inmutable. Se pasa a Formulario
   // para que los inputs queden de solo lectura (ver comentario ahí); el
   // backend ya bloquea la escritura de todos modos, esto es solo UI.
@@ -80,6 +84,7 @@ export function Pantalla({
           confianza={confianza}
           hayCorrecciones={hayCorrecciones}
         />
+        <PanelValidaciones comprobanteId={comprobanteId} validaciones={validaciones} />
         <Formulario
           comprobanteId={comprobanteId}
           iniciales={iniciales}

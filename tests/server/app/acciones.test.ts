@@ -3,8 +3,9 @@ import sql from 'mssql'
 import { rm } from 'node:fs/promises'
 import { conRollback } from '@/server/db/tx'
 import { cerrarPool, getPool } from '@/server/db/pool'
-import { importarComprobanteEn, importarComprobantes } from '@/server/app/acciones'
+import { importarComprobanteEn, importarComprobantes, elegirProveedorEn } from '@/server/app/acciones'
 import { obtenerDetalleEn } from '@/server/app/detalle'
+import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 
 const creados: string[] = []
 
@@ -93,5 +94,36 @@ describe('importarComprobantes', () => {
 
     const despues = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
     expect(despues.recordset[0].n).toBe(antes.recordset[0].n)
+  })
+})
+
+describe('elegirProveedorEn', () => {
+  it('guarda codprovee, desnormaliza RAZON_SOCIAL/COD_PROVEE y audita', async () => {
+    // Se ejercita `elegirProveedorEn(tx, ...)` -- no el wrapper `elegirProveedor`,
+    // que abre su propia conexión de pool -- para que corra dentro de la
+    // misma transacción que insertó el comprobante de prueba. Si se usara el
+    // pool real acá, el UPDATE (y el INSERT en PHF_AUDITORIA, que tiene FK a
+    // PHF_COMPROBANTE) quedarían esperando el lock de esta transacción, que a
+    // su vez no comitea hasta que el test termina: un deadlock por diseño del
+    // test, no una carrera real. Mismo motivo por el que se lee con `tx` en
+    // vez de `getPool()`/`obtenerDetalle`.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await elegirProveedorEn(tx, id, '010151', 'AMX ARGENTINA SOCIEDAD ANONIMA', true)
+
+      const detalle = await obtenerDetalleEn(tx, id)
+      const campo = detalle.campos.find((c) => c.clave === 'codprovee')
+      expect(campo?.valorFinal).toBe('010151')
+      expect(campo?.corregido).toBe(true)
+
+      const fila = await tx
+        .request()
+        .input('id', sql.Int, id)
+        .query(`SELECT COD_PROVEE, RAZON_SOCIAL FROM PHF_COMPROBANTE WHERE ID=@id`)
+      expect(fila.recordset[0].COD_PROVEE).toBe('010151')
+      expect(fila.recordset[0].RAZON_SOCIAL).toBe('AMX ARGENTINA SOCIEDAD ANONIMA')
+
+      expect(detalle.auditoria.some((a) => a.texto.includes('AMX'))).toBe(true)
+    })
   })
 })
