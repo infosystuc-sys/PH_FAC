@@ -24,10 +24,16 @@ export function SelectorProveedor({
       setResultados([])
       return
     }
+    let vigente = true
     debounce.current = setTimeout(() => {
-      buscarProveedores(query).then(setResultados)
+      buscarProveedores(query).then((r) => {
+        if (vigente) setResultados(r)
+      })
     }, 250)
-    return () => clearTimeout(debounce.current)
+    return () => {
+      vigente = false
+      clearTimeout(debounce.current)
+    }
   }, [query])
 
   function elegir(p: Proveedor, corregido: boolean) {
