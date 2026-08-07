@@ -54,7 +54,7 @@ export async function validarComprobanteEn(e: Ejecutor, id: number): Promise<Val
           .request()
           .input('id', sql.Int, id)
           .input('cp', sql.VarChar(20), codProvee)
-          .input('tipo', sql.VarChar(10), valores.tipo ?? null)
+          .input('tipo', sql.VarChar(10), valores.tipo?.slice(0, 10) ?? null)
           .input('pv', sql.VarChar(10), ptovta)
           .input('nro', sql.VarChar(20), nro)
           .query(`
