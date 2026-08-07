@@ -8,16 +8,9 @@ import { guardarPdf } from './archivos'
 import { auditarEn, guardarCampoEn } from './detalle'
 import { despertarWorker } from './cola'
 import { usuarioActual } from '@/lib/usuario'
+import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
-
-export const MOTIVOS_OBSERVACION = [
-  'Diferencia de importe con la O/C',
-  'Proveedor inexistente en Tango',
-  'Falta remito asociado',
-  'CAE vencido o inválido',
-  'Precio distinto al acordado',
-] as const
 
 type Ejecutor = { request(): sql.Request }
 

@@ -10,8 +10,8 @@ import {
   confirmarComprobante,
   marcarObservacionEn,
   marcarObservacion,
-  MOTIVOS_OBSERVACION,
 } from '@/server/app/acciones'
+import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { obtenerDetalleEn } from '@/server/app/detalle'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 
