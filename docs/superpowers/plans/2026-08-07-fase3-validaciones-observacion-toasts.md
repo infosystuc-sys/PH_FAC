@@ -749,7 +749,7 @@ export async function validarComprobante(id: number): Promise<Validaciones> {
 - [ ] **Step 4: Correr los tests y verificar que pasan**
 
 Run: `npx vitest run tests/server/app/validaciones.test.ts`
-Expected: PASS (6 tests)
+Expected: PASS (5 tests)
 
 - [ ] **Step 5: Commit**
 
