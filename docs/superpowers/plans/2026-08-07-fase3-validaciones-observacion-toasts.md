@@ -780,32 +780,34 @@ EOF
 **Interfaces:**
 - Consumes: `Validaciones`/`validarComprobante` (Task 3), `Proveedor`/`buscarProveedoresPorRazonSocial` (`@/server/tango/proveedores`, ya existe), `guardarCampoEn`/`auditarEn` (`@/server/app/detalle`, ya existen).
 - Produces:
-  - `elegirProveedor(id: number, codProvee: string, razonSocial: string, corregido: boolean): Promise<void>` (server action)
+  - `elegirProveedorEn(e: Ejecutor, id: number, codProvee: string, razonSocial: string, corregido: boolean): Promise<void>` (núcleo testeable, mismo patrón que `guardarCampoEn`/`obtenerDetalleEn`)
+  - `elegirProveedor(id: number, codProvee: string, razonSocial: string, corregido: boolean): Promise<void>` (server action, wrapper sobre `elegirProveedorEn` con el pool real)
   - `buscarProveedores(texto: string): Promise<Proveedor[]>` (server action, wrapper delgado sobre `buscarProveedoresPorRazonSocial` para poder llamarla desde un client component)
   - `<PanelValidaciones validaciones={Validaciones} comprobanteId={number} />` (server component)
   - `<SelectorProveedor comprobanteId={number} candidatos={Proveedor[]} />` (client component)
 
-- [ ] **Step 1: Escribir el test que falla para `elegirProveedor`**
+**Por qué `_En`/wrapper y no una sola función con el pool real:** `elegirProveedor` necesita un test, y los tests de esta suite crean su comprobante de prueba dentro de `conRollback` — una transacción que no comittea hasta que el test termina. Si `elegirProveedor` abriera su propia conexión contra el pool real (como hace, por ejemplo, `confirmarComprobante`, que no tiene test dedicado), el `UPDATE PHF_COMPROBANTE` de esa conexión separada quedaría esperando el lock que la transacción del test todavía tiene tomado sobre esa misma fila — un deadlock entre las dos conexiones, no una condición de carrera real. El resto del código ya resuelve esto con el patrón `_En`: `guardarCampoEn`/`guardarCampo`, `obtenerDetalleEn`/`obtenerDetalle`. `elegirProveedor` sigue el mismo camino para poder testearse dentro de la misma transacción que crea sus datos.
+
+- [ ] **Step 1: Escribir el test que falla para `elegirProveedorEn`**
 
 ```ts
 // Agregar a tests/server/app/acciones.test.ts
-import { elegirProveedor } from '@/server/app/acciones'
-import { obtenerDetalle } from '@/server/app/detalle'
+import { elegirProveedorEn } from '@/server/app/acciones'
+import { obtenerDetalleEn } from '@/server/app/detalle'
 
-describe('elegirProveedor', () => {
+describe('elegirProveedorEn', () => {
   it('guarda codprovee, desnormaliza RAZON_SOCIAL/COD_PROVEE y audita', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
-      await elegirProveedor(id, '010151', 'AMX ARGENTINA SOCIEDAD ANONIMA', true)
+      await elegirProveedorEn(tx, id, '010151', 'AMX ARGENTINA SOCIEDAD ANONIMA', true)
 
-      const detalle = await obtenerDetalle(id)
+      const detalle = await obtenerDetalleEn(tx, id)
       const campo = detalle.campos.find((c) => c.clave === 'codprovee')
       expect(campo?.valorFinal).toBe('010151')
       expect(campo?.corregido).toBe(true)
 
-      const fila = await getPool().then((p) =>
-        p.request().input('id', sql.Int, id).query(`SELECT COD_PROVEE, RAZON_SOCIAL FROM PHF_COMPROBANTE WHERE ID=@id`),
-      )
+      const fila = await tx.request().input('id', sql.Int, id)
+        .query(`SELECT COD_PROVEE, RAZON_SOCIAL FROM PHF_COMPROBANTE WHERE ID=@id`)
       expect(fila.recordset[0].COD_PROVEE).toBe('010151')
       expect(fila.recordset[0].RAZON_SOCIAL).toBe('AMX ARGENTINA SOCIEDAD ANONIMA')
 
@@ -815,14 +817,14 @@ describe('elegirProveedor', () => {
 })
 ```
 
-(`elegirProveedor` usa el pool real, no la transacción del test — es un server action pensado para producción. El test verifica sus efectos leyendo con `obtenerDetalle`/`getPool` normales; como corre dentro de `conRollback`, el `INSERT` del comprobante de prueba se revierte igual al final aunque `elegirProveedor` no participe de esa transacción.)
+Todo el test corre sobre `tx` — la misma transacción que insertó el comprobante de prueba — para no cruzar conexiones. `getPool()`/el pool real no aparecen en este test.
 
 - [ ] **Step 2: Correr el test y verificar que falla**
 
-Run: `npx vitest run tests/server/app/acciones.test.ts -t elegirProveedor`
-Expected: FAIL — `elegirProveedor` no existe
+Run: `npx vitest run tests/server/app/acciones.test.ts -t elegirProveedorEn`
+Expected: FAIL — `elegirProveedorEn` no existe
 
-- [ ] **Step 3: Implementar `elegirProveedor` y `buscarProveedores` en `acciones.ts`**
+- [ ] **Step 3: Implementar `elegirProveedorEn`, `elegirProveedor` y `buscarProveedores` en `acciones.ts`**
 
 Agregar a `src/server/app/acciones.ts` (junto a los demás `import`, agregar `buscarProveedoresPorRazonSocial` y `auditarEn`/`guardarCampoEn` si no están ya importados):
 
@@ -847,7 +849,29 @@ export async function buscarProveedores(texto: string): Promise<Proveedor[]> {
  * contaminar CORREGIDO_POR_USUARIO; si vino de buscar por razon social
  * porque el CUIT no encontro nada, si lo es. Mismo criterio que
  * resolverProveedorEn en cola.ts.
+ *
+ * Separado en Ejecutor/wrapper (como guardarCampoEn/guardarCampo) para
+ * poder testearse dentro de la misma transaccion que crea el comprobante
+ * de prueba -- si usara el pool real directo, el UPDATE quedaria
+ * esperando el lock que esa transaccion todavia tiene tomado.
  */
+export async function elegirProveedorEn(
+  e: Ejecutor,
+  id: number,
+  codProvee: string,
+  razonSocial: string,
+  corregido: boolean,
+): Promise<void> {
+  await guardarCampoEn(e, id, 'codprovee', codProvee, { corregidoPorUsuario: corregido })
+  await e
+    .request()
+    .input('id', sql.Int, id)
+    .input('cod', sql.VarChar(20), codProvee)
+    .input('razon', sql.NVarChar(200), razonSocial)
+    .query(`UPDATE PHF_COMPROBANTE SET COD_PROVEE = @cod, RAZON_SOCIAL = @razon WHERE ID = @id`)
+  await auditarEn(e, id, `Proveedor elegido a mano: ${codProvee} — ${razonSocial}`)
+}
+
 export async function elegirProveedor(
   id: number,
   codProvee: string,
@@ -855,15 +879,7 @@ export async function elegirProveedor(
   corregido: boolean,
 ): Promise<void> {
   const pool = await getPool()
-  await guardarCampoEn(pool, id, 'codprovee', codProvee, { corregidoPorUsuario: corregido })
-  await pool
-    .request()
-    .input('id', sql.Int, id)
-    .input('cod', sql.VarChar(20), codProvee)
-    .input('razon', sql.NVarChar(200), razonSocial)
-    .query(`UPDATE PHF_COMPROBANTE SET COD_PROVEE = @cod, RAZON_SOCIAL = @razon WHERE ID = @id`)
-  await auditarEn(pool, id, `Proveedor elegido a mano: ${codProvee} — ${razonSocial}`)
-
+  await elegirProveedorEn(pool, id, codProvee, razonSocial, corregido)
   revalidatePath(`/comprobantes/${id}`)
 }
 ```
