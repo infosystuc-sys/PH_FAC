@@ -25,6 +25,14 @@ export type Pendiente = { id: number; ruta: string }
  * La ventana de repesca se mide contra FECHA_MODIF, que se toca en cada
  * intento, y no contra FECHA_ALTA: si no, un comprobante en su tercer
  * intento se repescaria de inmediato.
+ *
+ * La seleccion es tambien el claim: el UPDATE marca FECHA_MODIF = SYSDATETIME()
+ * en la misma sentencia que elige las filas, con UPDLOCK + READPAST sobre el
+ * SELECT de la CTE para que dos ejecuciones concurrentes (por ejemplo
+ * `tanda()` drenando la cola mientras otro llamado hace `despertarWorker()`)
+ * no puedan tomar la misma fila -- una toma el lock de actualizacion y la
+ * otra la saltea en vez de esperarla o releerla. Mismo espiritu que el
+ * `MERGE ... WITH (HOLDLOCK)` de `guardarCampoEn` en detalle.ts.
  */
 export async function tomarPendientesEn(e: Ejecutor, limite: number): Promise<Pendiente[]> {
   const r = await e
@@ -33,12 +41,17 @@ export async function tomarPendientesEn(e: Ejecutor, limite: number): Promise<Pe
     .input('max', sql.Int, MAX_INTENTOS)
     .input('min', sql.Int, MINUTOS_REPESCA)
     .query<Record<string, unknown>>(`
-      SELECT TOP (@lim) ID, ARCHIVO_RUTA
-      FROM PHF_COMPROBANTE
-      WHERE ESTADO = 'procesando'
-        AND INTENTOS < @max
-        AND (FECHA_MODIF IS NULL OR FECHA_MODIF < DATEADD(MINUTE, -@min, SYSDATETIME()))
-      ORDER BY FECHA_ALTA
+      WITH candidatos AS (
+        SELECT TOP (@lim) ID, ARCHIVO_RUTA, FECHA_MODIF
+        FROM PHF_COMPROBANTE WITH (UPDLOCK, ROWLOCK, READPAST)
+        WHERE ESTADO = 'procesando'
+          AND INTENTOS < @max
+          AND (FECHA_MODIF IS NULL OR FECHA_MODIF < DATEADD(MINUTE, -@min, SYSDATETIME()))
+        ORDER BY FECHA_ALTA
+      )
+      UPDATE candidatos
+      SET FECHA_MODIF = SYSDATETIME()
+      OUTPUT INSERTED.ID, INSERTED.ARCHIVO_RUTA
     `)
 
   return r.recordset.map((x) => ({ id: Number(x.ID), ruta: String(x.ARCHIVO_RUTA) }))
@@ -201,12 +214,28 @@ export async function procesarUno({ id, ruta }: Pendiente): Promise<void> {
 let corriendo = false
 let temporizador: ReturnType<typeof setInterval> | null = null
 
+/**
+ * Drena la cola por completo, no solo una tanda de CONCURRENCIA. Un lote de
+ * importacion de hasta 50 archivos deja como maximo CONCURRENCIA en vuelo
+ * por vez, pero el `for` vuelve a pedir mientras `tomarPendientesEn` siga
+ * devolviendo filas -- si no, `despertarWorker()` solo alcanzaria para los
+ * primeros CONCURRENCIA del lote y el resto quedaria esperando al proximo
+ * intervalo o a un reproceso manual.
+ *
+ * El guard `corriendo` evita que dos llamados solapados (el intervalo y un
+ * `despertarWorker()` de un import o reproceso) corran dos loops en
+ * paralelo: el que ya esta corriendo va a recoger las filas nuevas en su
+ * proxima vuelta del `for`, asi que el segundo llamado no hace falta.
+ */
 async function tanda(): Promise<void> {
   if (corriendo) return
   corriendo = true
   try {
-    const pendientes = await tomarPendientesEn(await getPool(), CONCURRENCIA)
-    await Promise.all(pendientes.map(procesarUno))
+    for (;;) {
+      const pendientes = await tomarPendientesEn(await getPool(), CONCURRENCIA)
+      if (pendientes.length === 0) break
+      await Promise.all(pendientes.map(procesarUno))
+    }
   } catch {
     // Si la base no responde, la proxima tanda reintenta.
   } finally {

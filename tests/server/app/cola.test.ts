@@ -70,6 +70,36 @@ describe('tomarPendientesEn', () => {
       expect((await tomarPendientesEn(tx, 2)).length).toBe(2)
     })
   })
+
+  it('no repesca un colgado que todavia no llego a los 10 minutos de ventana', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await tx.request().input('id', sql.Int, id).query(`
+        UPDATE PHF_COMPROBANTE SET FECHA_MODIF = DATEADD(MINUTE, -5, SYSDATETIME())
+        WHERE ID = @id
+      `)
+      const tomados = await tomarPendientesEn(tx, 50)
+      expect(tomados.map((x) => x.id)).not.toContain(id)
+    })
+  })
+
+  it('repesca un colgado que ya paso los 10 minutos de ventana', async () => {
+    await conRollback(async (tx) => {
+      // Igual que en 'toma un comprobante recien encolado': se mide el
+      // backlog real antes de insertar, porque tomarPendientesEn ahora
+      // tambien es el claim (marca FECHA_MODIF = ahora en la misma
+      // sentencia), asi que la primera llamada ya deja afuera de la
+      // ventana de repesca a todo lo que devuelve.
+      const backlog = await tomarPendientesEn(tx, 1_000_000)
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await tx.request().input('id', sql.Int, id).query(`
+        UPDATE PHF_COMPROBANTE SET FECHA_MODIF = DATEADD(MINUTE, -15, SYSDATETIME())
+        WHERE ID = @id
+      `)
+      const tomados = await tomarPendientesEn(tx, backlog.length + 1)
+      expect(tomados.map((x) => x.id)).toContain(id)
+    })
+  })
 })
 
 describe('marcarLeidoEn', () => {
