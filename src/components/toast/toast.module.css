@@ -1,0 +1,19 @@
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  background: var(--oscuro);
+  color: #fff;
+  font-size: 13px;
+  padding: 12px 20px;
+  border-radius: 9px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+  z-index: 70;
+  animation: riseIn 0.2s ease-out;
+}
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
