@@ -1,11 +1,12 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { confirmarComprobante } from '@/server/app/acciones'
 import type { Estado } from '@/lib/estados'
 import { BadgeEstado } from '@/components/badge-estado'
+import { ModalObservacion } from './modal-observacion'
 import styles from './barra-acciones.module.css'
 
 /**
@@ -78,6 +79,9 @@ export function BarraAcciones({
   comprobante: string
   bloqueante: boolean
 }) {
+  const [modalAbierto, setModalAbierto] = useState(false)
+  const puedeObservar = estado === 'leido' || estado === 'observacion'
+
   return (
     <div className={styles.barra}>
       <Link href="/comprobantes" className={styles.volver}>
@@ -88,11 +92,18 @@ export function BarraAcciones({
       <BadgeEstado estado={estado} />
 
       <div className={styles.derecha}>
-        <button type="button" className={styles.observacion} disabled title="Llega en la Fase 3">
+        <button
+          type="button"
+          className={styles.observacion}
+          disabled={!puedeObservar}
+          title={puedeObservar ? undefined : 'No disponible en este estado'}
+          onClick={() => setModalAbierto(true)}
+        >
           Marcar en observación
         </button>
         <BotonPrimario id={id} estado={estado} bloqueante={bloqueante} />
       </div>
+      <ModalObservacion id={id} abierto={modalAbierto} onCerrar={() => setModalAbierto(false)} />
     </div>
   )
 }

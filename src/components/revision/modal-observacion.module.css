@@ -1,0 +1,99 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(23, 25, 29, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.caja {
+  width: 520px;
+  background: var(--superficie);
+  border-radius: 12px;
+  padding: 24px;
+  animation: riseIn 0.18s ease-out;
+}
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.titulo {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.subtitulo {
+  font-size: 13px;
+  color: var(--texto-3);
+  margin: 0 0 16px;
+}
+
+.motivos {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.motivo {
+  text-align: left;
+  padding: 10px 13px;
+  border-radius: 7px;
+  font-size: 13px;
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  cursor: pointer;
+}
+
+.motivoElegido {
+  border-color: #2b4fd0;
+  background: #f4f6fd;
+}
+
+.nota {
+  width: 100%;
+  height: 74px;
+  border: 1px solid var(--borde);
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 13px;
+  resize: none;
+  box-sizing: border-box;
+  margin-bottom: 16px;
+}
+
+.acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.acciones button {
+  height: 36px;
+  padding: 0 15px;
+  border-radius: 7px;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+}
+
+.cancelar {
+  background: var(--fondo-app);
+  border: 1px solid var(--borde) !important;
+  color: #4a4e56;
+}
+
+.confirmar {
+  background: var(--alerta);
+  color: #fff;
+}
+
+.confirmar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

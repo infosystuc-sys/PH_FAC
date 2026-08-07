@@ -8,6 +8,9 @@ import {
   importarComprobantes,
   elegirProveedorEn,
   confirmarComprobante,
+  marcarObservacionEn,
+  marcarObservacion,
+  MOTIVOS_OBSERVACION,
 } from '@/server/app/acciones'
 import { obtenerDetalleEn } from '@/server/app/detalle'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
@@ -139,6 +142,40 @@ describe('confirmarComprobante con validaciones bloqueantes', () => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       // Sin CUIT resuelto: 0 matches de proveedor -> bloqueante.
       await expect(confirmarComprobante(id)).rejects.toThrow(/validaciones/i)
+    })
+  })
+})
+
+describe('marcarObservacion', () => {
+  it('rechaza un motivo que no esta en la lista cerrada', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await expect(marcarObservacionEn(tx, id, 'motivo inventado', '')).rejects.toThrow(/motivo/i)
+    })
+  })
+
+  it('escribe estado, motivo, nota y la entrada de auditoria', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await marcarObservacionEn(tx, id, MOTIVOS_OBSERVACION[0], 'nota de prueba')
+
+      const fila = await tx
+        .request()
+        .input('id', sql.Int, id)
+        .query(`SELECT ESTADO, MOTIVO_OBSERVACION, NOTA_OBSERVACION FROM PHF_COMPROBANTE WHERE ID=@id`)
+      expect(fila.recordset[0].ESTADO).toBe('observacion')
+      expect(fila.recordset[0].MOTIVO_OBSERVACION).toBe(MOTIVOS_OBSERVACION[0])
+      expect(fila.recordset[0].NOTA_OBSERVACION).toBe('nota de prueba')
+
+      const detalle = await obtenerDetalleEn(tx, id)
+      expect(detalle.auditoria.some((a) => a.texto.includes(MOTIVOS_OBSERVACION[0]))).toBe(true)
+    })
+  })
+
+  it('rechaza marcar en observacion un comprobante registrado', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'registrado' })
+      await expect(marcarObservacionEn(tx, id, MOTIVOS_OBSERVACION[0], '')).rejects.toThrow()
     })
   })
 })

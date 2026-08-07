@@ -11,6 +11,14 @@ import { usuarioActual } from '@/lib/usuario'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
 
+export const MOTIVOS_OBSERVACION = [
+  'Diferencia de importe con la O/C',
+  'Proveedor inexistente en Tango',
+  'Falta remito asociado',
+  'CAE vencido o inválido',
+  'Precio distinto al acordado',
+] as const
+
 type Ejecutor = { request(): sql.Request }
 
 const MAX_BYTES = 10 * 1024 * 1024
@@ -184,6 +192,52 @@ export async function reprocesarComprobante(id: number): Promise<void> {
   })
 
   despertarWorker()
+  revalidatePath('/comprobantes')
+  revalidatePath(`/comprobantes/${id}`)
+}
+
+/**
+ * Separada en `_En`/wrapper (mismo patrón que `guardarCampoEn`/`guardarCampo`
+ * en detalle.ts) para que los tests puedan ejercitarla dentro de la misma
+ * transacción que insertó el comprobante de prueba: si el test insertara con
+ * `tx` y esta función abriera su propia conexión de pool, el `UPDATE` (y el
+ * `INSERT` en PHF_AUDITORIA, que tiene FK a PHF_COMPROBANTE) quedarían
+ * esperando el lock de una transacción que no comitea hasta que el propio
+ * test termina -- un deadlock por diseño del test, no una carrera real.
+ */
+export async function marcarObservacionEn(
+  e: Ejecutor,
+  id: number,
+  motivo: string,
+  nota: string,
+): Promise<void> {
+  if (!MOTIVOS_OBSERVACION.includes(motivo as (typeof MOTIVOS_OBSERVACION)[number])) {
+    throw new Error('Motivo de observación inválido.')
+  }
+
+  const r = await e
+    .request()
+    .input('id', sql.Int, id)
+    .input('motivo', sql.NVarChar(60), motivo)
+    .input('nota', sql.NVarChar(1000), nota.trim() === '' ? null : nota.trim())
+    .query(`
+      UPDATE PHF_COMPROBANTE
+      SET ESTADO = 'observacion', MOTIVO_OBSERVACION = @motivo, NOTA_OBSERVACION = @nota,
+          FECHA_MODIF = SYSDATETIME()
+      WHERE ID = @id AND ESTADO IN ('leido', 'observacion')
+    `)
+  if (r.rowsAffected[0] === 0) {
+    throw new Error('El comprobante no está en un estado que permita marcarlo en observación.')
+  }
+  await auditarEn(e, id, `En observación: ${motivo}`)
+}
+
+export async function marcarObservacion(id: number, motivo: string, nota: string): Promise<void> {
+  const pool = await getPool()
+  await conTransaccion(async (tx) => {
+    await marcarObservacionEn(tx, id, motivo, nota)
+  })
+
   revalidatePath('/comprobantes')
   revalidatePath(`/comprobantes/${id}`)
 }
