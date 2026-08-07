@@ -57,6 +57,7 @@ export default async function RevisionPage({
 
       {encabezado.estado !== 'procesando' && encabezado.estado !== 'error' && (
         <Pantalla
+          key={id}
           comprobanteId={id}
           nombreArchivo={encabezado.archivoNombre}
           // `valorFinal` es el que se muestra: arranca igual al leído por la

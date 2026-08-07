@@ -20,7 +20,7 @@ El circuito completo anda de punta a punta: **importar → extraer con Claude �
 Lo que quedó funcionando, sumado a la Fase 1:
 
 - Importación de PDFs (drag & drop o selección, hasta 50 archivos, 10 MB c/u) con validación de lote atómica.
-- Extracción con Claude (`src/server/ia/`): 29 campos + renglones, con confianza por campo, corriendo en una cola en proceso (`src/server/app/cola.ts`) con reintentos y repesca de comprobantes colgados.
+- Extracción con Claude (`src/server/ia/`): 29 campos + renglones, con confianza por campo, corriendo en una cola en proceso (`src/server/app/cola.ts`) con reintentos y repesca de comprobantes colgados. Esto es cierto desde el fix round de la revisión final de la Fase 2 (hallazgos 1 y 2): antes, `arrancarWorker()` no la invocaba nadie del repo (faltaba `instrumentation.ts`), así que la repesca nunca corría en la práctica, y `tanda()` no drenaba la cola completa por lote. Los dos quedaron resueltos: `instrumentation.ts` arranca el worker al boot, y `tanda()` vuelve a pedir pendientes hasta vaciar la cola.
 - Pantalla de revisión (`/comprobantes/[id]`): visor de PDF real (pdf.js) con resaltado sincronizado por capa de texto, formulario de 4 grupos con autosave, barra de acciones con botón contextual por estado, aviso de lectura IA con reproceso (avisa antes de descartar correcciones), renglones (ocultos si no hay ninguno — 77% de los casos) e historial de auditoría.
 - Estados especiales: `procesando` muestra un placeholder que se refresca solo cada 3 s y deja de hacerlo en cuanto el server component deja de montarlo; `error` muestra el mensaje y el botón de reprocesar.
 - `registrado` es terminal e inmutable: la escritura de campos (`guardarCampoEn`) es un no-op atómico si el comprobante ya está registrado — verificado con test. Desde el fix round de la Tarea 11 (hallazgo 1) el formulario también lo refleja: los inputs quedan de solo lectura (`Campo`/`Formulario`/`Pantalla` reciben `soloLectura`/`bloqueado` desde `page.tsx`), así que el operador ya no ve un campo "editable" cuyo guardado en realidad es un no-op silencioso.
@@ -91,6 +91,14 @@ Un solo comprobante real disponible en `D:\CASOS\RAM - APP FAC\` (`Comprobante_1
 ### 5. `NUMERO` tiene dos convenciones distintas conviviendo en la misma columna
 
 Descubierto armando la barra de acciones de la pantalla de revisión (Tarea 11). Los comprobantes que vienen de `pnpm seed` guardan `PHF_COMPROBANTE.NUMERO` ya combinado con el punto de venta (`"0003-00018742"`); los que vienen de una extracción real dejan `NUMERO` y `PUNTO_VENTA` por separado (`"00018742"` + `"0003"`). La bandeja (`src/components/bandeja/tabla.tsx`) ya convivía con esto mostrando `NUMERO` solo, sin combinarlo — la barra de acciones nueva sigue el mismo criterio (`formatComprobante` en `src/app/comprobantes/[id]/page.tsx`) para no duplicar el punto de venta en pantalla. Si en algún momento se unifica el formato de `NUMERO`, hay que revisar los dos lugares.
+
+### 6. `condcompra` sigue siendo un input de texto libre
+
+Salió de la revisión final de la Fase 2. El campo "Condición de pago" del formulario de revisión es un input de texto en vez de un select contra `listarCondicionesCompra` (`src/server/tango/condicionesCompra.ts`), que ya existe y ya está testeado. No bloquea la Fase 2 -- el operador puede escribir cualquier cosa y el dato se guarda igual -- pero antes de la Fase 4 (donde ese valor probablemente tenga que resolverse a un código válido de Tango para grabar el asiento) conviene cerrarlo.
+
+### 7. `desnormalizarBandejaEn` trunca con `.slice()` sin avisar
+
+Salió de la misma revisión. `TIPO`, `PUNTO_VENTA`, `NUMERO` y `CUIT` se truncan con `.slice(10)`, `.slice(20)`, etc. antes de escribirlos en `PHF_COMPROBANTE` (`src/server/app/cola.ts`), para calzar con el ancho de columna. Si la IA devuelve un valor más largo que el límite, se guarda cortado y sin ningún aviso. Hoy es un riesgo bajo porque esas columnas son solo de visualización en la bandeja (el valor completo sigue disponible en `PHF_CAMPO.VALOR_IA`/`VALOR_FINAL`), pero si alguna vez alimentan directamente la escritura en Tango, un truncado silencioso ahí sí sería un problema.
 
 ---
 
