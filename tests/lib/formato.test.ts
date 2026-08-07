@@ -112,6 +112,21 @@ describe('parsearImporte', () => {
     expect(parsearImporte('1.186.623')).toBeCloseTo(1186623, 2)
   })
 
+  it('un punto con 1 digito detras es decimal (formato ingles de un solo decimal)', () => {
+    expect(parsearImporte('2.5')).toBeCloseTo(2.5, 4)
+  })
+
+  it('un punto con 4 o mas digitos detras es decimal, no separador de miles', () => {
+    expect(parsearImporte('12.3456')).toBeCloseTo(12.3456, 4)
+  })
+
+  it('un punto con exactamente 3 digitos detras es ambiguo y se resuelve como miles', () => {
+    // "1.234" podria ser 1234 (miles) o 1,234 (decimal). Se elige miles: es
+    // la lectura mas comun en los importes de las facturas reales, y un
+    // decimal de exactamente 3 cifras es un caso raro.
+    expect(parsearImporte('1.234')).toBeCloseTo(1234, 2)
+  })
+
   it('sin separadores', () => {
     expect(parsearImporte('484344')).toBeCloseTo(484344, 2)
   })

@@ -52,9 +52,15 @@ export function formatCuit(c: string | null | undefined): string {
  * - Si tiene punto y coma, el que aparece último en la cadena es el
  *   separador decimal; el otro es de miles.
  * - Si tiene solo coma, la coma es el separador decimal.
- * - Si tiene solo punto: un único punto seguido de exactamente dos dígitos
- *   es decimal ("186623.75"); cualquier otro caso (varios puntos, o uno
- *   seguido de otra cantidad de dígitos) es separador de miles ("186.623").
+ * - Si tiene solo punto: un único punto seguido de exactamente tres dígitos
+ *   es separador de miles ("186.623"); cualquier otra cantidad de dígitos
+ *   (1, 2, 4 o más) es decimal ("2.5", "186623.75", "12.3456"), y varios
+ *   puntos son siempre separador de miles ("1.186.623"). Un caso como
+ *   "1.234" es ambiguo -- ¿mil doscientos treinta y cuatro, o uno coma dos
+ *   tres cuatro? -- y se resuelve como separador de miles: la agrupación de
+ *   a tres es con diferencia el formato más común en los comprobantes
+ *   reales que llegan (miles en pesos o dólares), y un decimal de exactamente
+ *   3 cifras es raro en un importe de factura.
  * - Lo que no da un número finito vuelve `null`, no `0`, para que el
  *   llamador pueda distinguir "no se pudo leer" de "el importe es cero".
  */
@@ -76,8 +82,12 @@ function normalizarImporte(v: string): number | null {
     normalizado = `${t.slice(0, i).replace(/,/g, '')}.${t.slice(i + 1)}`
   } else if (tienePunto) {
     const partes = t.split('.')
-    const decimalUnico = partes.length === 2 && partes[1].length === 2
-    normalizado = decimalUnico ? t : t.replace(/\./g, '')
+    // Un unico punto es decimal salvo que tenga exactamente 3 digitos
+    // detras (ahi es separador de miles, ver el comentario de arriba).
+    // Mas de un punto es siempre separador de miles: no hay forma de que
+    // un numero tenga dos separadores decimales.
+    const esDecimalUnico = partes.length === 2 && partes[1].length !== 3
+    normalizado = esDecimalUnico ? t : t.replace(/\./g, '')
   } else {
     normalizado = t
   }
