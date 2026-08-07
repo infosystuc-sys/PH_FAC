@@ -1,7 +1,20 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { parsearRespuesta } from '@/server/ia/extraccion'
 import { CAMPOS_IA } from '@/lib/campos'
+
+// `extraerDePdf` llama al SDK de Anthropic de verdad; se mockea la clase
+// entera para poder ejercitarla sin pegarle a la API real (mismo criterio
+// que pide la suite: corre igual con ANTHROPIC_API_KEY vacía). `vi.mock` se
+// hoistea por encima de los imports de abajo, así que el import estático
+// de `@/server/ia/extraccion` ya recibe la version mockeada del SDK.
+const mockCreate = vi.fn()
+vi.mock('@anthropic-ai/sdk', () => ({
+  default: class {
+    messages = { create: mockCreate }
+  },
+}))
+
+import { parsearRespuesta, extraerDePdf } from '@/server/ia/extraccion'
 
 const OK = readFileSync('tests/fixtures/extraccion-ok.json', 'utf8')
 
@@ -68,5 +81,31 @@ describe('parsearRespuesta', () => {
       precioUnitario: null, importe: null,
     })
     expect(parsearRespuesta(JSON.stringify(conVacio)).renglones).toHaveLength(1)
+  })
+})
+
+describe('extraerDePdf', () => {
+  it('propaga el usage (tokens de entrada y salida) de la respuesta de la API', async () => {
+    mockCreate.mockResolvedValueOnce({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: OK }],
+      usage: { input_tokens: 12345, output_tokens: 678 },
+    })
+
+    const r = await extraerDePdf(Buffer.from('%PDF-1.4 fake'))
+
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.usage).toEqual({ inputTokens: 12345, outputTokens: 678 })
+  })
+
+  it('no lanza y devuelve ok:false si la llamada a la API falla', async () => {
+    mockCreate.mockRejectedValueOnce(new Error('fallo de red simulado'))
+
+    const r = await extraerDePdf(Buffer.from('%PDF-1.4 fake'))
+
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.error).toMatch(/fallo de red simulado/)
   })
 })

@@ -49,10 +49,18 @@ export function Formulario({
   comprobanteId,
   iniciales,
   onEnfocar,
+  soloLectura = false,
 }: {
   comprobanteId: number
   iniciales: Record<string, ValorInicial>
   onEnfocar: (texto: string | null) => void
+  // El comprobante está en estado `registrado`: terminal e inmutable
+  // (mismo criterio que ya aplica BarraAcciones deshabilitando el botón
+  // primario con title="Ver asiento en Tango"). El backend ya bloquea la
+  // escritura en guardarCampoEn (src/server/app/detalle.ts) con un no-op
+  // silencioso; esto es puramente para que la UI no mienta mostrando el
+  // campo como editable.
+  soloLectura?: boolean
 }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(iniciales).map(([k, v]) => [k, v.valor])),
@@ -108,6 +116,7 @@ export function Formulario({
                     def={def}
                     valor={valores[def.clave] ?? ''}
                     confianza={iniciales[def.clave]?.confianza ?? null}
+                    bloqueado={soloLectura}
                     onCambio={(v) => cambiar(def.clave, v)}
                     onFoco={onEnfocar}
                     onDesenfoque={() => onEnfocar(null)}

@@ -76,6 +76,13 @@ export default async function RevisionPage({
           hayCorrecciones={hayCorrecciones}
           renglones={detalle.renglones}
           auditoria={detalle.auditoria}
+          // `registrado` es terminal e inmutable (mismo criterio que ya
+          // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El
+          // backend ya bloquea la escritura en guardarCampoEn con un no-op
+          // silencioso; sin esto la UI seguía mostrando el campo como
+          // editable y el operador nunca se enteraba de que su corrección
+          // no se guardó.
+          soloLectura={encabezado.estado === 'registrado'}
         />
       )}
     </div>

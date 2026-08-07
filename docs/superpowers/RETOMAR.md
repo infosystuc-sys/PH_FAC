@@ -23,7 +23,7 @@ Lo que quedó funcionando, sumado a la Fase 1:
 - Extracción con Claude (`src/server/ia/`): 29 campos + renglones, con confianza por campo, corriendo en una cola en proceso (`src/server/app/cola.ts`) con reintentos y repesca de comprobantes colgados.
 - Pantalla de revisión (`/comprobantes/[id]`): visor de PDF real (pdf.js) con resaltado sincronizado por capa de texto, formulario de 4 grupos con autosave, barra de acciones con botón contextual por estado, aviso de lectura IA con reproceso (avisa antes de descartar correcciones), renglones (ocultos si no hay ninguno — 77% de los casos) e historial de auditoría.
 - Estados especiales: `procesando` muestra un placeholder que se refresca solo cada 3 s y deja de hacerlo en cuanto el server component deja de montarlo; `error` muestra el mensaje y el botón de reprocesar.
-- `registrado` es terminal e inmutable: la escritura de campos (`guardarCampoEn`) es un no-op atómico si el comprobante ya está registrado — verificado con test y en el navegador.
+- `registrado` es terminal e inmutable: la escritura de campos (`guardarCampoEn`) es un no-op atómico si el comprobante ya está registrado — verificado con test. Desde el fix round de la Tarea 11 (hallazgo 1) el formulario también lo refleja: los inputs quedan de solo lectura (`Campo`/`Formulario`/`Pantalla` reciben `soloLectura`/`bloqueado` desde `page.tsx`), así que el operador ya no ve un campo "editable" cuyo guardado en realidad es un no-op silencioso.
 
 Para verificar que todo sigue en pie:
 
@@ -86,7 +86,7 @@ Si en algún momento se publica el repo, hay que rotar la contraseña del usuari
 
 ### 4. El costo real por comprobante no está medido sobre una muestra representativa
 
-Un solo comprobante real disponible en `D:\CASOS\RAM - APP FAC\` (`Comprobante_147868-CLARO.pdf`, 6 páginas): la extracción tardó 18,6 s con `claude-opus-5`, 20 de 29 campos con valor y confianza promedio 94%. No hay una medición de tokens/costo en USD: `extraerDePdf` (`src/server/ia/extraccion.ts`) no devuelve el `usage` de la respuesta, así que no hay dato de tokens que anotar todavía. Antes de la Fase 4 (que es cuando el volumen real —20 a 100 comprobantes por día— empieza a importar en plata) conviene: (a) hacer que `extraerDePdf` devuelva `usage.input_tokens`/`output_tokens` y guardarlos en `PHF_COMPROBANTE`, y (b) correrlo contra 4-5 comprobantes reales más para tener un promedio, no un solo dato.
+Un solo comprobante real disponible en `D:\CASOS\RAM - APP FAC\` (`Comprobante_147868-CLARO.pdf`, 6 páginas): la extracción tardó 18,6 s con `claude-opus-5`, 20 de 29 campos con valor y confianza promedio 94%. `extraerDePdf` (`src/server/ia/extraccion.ts`) **ya devuelve** `usage.inputTokens`/`outputTokens` (fix round de la Tarea 11, hallazgo 2), así que el dato está disponible para quien procese un comprobante; falta persistirlo en `PHF_COMPROBANTE` cuando haga falta acumularlo. Lo que sigue pendiente, y por falta de muestra, no de código: correrlo contra 4-5 comprobantes reales más para tener un promedio de costo en USD, no un solo dato. Antes de la Fase 4 (que es cuando el volumen real —20 a 100 comprobantes por día— empieza a importar en plata) conviene juntar esos PDFs y, si se decide acumular el gasto por comprobante, agregar la columna correspondiente.
 
 ### 5. `NUMERO` tiene dos convenciones distintas conviviendo en la misma columna
 

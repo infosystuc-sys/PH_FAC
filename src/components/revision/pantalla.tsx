@@ -49,6 +49,7 @@ export function Pantalla({
   hayCorrecciones,
   renglones,
   auditoria,
+  soloLectura = false,
 }: {
   comprobanteId: number
   nombreArchivo: string
@@ -60,6 +61,10 @@ export function Pantalla({
   hayCorrecciones: boolean
   renglones: RenglonGuardado[]
   auditoria: EntradaAuditoria[]
+  // Comprobante `registrado`: terminal e inmutable. Se pasa a Formulario
+  // para que los inputs queden de solo lectura (ver comentario ahí); el
+  // backend ya bloquea la escritura de todos modos, esto es solo UI.
+  soloLectura?: boolean
 }) {
   const [enfocado, setEnfocado] = useState<string | null>(null)
 
@@ -75,7 +80,12 @@ export function Pantalla({
           confianza={confianza}
           hayCorrecciones={hayCorrecciones}
         />
-        <Formulario comprobanteId={comprobanteId} iniciales={iniciales} onEnfocar={setEnfocado} />
+        <Formulario
+          comprobanteId={comprobanteId}
+          iniciales={iniciales}
+          onEnfocar={setEnfocado}
+          soloLectura={soloLectura}
+        />
         <Renglones renglones={renglones} />
         <Historial entradas={auditoria} />
       </div>

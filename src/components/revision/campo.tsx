@@ -9,6 +9,7 @@ export function Campo({
   def,
   valor,
   confianza,
+  bloqueado = false,
   onCambio,
   onFoco,
   onDesenfoque,
@@ -16,6 +17,11 @@ export function Campo({
   def: DefCampo
   valor: string
   confianza: number | null
+  // Solo lectura por el estado del comprobante (`registrado` es terminal e
+  // inmutable), a diferencia de `def.soloLectura` que es por catálogo
+  // (p.ej. razón social resuelta por CUIT). Las dos razones se combinan
+  // abajo: cualquiera de las dos alcanza para bloquear el input.
+  bloqueado?: boolean
   onCambio: (v: string) => void
   onFoco: (v: string) => void
   onDesenfoque: () => void
@@ -55,6 +61,7 @@ export function Campo({
     return () => clearTimeout(t)
   }, [local, onCambio])
 
+  const soloLectura = def.soloLectura || bloqueado
   const baja = confianza !== null && confianza < 0.8
   // Igual que ChipConfianza: confianza null (campo sin lectura de IA) o
   // >= 1 (resuelto por el sistema, no por el modelo) oculta el chip.
@@ -76,12 +83,12 @@ export function Campo({
           styles.input,
           def.mono ? styles.mono : '',
           baja ? styles.baja : '',
-          def.soloLectura ? styles.soloLectura : '',
+          soloLectura ? styles.soloLectura : '',
         ]
           .filter(Boolean)
           .join(' ')}
         value={local}
-        readOnly={def.soloLectura}
+        readOnly={soloLectura}
         onChange={(e) => {
           tocado.current = true
           setLocal(e.target.value)

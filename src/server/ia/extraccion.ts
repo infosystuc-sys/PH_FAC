@@ -10,8 +10,10 @@ export type Extraccion = {
   renglones: RenglonExtraido[]
 }
 
+export type UsoTokens = { inputTokens: number; outputTokens: number }
+
 export type ResultadoExtraccion =
-  | { ok: true; extraccion: Extraccion; ms: number; modelo: string }
+  | { ok: true; extraccion: Extraccion; ms: number; modelo: string; usage: UsoTokens }
   | { ok: false; error: string }
 
 const MODELO = process.env.ANTHROPIC_MODELO || 'claude-opus-5'
@@ -145,6 +147,14 @@ export async function extraerDePdf(pdf: Buffer): Promise<ResultadoExtraccion> {
       extraccion: parsearRespuesta(bloque.text),
       ms: Date.now() - arranque,
       modelo: MODELO,
+      // Base para medir el costo real por comprobante (RETOMAR.md): sin
+      // esto, ni con más PDFs reales se podría calcular. La muestra en sí
+      // (4-5 comprobantes más) sigue diferida a la Fase 4 por falta de
+      // material, no por falta de este dato.
+      usage: {
+        inputTokens: r.usage.input_tokens,
+        outputTokens: r.usage.output_tokens,
+      },
     }
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : String(err)
