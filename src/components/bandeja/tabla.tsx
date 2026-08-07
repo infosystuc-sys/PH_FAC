@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import type { FilaBandeja } from '@/server/app/comprobantes'
+import type { ClaveTab } from '@/lib/estados'
 import { BadgeEstado } from '@/components/badge-estado'
 import { ChipConfianza } from '@/components/chip-confianza'
 import { formatMoneda, formatFecha, formatCuit } from '@/lib/formato'
 import styles from './tabla.module.css'
 
-export function Tabla({ filas }: { filas: FilaBandeja[] }) {
+export function Tabla({ filas, filtro, query }: { filas: FilaBandeja[]; filtro: ClaveTab; query: string }) {
   if (filas.length === 0) {
     return (
       <div className={styles.contenedor}>
@@ -13,6 +14,15 @@ export function Tabla({ filas }: { filas: FilaBandeja[] }) {
       </div>
     )
   }
+
+  // El link a la revision conserva el filtro/busqueda activos: la
+  // navegacion J/K de la pantalla de revision (ver atajos.ts) necesita el
+  // mismo contexto para calcular anterior/siguiente dentro de esta misma
+  // vista, no de la bandeja completa.
+  const qs = new URLSearchParams()
+  if (filtro !== 'todos') qs.set('filtro', filtro)
+  if (query) qs.set('q', query)
+  const sufijo = qs.toString() ? `?${qs.toString()}` : ''
 
   return (
     <div className={styles.contenedor}>
@@ -30,7 +40,7 @@ export function Tabla({ filas }: { filas: FilaBandeja[] }) {
         </div>
 
         {filas.map((f) => (
-          <Link key={f.id} href={`/comprobantes/${f.id}`} className={styles.fila}>
+          <Link key={f.id} href={`/comprobantes/${f.id}${sufijo}`} className={styles.fila}>
             <span><BadgeEstado estado={f.estado} /></span>
             <span className={styles.tipo}>{f.tipo ?? '—'}</span>
             <span className={styles.mono}>{f.numero ?? '—'}</span>

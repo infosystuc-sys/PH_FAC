@@ -217,6 +217,58 @@ export async function obtenerEncabezado(id: number): Promise<Encabezado | null> 
   return obtenerEncabezadoEn(await getPool(), id)
 }
 
+export type Vecinos = { anteriorId: number | null; siguienteId: number | null }
+
+/**
+ * Anterior/siguiente dentro del mismo filtro y busqueda de la bandeja (para
+ * la navegacion J/K de la pantalla de revision), respetando el mismo orden
+ * que `listarComprobantesEn`: FECHA_ALTA DESC, ID DESC. "Anterior" es mas
+ * nuevo (arriba en la bandeja); "siguiente" es mas viejo (abajo).
+ *
+ * Todo en una sola consulta con LAG/LEAD sobre el conjunto ya filtrado, en
+ * vez de leer el FECHA_ALTA de la fila y volver a mandarlo como parametro
+ * para comparar contra las demas filas. Se probaron las dos alternativas
+ * de ida y vuelta (comparar @fecha con y sin excluir el propio ID) y las
+ * dos fallan bajo carga: FECHA_ALTA es DATETIME2 (100ns) pero el Date de
+ * JS solo llega a milisegundos, asi que @fecha viaja truncado hacia abajo.
+ * Con insercion rapida (como en los tests, o varias filas dadas de alta
+ * casi al mismo tiempo) el FECHA_ALTA real de una fila mas vieja puede
+ * seguir siendo mayor que la version truncada de una fila mas nueva, y se
+ * cuela como vecino aunque el ID la delate. LAG/LEAD comparan siempre
+ * contra el valor completo tal cual esta en la fila, sin ese round-trip,
+ * asi que no tienen ese problema.
+ */
+export async function obtenerVecinosEn(
+  e: Ejecutor,
+  { filtro, query }: { filtro: ClaveTab; query: string },
+  id: number,
+): Promise<Vecinos> {
+  const r = await pedido(e, filtro, query)
+    .input('id', sql.Int, id)
+    .query<Record<string, unknown>>(`
+      WITH ordenado AS (
+        SELECT
+          ID,
+          LAG(ID) OVER (ORDER BY FECHA_ALTA DESC, ID DESC)  AS ANTERIOR_ID,
+          LEAD(ID) OVER (ORDER BY FECHA_ALTA DESC, ID DESC) AS SIGUIENTE_ID
+        FROM PHF_COMPROBANTE
+        WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA}
+      )
+      SELECT ANTERIOR_ID, SIGUIENTE_ID FROM ordenado WHERE ID = @id
+    `)
+
+  if (r.recordset.length === 0) return { anteriorId: null, siguienteId: null }
+  const row = r.recordset[0]
+  return {
+    anteriorId: row.ANTERIOR_ID === null || row.ANTERIOR_ID === undefined ? null : Number(row.ANTERIOR_ID),
+    siguienteId: row.SIGUIENTE_ID === null || row.SIGUIENTE_ID === undefined ? null : Number(row.SIGUIENTE_ID),
+  }
+}
+
+export async function obtenerVecinos(opts: { filtro: ClaveTab; query: string }, id: number): Promise<Vecinos> {
+  return obtenerVecinosEn(await getPool(), opts, id)
+}
+
 /** Inserta un comprobante minimo. Es para los tests, no para la app. */
 export async function insertarComprobantePrueba(
   tx: sql.Transaction,

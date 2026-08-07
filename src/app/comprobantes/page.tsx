@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { listarComprobantes, obtenerKpis, contarPorEstado } from '@/server/app/comprobantes'
-import type { ClaveTab } from '@/lib/estados'
-import { ORDEN_TABS } from '@/lib/estados'
+import { leerFiltro } from '@/lib/estados'
 import { FilaKpis } from '@/components/bandeja/kpis'
 import { Filtros } from '@/components/bandeja/filtros'
 import { Tabla } from '@/components/bandeja/tabla'
@@ -13,11 +12,6 @@ import styles from './bandeja.module.css'
 export const dynamic = 'force-dynamic'
 
 const LIMITE_PAGINA = 100
-
-function leerFiltro(v: string | undefined): ClaveTab {
-  const valido = ORDEN_TABS.some((t) => t.clave === v)
-  return valido ? (v as ClaveTab) : 'todos'
-}
 
 function leerPagina(v: string | undefined): number {
   const n = Number(v)
@@ -75,7 +69,7 @@ export default async function BandejaPage({
 
         <FilaKpis kpis={kpis} />
         <Filtros filtro={filtro} query={query} conteos={conteos} />
-        <Tabla filas={filas} />
+        <Tabla filas={filas} filtro={filtro} query={query} />
         <RefrescoAutomatico procesando={conteos.procesando} />
 
         <Paginacion pagina={pagina} totalPaginas={totalPaginas} desde={desde} hasta={hasta} total={total} />

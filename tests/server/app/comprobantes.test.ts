@@ -9,6 +9,7 @@ import {
   obtenerKpisEn,
   contarPorEstadoEn,
   insertarComprobantePrueba,
+  obtenerVecinosEn,
 } from '@/server/app/comprobantes'
 
 afterAll(async () => {
@@ -364,6 +365,47 @@ describe('contarPorEstado', () => {
       const c = await contarPorEstadoEn(tx, `${registrado.marca} papelera`)
       expect(c.todos).toBe(1)
       expect(c.registrado).toBe(1)
+    })
+  })
+})
+
+describe('obtenerVecinosEn', () => {
+  // Igual que el resto del archivo: PHF_COMPROBANTE tiene comprobantes
+  // reales en estado 'leido' (pendientes de revision de la operacion), asi
+  // que "a es el mas viejo de los tres" no vale sin acotar la busqueda -
+  // siempre puede haber un 'leido' ambiental mas viejo todavia. Se aisla
+  // con la misma marca unica que usan los demas tests, pasada como `query`
+  // (obtenerVecinosEn filtra tambien por busqueda, igual que listarComprobantesEn).
+  it('encuentra el anterior y el siguiente dentro del mismo filtro', async () => {
+    await conRollback(async (tx) => {
+      const marca = marcaUnica()
+      const a = await insertarComprobantePrueba(tx, { estado: 'leido', razonSocial: `${marca} A` })
+      const b = await insertarComprobantePrueba(tx, { estado: 'leido', razonSocial: `${marca} B` })
+      const c = await insertarComprobantePrueba(tx, { estado: 'leido', razonSocial: `${marca} C` })
+      // Orden de la bandeja: FECHA_ALTA DESC, ID DESC -> mas nuevo primero: c, b, a.
+
+      const vecinosDeB = await obtenerVecinosEn(tx, { filtro: 'leido', query: marca }, b)
+      expect(vecinosDeB.anteriorId).toBe(c) // mas nuevo que b
+      expect(vecinosDeB.siguienteId).toBe(a) // mas viejo que b
+
+      const vecinosDeC = await obtenerVecinosEn(tx, { filtro: 'leido', query: marca }, c)
+      expect(vecinosDeC.anteriorId).toBe(null) // c es el mas nuevo de los tres
+
+      const vecinosDeA = await obtenerVecinosEn(tx, { filtro: 'leido', query: marca }, a)
+      expect(vecinosDeA.siguienteId).toBe(null) // a es el mas viejo de los tres
+    })
+  })
+
+  it('no cruza el filtro activo', async () => {
+    await conRollback(async (tx) => {
+      const marca = marcaUnica()
+      const a = await insertarComprobantePrueba(tx, { estado: 'leido', razonSocial: `${marca} A` })
+      // no deberia contar como vecino
+      await insertarComprobantePrueba(tx, { estado: 'confirmado', razonSocial: `${marca} MEDIO` })
+      const c = await insertarComprobantePrueba(tx, { estado: 'leido', razonSocial: `${marca} C` })
+
+      const vecinosDeC = await obtenerVecinosEn(tx, { filtro: 'leido', query: marca }, c)
+      expect(vecinosDeC.siguienteId).toBe(a) // salta el 'confirmado' del medio
     })
   })
 })

@@ -30,6 +30,16 @@ export function esTerminal(e: Estado): boolean {
   return e === 'registrado'
 }
 
+/**
+ * Valida el `filtro` que llega por searchParams (bandeja y pantalla de
+ * revisión, para la navegación J/K con el mismo contexto de filtro): un
+ * valor ausente o desconocido cae a 'todos' en vez de romper.
+ */
+export function leerFiltro(v: string | undefined): ClaveTab {
+  const valido = ORDEN_TABS.some((t) => t.clave === v)
+  return valido ? (v as ClaveTab) : 'todos'
+}
+
 export function permiteRegistrar(e: Estado): boolean {
   return e === 'confirmado'
 }

@@ -8,28 +8,27 @@ import type { Estado } from '@/lib/estados'
 import { BadgeEstado } from '@/components/badge-estado'
 import { useToast } from '@/components/toast/toast-provider'
 import { ModalObservacion } from './modal-observacion'
+import { useAtajos } from './atajos'
 import styles from './barra-acciones.module.css'
 
 /**
  * Botón primario contextual según el estado. `leido`/`observacion` dejan
  * confirmar; `confirmado` y `registrado` muestran la acción que sigue pero
- * deshabilitada, con el título de la fase que la trae — el operador ve la
- * pantalla completa desde el principio en vez de que los botones aparezcan
- * de a uno con cada fase.
+ * deshabilitada, con el título de la fase que la trae. `pendiente`/`onClick`
+ * vienen de `BarraAcciones`: el atajo Ctrl+Enter y el click del botón
+ * comparten la misma transición, no dos independientes.
  */
 function BotonPrimario({
-  id,
   estado,
   bloqueante,
+  pendiente,
+  onClick,
 }: {
-  id: number
   estado: Estado
   bloqueante: boolean
+  pendiente: boolean
+  onClick: () => void
 }) {
-  const [pendiente, arrancar] = useTransition()
-  const router = useRouter()
-  const toast = useToast()
-
   if (estado === 'leido' || estado === 'observacion') {
     return (
       <button
@@ -37,17 +36,7 @@ function BotonPrimario({
         className={styles.confirmar}
         disabled={pendiente || bloqueante}
         title={bloqueante ? 'Resolvé las validaciones en error antes de confirmar' : undefined}
-        onClick={() =>
-          arrancar(async () => {
-            try {
-              await confirmarComprobante(id)
-              toast('Comprobante confirmado.')
-              router.refresh()
-            } catch (err) {
-              toast(err instanceof Error ? err.message : 'No se pudo confirmar el comprobante.')
-            }
-          })
-        }
+        onClick={onClick}
       >
         {pendiente ? 'Confirmando…' : 'Confirmar datos'}
       </button>
@@ -79,15 +68,45 @@ export function BarraAcciones({
   proveedor,
   comprobante,
   bloqueante,
+  anteriorHref,
+  siguienteHref,
 }: {
   id: number
   estado: Estado
   proveedor: string
   comprobante: string
   bloqueante: boolean
+  anteriorHref: string | null
+  siguienteHref: string | null
 }) {
   const [modalAbierto, setModalAbierto] = useState(false)
+  const [pendiente, arrancar] = useTransition()
+  const router = useRouter()
+  const toast = useToast()
   const puedeObservar = estado === 'leido' || estado === 'observacion'
+  const puedeConfirmar = puedeObservar && !bloqueante
+
+  function confirmar() {
+    if (!puedeConfirmar || pendiente) return
+    arrancar(async () => {
+      try {
+        await confirmarComprobante(id)
+        toast('Comprobante confirmado.')
+        router.refresh()
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'No se pudo confirmar el comprobante.')
+      }
+    })
+  }
+
+  useAtajos({
+    onConfirmar: confirmar,
+    onObservar: () => {
+      if (puedeObservar) setModalAbierto(true)
+    },
+    anteriorHref,
+    siguienteHref,
+  })
 
   return (
     <div className={styles.barra}>
@@ -108,8 +127,9 @@ export function BarraAcciones({
         >
           Marcar en observación
         </button>
-        <BotonPrimario id={id} estado={estado} bloqueante={bloqueante} />
+        <BotonPrimario estado={estado} bloqueante={bloqueante} pendiente={pendiente} onClick={confirmar} />
       </div>
+
       <ModalObservacion id={id} abierto={modalAbierto} onCerrar={() => setModalAbierto(false)} />
     </div>
   )

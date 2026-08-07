@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation'
-import { obtenerEncabezado } from '@/server/app/comprobantes'
+import { obtenerEncabezado, obtenerVecinos } from '@/server/app/comprobantes'
 import { obtenerDetalle } from '@/server/app/detalle'
 import { validarComprobante } from '@/server/app/validaciones'
 import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
+import { leerFiltro } from '@/lib/estados'
 import { Pantalla } from '@/components/revision/pantalla'
 import { BarraAcciones } from '@/components/revision/barra-acciones'
 import { PanelProcesando } from '@/components/revision/panel-procesando'
@@ -29,15 +30,30 @@ function formatComprobante(tipo: string | null, numero: string | null): string {
 
 export default async function RevisionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ filtro?: string; q?: string }>
 }) {
   const { id: idParam } = await params
   const id = Number(idParam)
   if (!Number.isInteger(id) || id <= 0) notFound()
 
+  const sp = await searchParams
+  const filtro = leerFiltro(sp.filtro)
+  const query = sp.q ?? ''
+
   const encabezado = await obtenerEncabezado(id)
   if (!encabezado) notFound()
+
+  const vecinos = await obtenerVecinos({ filtro, query }, id)
+  const qs = new URLSearchParams()
+  if (filtro !== 'todos') qs.set('filtro', filtro)
+  if (query) qs.set('q', query)
+  const sufijo = qs.toString() ? `?${qs.toString()}` : ''
+
+  const anteriorHref = vecinos.anteriorId ? `/comprobantes/${vecinos.anteriorId}${sufijo}` : null
+  const siguienteHref = vecinos.siguienteId ? `/comprobantes/${vecinos.siguienteId}${sufijo}` : null
 
   const detalle = await obtenerDetalle(id)
   const hayCorrecciones = detalle.campos.some((c) => c.corregido)
@@ -57,6 +73,8 @@ export default async function RevisionPage({
         proveedor={encabezado.razonSocial ?? '—'}
         comprobante={formatComprobante(encabezado.tipo, encabezado.numero)}
         bloqueante={validaciones?.bloqueante ?? false}
+        anteriorHref={anteriorHref}
+        siguienteHref={siguienteHref}
       />
 
       {encabezado.estado === 'procesando' && <PanelProcesando />}
