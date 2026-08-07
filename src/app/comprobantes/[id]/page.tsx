@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { obtenerEncabezado } from '@/server/app/comprobantes'
 import { obtenerDetalle } from '@/server/app/detalle'
 import { validarComprobante } from '@/server/app/validaciones'
+import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
 import { Pantalla } from '@/components/revision/pantalla'
 import { BarraAcciones } from '@/components/revision/barra-acciones'
 import { PanelProcesando } from '@/components/revision/panel-procesando'
@@ -46,6 +47,7 @@ export default async function RevisionPage({
   // el formulario, así que evaluarla ahí sería trabajo tirado.
   const mostrarRevision = encabezado.estado !== 'procesando' && encabezado.estado !== 'error'
   const validaciones = mostrarRevision ? await validarComprobante(id) : null
+  const condicionesCompra = mostrarRevision ? await listarCondicionesCompra() : []
 
   return (
     <div className={styles.pantalla}>
@@ -86,6 +88,7 @@ export default async function RevisionPage({
           renglones={detalle.renglones}
           auditoria={detalle.auditoria}
           validaciones={validaciones}
+          condicionesCompra={condicionesCompra}
           // `registrado` es terminal e inmutable (mismo criterio que ya
           // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El
           // backend ya bloquea la escritura en guardarCampoEn con un no-op

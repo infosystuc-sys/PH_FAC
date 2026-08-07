@@ -9,6 +9,7 @@ import { Renglones } from './renglones'
 import { Historial } from './historial'
 import type { RenglonGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import type { Validaciones } from '@/server/app/validaciones'
+import type { CondicionCompra } from '@/server/tango/condicionesCompra'
 import styles from './pantalla.module.css'
 
 /**
@@ -52,6 +53,7 @@ export function Pantalla({
   renglones,
   auditoria,
   validaciones,
+  condicionesCompra,
   soloLectura = false,
 }: {
   comprobanteId: number
@@ -65,6 +67,7 @@ export function Pantalla({
   renglones: RenglonGuardado[]
   auditoria: EntradaAuditoria[]
   validaciones: Validaciones
+  condicionesCompra: CondicionCompra[]
   // Comprobante `registrado`: terminal e inmutable. Se pasa a Formulario
   // para que los inputs queden de solo lectura (ver comentario ahí); el
   // backend ya bloquea la escritura de todos modos, esto es solo UI.
@@ -90,6 +93,7 @@ export function Pantalla({
           iniciales={iniciales}
           onEnfocar={setEnfocado}
           soloLectura={soloLectura}
+          condicionesCompra={condicionesCompra}
         />
         <Renglones renglones={renglones} />
         <Historial entradas={auditoria} />

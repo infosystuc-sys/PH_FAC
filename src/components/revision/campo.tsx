@@ -10,6 +10,7 @@ export function Campo({
   valor,
   confianza,
   bloqueado = false,
+  opciones,
   onCambio,
   onFoco,
   onDesenfoque,
@@ -22,6 +23,9 @@ export function Campo({
   // (p.ej. razón social resuelta por CUIT). Las dos razones se combinan
   // abajo: cualquiera de las dos alcanza para bloquear el input.
   bloqueado?: boolean
+  // Solo la usan los campos `tipo: 'select'` (p.ej. condcompra contra
+  // Tango). El resto la ignora.
+  opciones?: { valor: string; label: string }[]
   onCambio: (v: string) => void
   onFoco: (v: string) => void
   onDesenfoque: () => void
@@ -77,25 +81,47 @@ export function Campo({
           </span>
         )}
       </label>
-      <input
-        id={`campo-${def.clave}`}
-        className={[
-          styles.input,
-          def.mono ? styles.mono : '',
-          baja ? styles.baja : '',
-          soloLectura ? styles.soloLectura : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
-        value={local}
-        readOnly={soloLectura}
-        onChange={(e) => {
-          tocado.current = true
-          setLocal(e.target.value)
-        }}
-        onFocus={() => onFoco(local)}
-        onBlur={onDesenfoque}
-      />
+      {def.tipo === 'select' ? (
+        <select
+          id={`campo-${def.clave}`}
+          className={[styles.input, soloLectura ? styles.soloLectura : ''].filter(Boolean).join(' ')}
+          value={local}
+          disabled={soloLectura}
+          onChange={(e) => {
+            tocado.current = true
+            setLocal(e.target.value)
+          }}
+          onFocus={() => onFoco(local)}
+          onBlur={onDesenfoque}
+        >
+          <option value="">—</option>
+          {(opciones ?? []).map((o) => (
+            <option key={o.valor} value={o.valor}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          id={`campo-${def.clave}`}
+          className={[
+            styles.input,
+            def.mono ? styles.mono : '',
+            baja ? styles.baja : '',
+            soloLectura ? styles.soloLectura : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          value={local}
+          readOnly={soloLectura}
+          onChange={(e) => {
+            tocado.current = true
+            setLocal(e.target.value)
+          }}
+          onFocus={() => onFoco(local)}
+          onBlur={onDesenfoque}
+        />
+      )}
     </div>
   )
 }

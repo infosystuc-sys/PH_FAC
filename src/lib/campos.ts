@@ -8,7 +8,7 @@ export type GrupoCampo = 'comprobante' | 'proveedor' | 'importes' | 'imputacion'
  * como el resto, entrarían en la suma y el total imputado quedaría mal
  * por unas decenas sin que nada lo señale.
  */
-export type TipoCampo = 'texto' | 'fecha' | 'decimal' | 'porcentaje'
+export type TipoCampo = 'texto' | 'fecha' | 'decimal' | 'porcentaje' | 'select'
 
 export type DefCampo = {
   clave: string
@@ -79,7 +79,7 @@ export const CAMPOS: DefCampo[] = [
   { clave: 'codprovee', label: 'Cód. proveedor Tango', grupo: 'imputacion', span: 3,
     tipo: 'texto', mono: true, extraePorIA: false, soloLectura: true },
   { clave: 'condcompra', label: 'Condición de compra', grupo: 'imputacion', span: 3,
-    tipo: 'texto', mono: false, extraePorIA: false, soloLectura: false },
+    tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
 ]
 
 function c(

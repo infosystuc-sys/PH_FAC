@@ -39,6 +39,10 @@ describe('catalogo de campos', () => {
     expect(esClaveValida('cuit')).toBe(true)
     expect(esClaveValida('no_existe')).toBe(false)
   })
+
+  it('condcompra es un campo de tipo select', () => {
+    expect(campoPorClave('condcompra')?.tipo).toBe('select')
+  })
 })
 
 describe('schemaExtraccion', () => {

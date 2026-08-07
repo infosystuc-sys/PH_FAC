@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { GRUPOS, camposDelGrupo, type GrupoCampo, type DefCampo } from '@/lib/campos'
 import { guardarCampo } from '@/server/app/acciones'
 import { totalImputado, formatMoneda } from '@/lib/formato'
+import type { CondicionCompra } from '@/server/tango/condicionesCompra'
 import { Campo } from './campo'
 import styles from './formulario.module.css'
 
@@ -50,6 +51,7 @@ export function Formulario({
   iniciales,
   onEnfocar,
   soloLectura = false,
+  condicionesCompra,
 }: {
   comprobanteId: number
   iniciales: Record<string, ValorInicial>
@@ -61,6 +63,9 @@ export function Formulario({
   // silencioso; esto es puramente para que la UI no mienta mostrando el
   // campo como editable.
   soloLectura?: boolean
+  // Poblado real de Tango para el único campo `tipo: 'select'` del
+  // catálogo (condcompra). Ver Campo -- el resto de los campos lo ignora.
+  condicionesCompra: CondicionCompra[]
 }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(iniciales).map(([k, v]) => [k, v.valor])),
@@ -117,6 +122,14 @@ export function Formulario({
                     valor={valores[def.clave] ?? ''}
                     confianza={iniciales[def.clave]?.confianza ?? null}
                     bloqueado={soloLectura}
+                    opciones={
+                      def.clave === 'condcompra'
+                        ? condicionesCompra.map((c) => ({
+                            valor: String(c.codigo),
+                            label: c.descripcion,
+                          }))
+                        : undefined
+                    }
                     onCambio={(v) => cambiar(def.clave, v)}
                     onFoco={onEnfocar}
                     onDesenfoque={() => onEnfocar(null)}
