@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { importarComprobantes } from '@/server/app/acciones'
+import { useToast } from '@/components/toast/toast-provider'
 import styles from './importar.module.css'
 
 export function BotonImportar() {
@@ -23,6 +24,7 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
   const [pendiente, arrancar] = useTransition()
   const input = useRef<HTMLInputElement>(null)
   const router = useRouter()
+  const toast = useToast()
 
   function agregar(lista: FileList | null) {
     if (!lista) return
@@ -38,7 +40,8 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
 
     arrancar(async () => {
       try {
-        await importarComprobantes(fd)
+        const { importados } = await importarComprobantes(fd)
+        toast(`${importados} comprobante${importados === 1 ? '' : 's'} importado${importados === 1 ? '' : 's'}.`)
         onCerrar()
         router.push('/comprobantes?filtro=leido')
         router.refresh()

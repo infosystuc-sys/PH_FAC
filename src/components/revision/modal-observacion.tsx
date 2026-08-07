@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { marcarObservacion, MOTIVOS_OBSERVACION } from '@/server/app/acciones'
+import { useToast } from '@/components/toast/toast-provider'
 import styles from './modal-observacion.module.css'
 
 export function ModalObservacion({
@@ -18,6 +19,7 @@ export function ModalObservacion({
   const [nota, setNota] = useState('')
   const [pendiente, arrancar] = useTransition()
   const router = useRouter()
+  const toast = useToast()
 
   if (!abierto) return null
 
@@ -25,6 +27,7 @@ export function ModalObservacion({
     if (!motivo) return
     arrancar(async () => {
       await marcarObservacion(id, motivo, nota)
+      toast('Comprobante marcado en observación.')
       onCerrar()
       router.push('/comprobantes')
     })

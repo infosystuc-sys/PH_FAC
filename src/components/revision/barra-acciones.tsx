@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { confirmarComprobante } from '@/server/app/acciones'
 import type { Estado } from '@/lib/estados'
 import { BadgeEstado } from '@/components/badge-estado'
+import { useToast } from '@/components/toast/toast-provider'
 import { ModalObservacion } from './modal-observacion'
 import styles from './barra-acciones.module.css'
 
@@ -27,6 +28,7 @@ function BotonPrimario({
 }) {
   const [pendiente, arrancar] = useTransition()
   const router = useRouter()
+  const toast = useToast()
 
   if (estado === 'leido' || estado === 'observacion') {
     return (
@@ -37,8 +39,13 @@ function BotonPrimario({
         title={bloqueante ? 'Resolvé las validaciones en error antes de confirmar' : undefined}
         onClick={() =>
           arrancar(async () => {
-            await confirmarComprobante(id)
-            router.refresh()
+            try {
+              await confirmarComprobante(id)
+              toast('Comprobante confirmado.')
+              router.refresh()
+            } catch (err) {
+              toast(err instanceof Error ? err.message : 'No se pudo confirmar el comprobante.')
+            }
           })
         }
       >
