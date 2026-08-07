@@ -147,7 +147,7 @@ describe('validarTotales', () => {
     expect(validarTotales(v).estado).toBe('ok')
   })
   it('advertencia con la diferencia exacta si no coinciden', () => {
-    const v = { neto: '100,00', total: '112.480,00' }
+    const v = { neto: '100.000,00', total: '112.480,00' }
     const r = validarTotales(v)
     expect(r.estado).toBe('advertencia')
     expect(r.mensaje).toContain('12.480,00')
