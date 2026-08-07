@@ -3,7 +3,12 @@ import sql from 'mssql'
 import { rm } from 'node:fs/promises'
 import { conRollback } from '@/server/db/tx'
 import { cerrarPool, getPool } from '@/server/db/pool'
-import { importarComprobanteEn, importarComprobantes, elegirProveedorEn } from '@/server/app/acciones'
+import {
+  importarComprobanteEn,
+  importarComprobantes,
+  elegirProveedorEn,
+  confirmarComprobante,
+} from '@/server/app/acciones'
 import { obtenerDetalleEn } from '@/server/app/detalle'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 
@@ -124,6 +129,16 @@ describe('elegirProveedorEn', () => {
       expect(fila.recordset[0].RAZON_SOCIAL).toBe('AMX ARGENTINA SOCIEDAD ANONIMA')
 
       expect(detalle.auditoria.some((a) => a.texto.includes('AMX'))).toBe(true)
+    })
+  })
+})
+
+describe('confirmarComprobante con validaciones bloqueantes', () => {
+  it('rechaza confirmar si el proveedor no esta resuelto', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      // Sin CUIT resuelto: 0 matches de proveedor -> bloqueante.
+      await expect(confirmarComprobante(id)).rejects.toThrow(/validaciones/i)
     })
   })
 })

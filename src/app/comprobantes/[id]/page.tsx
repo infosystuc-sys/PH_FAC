@@ -54,6 +54,7 @@ export default async function RevisionPage({
         estado={encabezado.estado}
         proveedor={encabezado.razonSocial ?? '—'}
         comprobante={formatComprobante(encabezado.tipo, encabezado.numero)}
+        bloqueante={validaciones?.bloqueante ?? false}
       />
 
       {encabezado.estado === 'procesando' && <PanelProcesando />}

@@ -9,6 +9,7 @@ import { auditarEn, guardarCampoEn } from './detalle'
 import { despertarWorker } from './cola'
 import { usuarioActual } from '@/lib/usuario'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
+import { validarComprobante } from '@/server/app/validaciones'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -90,6 +91,11 @@ export async function guardarCampo(id: number, clave: string, valor: string): Pr
 }
 
 export async function confirmarComprobante(id: number): Promise<void> {
+  const validaciones = await validarComprobante(id)
+  if (validaciones.bloqueante) {
+    throw new Error('Hay validaciones bloqueantes sin resolver.')
+  }
+
   await conTransaccion(async (tx) => {
     // Solo desde `leido` u `observacion`. El WHERE es lo que evita que dos
     // pestañas abiertas confirmen dos veces o que se confirme algo ya

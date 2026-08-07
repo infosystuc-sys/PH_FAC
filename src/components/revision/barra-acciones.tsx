@@ -18,9 +18,11 @@ import styles from './barra-acciones.module.css'
 function BotonPrimario({
   id,
   estado,
+  bloqueante,
 }: {
   id: number
   estado: Estado
+  bloqueante: boolean
 }) {
   const [pendiente, arrancar] = useTransition()
   const router = useRouter()
@@ -30,7 +32,8 @@ function BotonPrimario({
       <button
         type="button"
         className={styles.confirmar}
-        disabled={pendiente}
+        disabled={pendiente || bloqueante}
+        title={bloqueante ? 'Resolvé las validaciones en error antes de confirmar' : undefined}
         onClick={() =>
           arrancar(async () => {
             await confirmarComprobante(id)
@@ -67,11 +70,13 @@ export function BarraAcciones({
   estado,
   proveedor,
   comprobante,
+  bloqueante,
 }: {
   id: number
   estado: Estado
   proveedor: string
   comprobante: string
+  bloqueante: boolean
 }) {
   return (
     <div className={styles.barra}>
@@ -86,7 +91,7 @@ export function BarraAcciones({
         <button type="button" className={styles.observacion} disabled title="Llega en la Fase 3">
           Marcar en observación
         </button>
-        <BotonPrimario id={id} estado={estado} />
+        <BotonPrimario id={id} estado={estado} bloqueante={bloqueante} />
       </div>
     </div>
   )
