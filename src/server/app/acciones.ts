@@ -77,8 +77,15 @@ export async function importarComprobantes(fd: FormData): Promise<{ importados: 
 export async function guardarCampo(id: number, clave: string, valor: string): Promise<void> {
   const pool = await getPool()
   await guardarCampoEn(pool, id, clave, valor.trim() === '' ? null : valor)
+  // Mismo criterio que el MERGE de guardarCampoEn: si el comprobante ya
+  // esta `registrado`, guardarCampoEn fue un no-op, y esta UPDATE no puede
+  // dejar registrado que un usuario "modifico" algo que en los hechos no
+  // cambio.
   await pool.request().input('id', sql.Int, id).input('u', sql.NVarChar(60), usuarioActual())
-    .query('UPDATE PHF_COMPROBANTE SET FECHA_MODIF = SYSDATETIME(), USUARIO_MODIF = @u WHERE ID = @id')
+    .query(`
+      UPDATE PHF_COMPROBANTE SET FECHA_MODIF = SYSDATETIME(), USUARIO_MODIF = @u
+      WHERE ID = @id AND ESTADO <> 'registrado'
+    `)
 }
 
 export async function confirmarComprobante(id: number): Promise<void> {
