@@ -10,6 +10,16 @@ export function formatMoneda(n: number | null | undefined): string {
   return `$ ${MONEDA.format(n)}`
 }
 
+/**
+ * Igual que `formatMoneda` (mismo separador de miles/decimales es-AR) pero
+ * sin el símbolo `$`, para cantidades -- la columna "Cant." de un renglón
+ * no es un importe, y anteponerle "$" leería como si lo fuera.
+ */
+export function formatCantidad(n: number | null | undefined): string {
+  if (n === null || n === undefined) return '—'
+  return MONEDA.format(n)
+}
+
 export function formatFecha(d: Date | string | null | undefined): string {
   if (!d) return '—'
   const f = typeof d === 'string' ? new Date(`${d}T00:00:00`) : d

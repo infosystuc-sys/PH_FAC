@@ -4,3 +4,16 @@
   display: grid;
   grid-template-columns: minmax(420px, 44%) 1fr;
 }
+
+/*
+ * Único scroll del panel derecho. Sin padding propio a propósito: Formulario
+ * (que no se toca) ya aplica su padding de 20px 24px 60px y su fondo
+ * --fondo-panel; si este contenedor agregara el mismo padding, las 4
+ * tarjetas de campos quedarían indentadas 24px de más respecto de AvisoIA,
+ * Renglones e Historial, que aplican ese padding por su cuenta.
+ */
+.derecha {
+  overflow: auto;
+  min-height: 0;
+  background: var(--fondo-panel);
+}

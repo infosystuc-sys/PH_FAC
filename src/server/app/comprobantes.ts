@@ -158,22 +158,59 @@ export async function contarPorEstado(query: string): Promise<Conteos> {
   return contarPorEstadoEn(await getPool(), query)
 }
 
-export type Encabezado = { id: number; archivoNombre: string }
+export type Encabezado = {
+  id: number
+  archivoNombre: string
+  estado: Estado
+  tipo: string | null
+  puntoVenta: string | null
+  numero: string | null
+  razonSocial: string | null
+  cuit: string | null
+  confianzaPromedio: number | null
+  extraccionMs: number | null
+  extraccionModelo: string | null
+  errorMensaje: string | null
+}
 
 /**
- * Lo mínimo para montar la pantalla de revisión: el nombre de archivo para
- * la barra del visor, y confirmar que el comprobante existe (si no, la
- * página muestra 404 en vez de una pantalla vacía).
+ * Lo que hace falta para montar la pantalla de revisión: el nombre de
+ * archivo para la barra del visor, los datos de cabecera para la barra de
+ * acciones (proveedor, comprobante, estado) y lo que dejó la extracción
+ * (para el aviso de lectura IA y el mensaje de error). Confirma también que
+ * el comprobante existe (si no, la página muestra 404 en vez de una
+ * pantalla vacía).
  */
 export async function obtenerEncabezadoEn(e: Ejecutor, id: number): Promise<Encabezado | null> {
   const r = await e
     .request()
     .input('id', sql.Int, id)
-    .query<Record<string, unknown>>('SELECT ID, ARCHIVO_NOMBRE FROM PHF_COMPROBANTE WHERE ID = @id')
+    .query<Record<string, unknown>>(`
+      SELECT ID, ARCHIVO_NOMBRE, ESTADO, TIPO, PUNTO_VENTA, NUMERO,
+             RAZON_SOCIAL, CUIT, CONFIANZA_PROMEDIO, EXTRACCION_MS,
+             EXTRACCION_MODELO, ERROR_MENSAJE
+      FROM PHF_COMPROBANTE WHERE ID = @id
+    `)
 
   if (r.recordset.length === 0) return null
   const row = r.recordset[0]
-  return { id: Number(row.ID), archivoNombre: String(row.ARCHIVO_NOMBRE) }
+  return {
+    id: Number(row.ID),
+    archivoNombre: String(row.ARCHIVO_NOMBRE),
+    estado: String(row.ESTADO) as Estado,
+    tipo: row.TIPO ? String(row.TIPO) : null,
+    puntoVenta: row.PUNTO_VENTA ? String(row.PUNTO_VENTA) : null,
+    numero: row.NUMERO ? String(row.NUMERO) : null,
+    razonSocial: row.RAZON_SOCIAL ? String(row.RAZON_SOCIAL) : null,
+    cuit: row.CUIT ? String(row.CUIT) : null,
+    confianzaPromedio:
+      row.CONFIANZA_PROMEDIO === null || row.CONFIANZA_PROMEDIO === undefined
+        ? null
+        : Number(row.CONFIANZA_PROMEDIO),
+    extraccionMs: row.EXTRACCION_MS === null || row.EXTRACCION_MS === undefined ? null : Number(row.EXTRACCION_MS),
+    extraccionModelo: row.EXTRACCION_MODELO ? String(row.EXTRACCION_MODELO) : null,
+    errorMensaje: row.ERROR_MENSAJE ? String(row.ERROR_MENSAJE) : null,
+  }
 }
 
 export async function obtenerEncabezado(id: number): Promise<Encabezado | null> {

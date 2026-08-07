@@ -148,6 +148,14 @@ export async function obtenerDetalle(comprobanteId: number): Promise<Detalle> {
  * proveedor que se completa por CUIT en la cola) hay que pasar
  * `{ corregidoPorUsuario: false }`: si no, se contamina esa métrica con
  * algo que ningún humano tocó.
+ *
+ * `registrado` es terminal e inmutable (design/README.md §2): nada se
+ * edita después de grabar en Tango. Formulario no conoce el estado del
+ * comprobante -- no se toca, está revisado y aprobado de una tarea
+ * anterior -- así que el freno tiene que vivir en la escritura, no en el
+ * input: si el comprobante está `registrado`, el `USING` no devuelve
+ * ninguna fila y el MERGE completo queda en un no-op, de forma atómica
+ * (sin la ventana de carrera de un SELECT previo).
  */
 export async function guardarCampoEn(
   e: Ejecutor,
@@ -168,7 +176,11 @@ export async function guardarCampoEn(
     .input('corregido', sql.Bit, corregidoPorUsuario)
     .query(`
       MERGE PHF_CAMPO WITH (HOLDLOCK) AS destino
-      USING (SELECT @id AS COMPROBANTE_ID, @clave AS CLAVE) AS origen
+      USING (
+        SELECT @id AS COMPROBANTE_ID, @clave AS CLAVE
+        FROM PHF_COMPROBANTE
+        WHERE ID = @id AND ESTADO <> 'registrado'
+      ) AS origen
         ON destino.COMPROBANTE_ID = origen.COMPROBANTE_ID AND destino.CLAVE = origen.CLAVE
       WHEN MATCHED THEN
         UPDATE SET VALOR_FINAL = @valor, CORREGIDO_POR_USUARIO = @corregido

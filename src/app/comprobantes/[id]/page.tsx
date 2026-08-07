@@ -1,12 +1,29 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { obtenerEncabezado } from '@/server/app/comprobantes'
 import { obtenerDetalle } from '@/server/app/detalle'
 import { Pantalla } from '@/components/revision/pantalla'
+import { BarraAcciones } from '@/components/revision/barra-acciones'
+import { PanelProcesando } from '@/components/revision/panel-procesando'
+import { PanelError } from '@/components/revision/panel-error'
 import type { ValorInicial } from '@/components/revision/formulario'
 import styles from './revision.module.css'
 
 export const dynamic = 'force-dynamic'
+
+/**
+ * "FAC A 0003-00018742", o lo que haya con lo que se leyó hasta ahora. No
+ * se reconstruye con PUNTO_VENTA: la bandeja (ver Tabla en
+ * bandeja/tabla.tsx) ya muestra NUMERO solo, sin combinarlo, porque los
+ * datos sembrados por `pnpm seed` lo traen con el punto de venta incluido
+ * ("0003-00018742") mientras que la extracción real lo deja separado
+ * ("00018742" + PUNTO_VENTA "0003") -- combinar los dos acá duplicaría el
+ * punto de venta para las filas de seed. Mismo criterio que la bandeja:
+ * mostrar NUMERO tal cual viene.
+ */
+function formatComprobante(tipo: string | null, numero: string | null): string {
+  const partes = [tipo, numero].filter(Boolean)
+  return partes.length > 0 ? partes.join(' ') : '—'
+}
 
 export default async function RevisionPage({
   params,
@@ -21,27 +38,46 @@ export default async function RevisionPage({
   if (!encabezado) notFound()
 
   const detalle = await obtenerDetalle(id)
-
-  // `valorFinal` es el que se muestra: arranca igual al leído por la IA y
-  // pasa a ser la corrección del operador en cuanto guarda algo (ver
-  // guardarCampoEn en server/app/detalle.ts). `VALOR_IA` nunca se toca.
-  const iniciales: Record<string, ValorInicial> = {}
-  for (const campo of detalle.campos) {
-    iniciales[campo.clave] = { valor: campo.valorFinal ?? '', confianza: campo.confianza }
-  }
+  const hayCorrecciones = detalle.campos.some((c) => c.corregido)
 
   return (
     <div className={styles.pantalla}>
-      <div className={styles.barra}>
-        <Link href="/comprobantes" className={styles.volver}>
-          ← Bandeja
-        </Link>
-      </div>
-      <Pantalla
-        comprobanteId={id}
-        nombreArchivo={encabezado.archivoNombre}
-        iniciales={iniciales}
+      <BarraAcciones
+        id={id}
+        estado={encabezado.estado}
+        proveedor={encabezado.razonSocial ?? '—'}
+        comprobante={formatComprobante(encabezado.tipo, encabezado.numero)}
       />
+
+      {encabezado.estado === 'procesando' && <PanelProcesando />}
+
+      {encabezado.estado === 'error' && (
+        <PanelError id={id} mensaje={encabezado.errorMensaje} hayCorrecciones={hayCorrecciones} />
+      )}
+
+      {encabezado.estado !== 'procesando' && encabezado.estado !== 'error' && (
+        <Pantalla
+          comprobanteId={id}
+          nombreArchivo={encabezado.archivoNombre}
+          // `valorFinal` es el que se muestra: arranca igual al leído por la
+          // IA y pasa a ser la corrección del operador en cuanto guarda algo
+          // (ver guardarCampoEn en server/app/detalle.ts). `VALOR_IA` nunca
+          // se toca.
+          iniciales={Object.fromEntries(
+            detalle.campos.map((c): [string, ValorInicial] => [
+              c.clave,
+              { valor: c.valorFinal ?? '', confianza: c.confianza },
+            ]),
+          )}
+          campos={detalle.campos.filter((c) => c.valorIA !== null).length}
+          ms={encabezado.extraccionMs}
+          modelo={encabezado.extraccionModelo}
+          confianza={encabezado.confianzaPromedio}
+          hayCorrecciones={hayCorrecciones}
+          renglones={detalle.renglones}
+          auditoria={detalle.auditoria}
+        />
+      )}
     </div>
   )
 }

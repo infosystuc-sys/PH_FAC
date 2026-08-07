@@ -1,0 +1,53 @@
+.tarjeta {
+  max-width: 760px;
+  margin: 0 24px 60px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 9px;
+  padding: 0 18px;
+}
+
+.titulo {
+  margin: 0;
+  padding: 13px 0 10px;
+  border-bottom: 1px solid var(--borde-sutil-3);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--texto-4);
+}
+
+.fila {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--borde-sutil-2);
+}
+
+.fila:last-child {
+  border-bottom: none;
+}
+
+.timestamp {
+  flex: none;
+  width: 104px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--texto-6);
+}
+
+.texto {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--texto);
+}
+
+.usuario {
+  flex: none;
+  font-size: 12px;
+  color: var(--texto-6);
+  text-align: right;
+}

@@ -1,7 +1,35 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-05 (capa de lectura de Tango completa; spec de la Fase 2 escrito)
-**Rama:** `master` (ojo: se llama `master`, no `main` — `git init` la creó así)
+**Última actualización:** 2026-08-06 (Fase 2 completa: importación, extracción con IA, revisión y confirmación)
+**Rama:** `master` (ojo: se llama `master`, no `main` — `git init` la creó así). El trabajo de la Fase 2 se hizo en `fase-2-importacion-extraccion-revision`, todavía no mergeada.
+
+---
+
+## Fase 2: completa
+
+Las 11 tareas de la Fase 2 están terminadas. **187 tests en verde** (incluye los 2-3 tests flaky conocidos de `migrate.test.ts` por contención de SQL Server — si falla justo ese archivo, re-correr sin tocar nada suele alcanzar).
+
+El circuito completo anda de punta a punta: **importar → extraer con Claude → revisar contra el PDF con resaltado sincronizado → corregir con autosave → confirmar → historial**. Verificado en el navegador contra el dev server real (`:3011`) con un comprobante real (`Comprobante_147868-CLARO.pdf`, factura de AMX Argentina/Claro):
+
+- Import + extracción real: 20 campos, confianza promedio 94%, modelo `claude-opus-5`, 18,6 s.
+- El proveedor se resolvió solo por CUIT contra `CPA01` (`AMX ARGENTINA SOCIEDAD ANONIMA`).
+- Se corrigió "Condición de pago" a mano, se recargó la página y la corrección persistió.
+- Se confirmó: el badge pasó de "Pendiente de revisión" a "Confirmado", el botón primario cambió a "Registrar en Tango" (deshabilitado, título "Llega en la Fase 4"), y apareció la entrada "Datos confirmados por el operador" en el historial.
+- La bandeja, filtrada por "Confirmados", mostró el comprobante.
+
+Lo que quedó funcionando, sumado a la Fase 1:
+
+- Importación de PDFs (drag & drop o selección, hasta 50 archivos, 10 MB c/u) con validación de lote atómica.
+- Extracción con Claude (`src/server/ia/`): 29 campos + renglones, con confianza por campo, corriendo en una cola en proceso (`src/server/app/cola.ts`) con reintentos y repesca de comprobantes colgados.
+- Pantalla de revisión (`/comprobantes/[id]`): visor de PDF real (pdf.js) con resaltado sincronizado por capa de texto, formulario de 4 grupos con autosave, barra de acciones con botón contextual por estado, aviso de lectura IA con reproceso (avisa antes de descartar correcciones), renglones (ocultos si no hay ninguno — 77% de los casos) e historial de auditoría.
+- Estados especiales: `procesando` muestra un placeholder que se refresca solo cada 3 s y deja de hacerlo en cuanto el server component deja de montarlo; `error` muestra el mensaje y el botón de reprocesar.
+- `registrado` es terminal e inmutable: la escritura de campos (`guardarCampoEn`) es un no-op atómico si el comprobante ya está registrado — verificado con test y en el navegador.
+
+Para verificar que todo sigue en pie:
+
+```bash
+cd /d/APP/PH_FAC && git status --short && pnpm test
+```
 
 ---
 
@@ -27,21 +55,18 @@ cd /d/APP/PH_FAC && git status --short && pnpm test
 
 ## Lo que sigue
 
-**Fase 2** — importación de PDFs, extracción con Claude, pantalla de revisión con resaltado por capa de texto de pdf.js.
-**Fase 3** — las cuatro validaciones, modal de observación, confirmación, auditoría, toasts, atajos de teclado.
+**Fase 3** — las cuatro validaciones (proveedor por CUIT, sin duplicados, totales cuadran, CAE), modal de observación, resolución de CUIT duplicado a mano, toasts, atajos de teclado.
 **Fase 4** — registro en Tango y asociación de remitos.
 
-Cada fase lleva su propio plan. El diseño completo está en `docs/superpowers/specs/2026-08-04-importador-facturas-tango-design.md`.
+Cada fase lleva su propio plan. El diseño completo está en `docs/superpowers/specs/2026-08-04-importador-facturas-tango-design.md`. La Fase 2 tuvo su propio spec: `docs/superpowers/specs/2026-08-05-fase2-importacion-extraccion-revision-design.md`.
 
-**La Fase 2 ya tiene su spec propio:** `docs/superpowers/specs/2026-08-05-fase2-importacion-extraccion-revision-design.md`. Ojo con dos cosas que salieron de ahí: el alcance de la fase se amplió para incluir confirmar y auditoría (sin eso no se puede probar con el operador), y **hay que agregar cuatro columnas a `PHF_COMPROBANTE` y enseñarle a la migración a agregar columnas**, que hoy solo sabe crear tablas y reparar índices.
-
-La API key de Anthropic ya está cargada en `ANTHROPIC_API_KEY`, en `D:\APP\PH_FAC\.env.local` (verificado el 2026-08-04). La Fase 2 no tiene bloqueos.
+La API key de Anthropic ya está cargada en `ANTHROPIC_API_KEY`, en `D:\APP\PH_FAC\.env.local` (verificado el 2026-08-04, y de nuevo el 2026-08-06 con una extracción real).
 
 ---
 
-## Tres cosas que hay que arrastrar a las fases siguientes
+## Cosas que hay que arrastrar a las fases siguientes
 
-Salieron de la revisión final de la Fase 1 y no están resueltas. Anotarlas acá es la única forma de que no se pierdan.
+Las tres primeras salieron de la revisión final de la Fase 1; las dos últimas, de cerrar la Fase 2 (Tarea 11). Ninguna está resuelta. Anotarlas acá es la única forma de que no se pierdan.
 
 ### 1. Siete CUIT duplicados en `CPA01`, uno de ellos en cuatro filas
 
@@ -58,6 +83,14 @@ Resuelto el 2026-08-05. Las cinco lecturas del spec §4 están implementadas y t
 La saqué de todos los archivos trackeados, pero estuvo commiteada en los commits anteriores a `37d6a9b`. **No hay remoto configurado, así que nunca salió de este disco.**
 
 Si en algún momento se publica el repo, hay que rotar la contraseña del usuario `Axoft` en SQL Server, o reescribir el historial antes de publicar. Es una decisión que queda pendiente y hay que tomarla **antes** del primer push, no después.
+
+### 4. El costo real por comprobante no está medido sobre una muestra representativa
+
+Un solo comprobante real disponible en `D:\CASOS\RAM - APP FAC\` (`Comprobante_147868-CLARO.pdf`, 6 páginas): la extracción tardó 18,6 s con `claude-opus-5`, 20 de 29 campos con valor y confianza promedio 94%. No hay una medición de tokens/costo en USD: `extraerDePdf` (`src/server/ia/extraccion.ts`) no devuelve el `usage` de la respuesta, así que no hay dato de tokens que anotar todavía. Antes de la Fase 4 (que es cuando el volumen real —20 a 100 comprobantes por día— empieza a importar en plata) conviene: (a) hacer que `extraerDePdf` devuelva `usage.input_tokens`/`output_tokens` y guardarlos en `PHF_COMPROBANTE`, y (b) correrlo contra 4-5 comprobantes reales más para tener un promedio, no un solo dato.
+
+### 5. `NUMERO` tiene dos convenciones distintas conviviendo en la misma columna
+
+Descubierto armando la barra de acciones de la pantalla de revisión (Tarea 11). Los comprobantes que vienen de `pnpm seed` guardan `PHF_COMPROBANTE.NUMERO` ya combinado con el punto de venta (`"0003-00018742"`); los que vienen de una extracción real dejan `NUMERO` y `PUNTO_VENTA` por separado (`"00018742"` + `"0003"`). La bandeja (`src/components/bandeja/tabla.tsx`) ya convivía con esto mostrando `NUMERO` solo, sin combinarlo — la barra de acciones nueva sigue el mismo criterio (`formatComprobante` en `src/app/comprobantes/[id]/page.tsx`) para no duplicar el punto de venta en pantalla. Si en algún momento se unifica el formato de `NUMERO`, hay que revisar los dos lugares.
 
 ---
 

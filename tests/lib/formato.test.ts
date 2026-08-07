@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatMoneda,
+  formatCantidad,
   formatFecha,
   formatCuit,
   normalizarCuit,
@@ -23,6 +24,21 @@ describe('formatMoneda', () => {
 
   it('redondea a dos decimales', () => {
     expect(formatMoneda(10.005)).toBe('$ 10,01')
+  })
+})
+
+describe('formatCantidad', () => {
+  it('formatea con separador es-AR, sin el signo $', () => {
+    expect(formatCantidad(1234.5)).toBe('1.234,50')
+  })
+
+  it('a diferencia de formatMoneda, cero no es guion', () => {
+    // Una cantidad de 0 no es "sin dato" como sí lo es un importe de $0.
+    expect(formatCantidad(0)).toBe('0,00')
+  })
+
+  it('muestra guion cuando es null', () => {
+    expect(formatCantidad(null)).toBe('—')
   })
 })
 

@@ -1,0 +1,101 @@
+.barra {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borde);
+}
+
+.volver {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--fondo-app);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: #4a4e56;
+  text-decoration: none;
+}
+
+.volver:hover {
+  background: #e9e7e2;
+}
+
+.proveedor {
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.comprobante {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--texto-2);
+}
+
+.derecha {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.boton {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+}
+
+.boton:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.boton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.observacion {
+  height: 36px;
+  padding: 0 15px;
+  background: var(--superficie);
+  border: 1px solid var(--alerta-borde);
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--alerta);
+}
+
+.observacion:hover:not(:disabled) {
+  background: var(--alerta-hover);
+}
+
+.observacion:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.confirmar {
+  composes: boton;
+  background: var(--oscuro);
+  color: #ffffff;
+}
+
+.registrar {
+  composes: boton;
+  background: var(--exito);
+  color: #ffffff;
+}
+
+.verAsiento {
+  composes: boton;
+  background: var(--fondo-app);
+  border: 1px solid var(--borde);
+  color: #4a4e56;
+}

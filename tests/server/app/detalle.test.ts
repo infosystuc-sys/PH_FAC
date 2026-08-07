@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
+import sql from 'mssql'
 import { conRollback } from '@/server/db/tx'
 import { cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
@@ -112,6 +113,31 @@ describe('guardarCampoEn', () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       await expect(guardarCampoEn(tx, id, 'inventado', 'x')).rejects.toThrow(/clave/i)
+    })
+  })
+
+  it('no escribe nada sobre un comprobante registrado: es terminal e inmutable', async () => {
+    // Formulario (que no se toca) no conoce el estado del comprobante, asi
+    // que el freno tiene que vivir en la escritura. El campo 'cuit' se
+    // deja cargado ANTES de pasar a 'registrado' (simulando el recorrido
+    // real: se completa en 'leido', se confirma, se registra), para
+    // cubrir tanto el UPDATE que no debe pasar sobre un campo existente
+    // como el INSERT que no debe pasar para uno que todavia no existia.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'cuit', '30-71042636-9', { corregidoPorUsuario: false })
+
+      await tx.request().input('id', sql.Int, id)
+        .query("UPDATE PHF_COMPROBANTE SET ESTADO = 'registrado' WHERE ID = @id")
+
+      await guardarCampoEn(tx, id, 'cuit', '30-71042636-0')
+      await guardarCampoEn(tx, id, 'condcompra', '10')
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'condcompra')).toBeUndefined()
+      const cuit = d.campos.find((c) => c.clave === 'cuit')!
+      expect(cuit.valorFinal).toBe('30-71042636-9')
+      expect(cuit.corregido).toBe(false)
     })
   })
 })

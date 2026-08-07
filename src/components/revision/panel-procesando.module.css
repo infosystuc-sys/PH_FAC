@@ -1,0 +1,38 @@
+.envoltura {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fondo-app);
+}
+
+.caja {
+  max-width: 360px;
+  text-align: center;
+}
+
+.icono {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 14px;
+  border-radius: 10px;
+  background: var(--ia-fondo);
+  color: var(--ia);
+  font-size: 18px;
+}
+
+.titulo {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--texto);
+}
+
+.detalle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--texto-3);
+}

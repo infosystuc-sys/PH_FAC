@@ -3,6 +3,10 @@
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Formulario, type ValorInicial } from './formulario'
+import { AvisoIA } from './aviso-ia'
+import { Renglones } from './renglones'
+import { Historial } from './historial'
+import type { RenglonGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import styles from './pantalla.module.css'
 
 /**
@@ -23,22 +27,58 @@ const Visor = dynamic(() => import('./visor').then((m) => m.Visor), { ssr: false
  * campo enfocado y se lo pasa al Visor para que resalte, en la capa de
  * texto del PDF, la zona que corresponde al campo que el operador está
  * mirando en el Formulario.
+ *
+ * El panel derecho es un único scroll (`.derecha`) que aloja, en orden,
+ * el aviso de lectura IA, el Formulario (que no se toca: trae su propio
+ * fondo/padding, revisados y aprobados en una tarea anterior), los
+ * renglones si los hay, y el historial. No se envuelve todo en un
+ * contenedor con su propio padding para no duplicar el que ya aplica
+ * Formulario: cada pieza nueva (AvisoIA, Renglones, Historial) reproduce
+ * el mismo padding horizontal de 24px y el mismo max-width de 760px por
+ * su cuenta, así los bordes de las tarjetas alinean con los de Formulario
+ * aunque estén fuera de su `contenido`.
  */
 export function Pantalla({
   comprobanteId,
   nombreArchivo,
   iniciales,
+  campos,
+  ms,
+  modelo,
+  confianza,
+  hayCorrecciones,
+  renglones,
+  auditoria,
 }: {
   comprobanteId: number
   nombreArchivo: string
   iniciales: Record<string, ValorInicial>
+  campos: number
+  ms: number | null
+  modelo: string | null
+  confianza: number | null
+  hayCorrecciones: boolean
+  renglones: RenglonGuardado[]
+  auditoria: EntradaAuditoria[]
 }) {
   const [enfocado, setEnfocado] = useState<string | null>(null)
 
   return (
     <div className={styles.cuerpo}>
       <Visor id={comprobanteId} nombre={nombreArchivo} resaltar={enfocado} />
-      <Formulario comprobanteId={comprobanteId} iniciales={iniciales} onEnfocar={setEnfocado} />
+      <div className={styles.derecha}>
+        <AvisoIA
+          id={comprobanteId}
+          campos={campos}
+          ms={ms}
+          modelo={modelo}
+          confianza={confianza}
+          hayCorrecciones={hayCorrecciones}
+        />
+        <Formulario comprobanteId={comprobanteId} iniciales={iniciales} onEnfocar={setEnfocado} />
+        <Renglones renglones={renglones} />
+        <Historial entradas={auditoria} />
+      </div>
     </div>
   )
 }
