@@ -1,5 +1,9 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest'
-import { buscarProveedorPorCuit, buscarProveedoresPorRazonSocial } from '@/server/tango/proveedores'
+import {
+  buscarProveedorPorCuit,
+  buscarProveedoresPorCuit,
+  buscarProveedoresPorRazonSocial,
+} from '@/server/tango/proveedores'
 import { getPool, cerrarPool } from '@/server/db/pool'
 
 let cuitReal: string
@@ -44,6 +48,36 @@ describe('buscarProveedorPorCuit', () => {
   it('devuelve null cuando el CUIT esta mal formado', async () => {
     const p = await buscarProveedorPorCuit('123')
     expect(p).toBeNull()
+  })
+})
+
+describe('buscarProveedoresPorCuit', () => {
+  it('devuelve un array con el unico match cuando el CUIT no esta duplicado', async () => {
+    // CUIT real de AMX ARGENTINA, usado en otros tests de la suite.
+    const r = await buscarProveedoresPorCuit('30-66328849-7')
+    expect(r.length).toBe(1)
+    expect(r[0].razonSocial).toContain('AMX')
+  })
+
+  it('devuelve un array vacio si no matchea ningun proveedor', async () => {
+    const r = await buscarProveedoresPorCuit('20-11111111-1')
+    expect(r).toEqual([])
+  })
+
+  it('devuelve mas de un resultado para un CUIT duplicado real de la base', async () => {
+    // Descubierto en la revision final de Fase 1: hay 7 CUIT duplicados en
+    // CPA01. Se busca uno en vez de hardcodear un CUIT: la base es real y
+    // el conjunto de duplicados puede cambiar.
+    const dup = await getPool().then((p) => p.request().query(`
+      SELECT TOP 1 REPLACE(REPLACE(REPLACE(N_CUIT,'-',''),' ',''),'.','') AS cuit
+      FROM CPA01
+      WHERE N_CUIT IS NOT NULL AND N_CUIT <> ''
+      GROUP BY REPLACE(REPLACE(REPLACE(N_CUIT,'-',''),' ',''),'.','')
+      HAVING COUNT(*) > 1
+    `))
+    if (dup.recordset.length === 0) return // no hay duplicados hoy: no hay nada que probar
+    const r = await buscarProveedoresPorCuit(dup.recordset[0].cuit)
+    expect(r.length).toBeGreaterThan(1)
   })
 })
 

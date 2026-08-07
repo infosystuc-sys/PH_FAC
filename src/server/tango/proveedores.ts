@@ -54,6 +54,30 @@ export async function buscarProveedorPorCuit(cuit: string): Promise<Proveedor | 
   return r.recordset.length ? aProveedor(r.recordset[0]) : null
 }
 
+/**
+ * A diferencia de `buscarProveedorPorCuit` (que deduce determinísticamente
+ * el primero por COD_PROVEE para el camino automático de la cola), esta
+ * devuelve TODOS los matches -- la Fase 3 la usa para mostrarle al
+ * operador la lista completa cuando hay mas de un proveedor con el mismo
+ * CUIT, en vez de elegir en silencio.
+ */
+export async function buscarProveedoresPorCuit(cuit: string): Promise<Proveedor[]> {
+  const norm = normalizarCuit(cuit)
+  if (!norm) return []
+
+  const pool = await getPool()
+  const r = await pool
+    .request()
+    .input('cuit', sql.VarChar(11), norm)
+    .query(`
+      ${SELECT}
+      WHERE REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '') = @cuit
+      ORDER BY COD_PROVEE
+    `)
+
+  return r.recordset.map(aProveedor)
+}
+
 export async function buscarProveedoresPorRazonSocial(
   texto: string,
   limite = 20,
