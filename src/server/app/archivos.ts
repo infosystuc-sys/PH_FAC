@@ -7,7 +7,9 @@ import path from 'node:path'
  * carpeta en disco, que ya esta en .gitignore.
  */
 export function directorioStorage(): string {
-  return path.resolve(process.env.STORAGE_DIR || path.join(process.cwd(), 'storage'))
+  return path.resolve(
+    process.env.PHF_STORAGE_DIR || process.env.STORAGE_DIR || path.join(process.cwd(), 'storage'),
+  )
 }
 
 /**
