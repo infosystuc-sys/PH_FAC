@@ -1,7 +1,99 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-06 (Fase 2 completa: importación, extracción con IA, revisión y confirmación)
-**Rama:** `master` (ojo: se llama `master`, no `main` — `git init` la creó así). El trabajo de la Fase 2 se hizo en `fase-2-importacion-extraccion-revision`, todavía no mergeada.
+**Última actualización:** 2026-08-07 (Fase 3 EN CURSO — ver sección siguiente, es lo primero que hay que leer)
+**Rama actual:** `fase-3-validaciones-observacion-toasts` (creada desde `master` en el commit `628425e`). `master` se llama así, no `main` — `git init` la creó así.
+**Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
+
+---
+
+## Fase 3 — EN CURSO: validaciones, observación, toasts y atajos
+
+**Leé esto antes que nada más en este archivo.** Esta sección es un handoff completo para retomar en una conversación nueva sin perder nada. Se escribió a mitad de la Task 5 de 9, cuando el usuario pidió cambiar de conversación.
+
+### Documentos de referencia (leer en este orden)
+
+1. **Spec:** `docs/superpowers/specs/2026-08-07-fase3-validaciones-observacion-toasts-design.md` — qué se construye y por qué, ya aprobado por el usuario.
+2. **Plan:** `docs/superpowers/plans/2026-08-07-fase3-validaciones-observacion-toasts.md` — las 9 tareas con código completo. **Este archivo tuvo 4 correcciones durante la implementación** (ver "Bugs del plan encontrados" más abajo) — la versión en el repo ya las tiene, no hace falta volver a aplicarlas.
+3. **Ledger del SDD (la fuente de verdad del progreso, más detallada que esta sección):** `.superpowers/sdd/2026-08-07-fase3-validaciones-observacion-toasts/progress.md`. Ahí está, tarea por tarea, cada implementación, cada revisión, cada fix round, con SHAs exactos. **Leer este archivo completo antes de continuar** — esta sección de RETOMAR.md es un resumen, el ledger es el detalle.
+4. El proceso que se está siguiendo es **`superpowers:subagent-driven-development`** (invocar el skill con ese nombre para continuar) — implementador fresco por tarea, revisión de spec+calidad después de cada una, fix loop de hasta 5 rondas si hace falta, revisión final de rango al terminar las 9 tareas.
+
+### Estado exacto del código ahora mismo
+
+```bash
+cd /d/APP/PH_FAC
+git branch --show-current   # fase-3-validaciones-observacion-toasts
+git log --oneline -1        # 5c29a4c Bloquear "Confirmar datos" si hay validaciones en error
+git status --short          # debería estar limpio
+```
+
+Si `git status` no está limpio, alguien (humano o agente) dejó algo a medias — revisar antes de seguir, no descartar sin mirar.
+
+### Qué está terminado (Tasks 1-5 de 9)
+
+| Task | Qué hace | Estado |
+|---|---|---|
+| 1 | `src/lib/validaciones.ts` — las 4 validaciones puras + `letraComprobante`/`nComp` | ✅ completa, review clean |
+| 2 | `buscarProveedoresPorCuit` (plural) + `src/server/tango/comprobantes.ts` (lectura de duplicados en CPA04) | ✅ completa, review clean |
+| 3 | `src/server/app/validaciones.ts` — orquesta detalle + Tango + PHF_COMPROBANTE en `validarComprobanteEn`/`validarComprobante` | ✅ completa, review clean tras 1 fix round (truncar `tipo` a 10 chars antes de bindear a `VarChar(10)`) |
+| 4 | Panel de validaciones (`validaciones.tsx`) + selector manual de proveedor (`selector-proveedor.tsx`) + `elegirProveedorEn`/`elegirProveedor`/`buscarProveedores` en `acciones.ts` | ✅ completa, review clean tras 1 fix round (carrera de resultados obsoletos en el buscador) |
+| 5 | `confirmarComprobante` re-valida y rechaza si `bloqueante`; "Confirmar datos" se deshabilita en el cliente | ⚠️ **implementada y commiteada (`5c29a4c`), pero la revisión de Task 5 TODAVÍA NO SE DESPACHÓ** — es el próximo paso, ver abajo |
+
+### Próximo paso inmediato: despachar la revisión de Task 5
+
+No se llegó a generar el paquete de revisión ni a despachar el reviewer. Hacerlo así:
+
+```bash
+cd /d/APP/PH_FAC
+bash "$(find ~/.claude -path '*subagent-driven-development/scripts/review-package' 2>/dev/null | head -1)" \
+  docs/superpowers/plans/2026-08-07-fase3-validaciones-observacion-toasts.md 46ce7dc 5c29a4c
+```
+
+(Si el `find` no encuentra el script, buscar `scripts/review-package` dentro de la instalación del plugin `superpowers` — en esta máquina estaba en `C:\Users\USUARIO\.claude\plugins\cache\claude-plugins-official\superpowers\6.2.0\skills\subagent-driven-development\scripts\review-package`.)
+
+Eso imprime la ruta de un archivo de diff. Despachar un subagente de revisión (modelo `sonnet` alcanza, es una task chica) con el prompt de `task-reviewer-prompt.md` del mismo skill, apuntando a:
+- Brief: `.superpowers/sdd/2026-08-07-fase3-validaciones-observacion-toasts/task-5-brief.md`
+- Reporte del implementer: `.superpowers/sdd/2026-08-07-fase3-validaciones-observacion-toasts/task-5-report.md`
+- El diff que acaba de imprimir el comando de arriba
+
+**Verificación manual en navegador — quedó a medias, terminarla como parte de cerrar Task 5 (no es bloqueante para despachar la revisión, pero hay que completarla antes de dar la task por cerrada):**
+- ✅ Ya confirmado: en `/comprobantes/743` (CUIT sin match → validación de proveedor en error) el botón primario muestra "Resolvé las validaciones en error antes de confirmar" y está deshabilitado.
+- ❌ Falta confirmar: en un comprobante SIN errores bloqueantes (advertencias de totales/CAE están bien, no cuentan) el botón dice "Confirmar datos" y está habilitado. Estaba por chequear `/comprobantes/4158` cuando se cortó — probar ese u otro similar.
+
+El dev server ya está corriendo en `localhost:3011` (`.claude/launch.json`, config `ph-fac-dev`) — usar `preview_start` con `{name: "ph-fac-dev"}` para reengancharse al Browser pane en vez de levantarlo de nuevo.
+
+### Qué falta después de Task 5 (Tasks 6-9, sin empezar)
+
+6. **Modal de observación** — `marcarObservacion` en `acciones.ts` + `modal-observacion.tsx` + habilitar el botón "Marcar en observación" en `barra-acciones.tsx` (hoy deshabilitado con `title="Llega en la Fase 3"`).
+7. **Sistema de toasts** — `ToastProvider`/`useToast` + wiring en confirmar/observación/importar. Ojo: el plan de Task 9 asume que `BarraAcciones` ya tiene `useToast()` montado desde Task 7 — si se reordena el trabajo, revisar esa dependencia.
+8. **`condcompra` de texto libre a select** — nuevo tipo `'select'` en `src/lib/campos.ts`, soporte en `Campo`/`Formulario`, opciones desde `listarCondicionesCompra()` (ya existe, Fase 1).
+9. **Atajos de teclado + navegación J/K** — `obtenerVecinosEn`/`obtenerVecinos` en `comprobantes.ts`, hook `useAtajos`, reemplazo completo de `barra-acciones.tsx` consolidando todo lo de las Tasks 5-7-9 en un solo archivo final (el plan ya trae el código completo de esa versión consolidada).
+
+Después de la Task 9: revisión final de rango completo (`5a40f7f..HEAD` no, ojo — el rango de ESTA fase es desde donde arrancó la rama: usar `git merge-base master fase-3-validaciones-observacion-toasts` para el `MERGE_BASE`, que debería dar `628425e`), con el modelo más capaz disponible. Si hay hallazgos: un solo fix dispatch + una re-revisión, no uno por hallazgo. Al quedar limpia: borrar el workspace del SDD (`rm -rf .superpowers/sdd/2026-08-07-fase3-validaciones-observacion-toasts`) e invocar `superpowers:finishing-a-development-branch` para decidir con el usuario qué hacer con la rama (mergear a `master`, como se hizo con la Fase 2).
+
+### Bugs del plan encontrados durante la implementación (ya corregidos en el plan y en el código)
+
+El plan lo escribí yo (el agente) antes de empezar a implementar, y salieron 4 defectos reales al ejecutarlo — documentados acá para que quien retome sepa que **el plan ya fue parcheado sobre la marcha** y no hay que desconfiar de él, pero sí vale la pena tenerlos presentes:
+
+1. **Task 1** — un fixture de `validarTotales` tenía mal la aritmética (`neto: '100,00'` con `total: '112.480,00'` no da una diferencia de `12.480,00`). El implementer lo detectó solo y lo corrigió a `neto: '100.000,00'`; el plan quedó actualizado.
+2. **Task 3** — el plan decía "Expected: PASS (6 tests)" pero el bloque de código tiene 5 `it()`. Era un error de conteo mío, no un test faltante (el implementer no inventó un sexto test, y el reviewer confirmó independientemente que 5 es cobertura adecuada). Plan corregido.
+3. **Task 3** — `.input('tipo', sql.VarChar(10), valores.tipo ?? null)` en la query de duplicado contra `PHF_COMPROBANTE` no truncaba el valor antes de bindearlo (puede tener 24+ caracteres reales, ej. "FACTURA A 0011-00063576"). Se corrigió con `.slice(0, 10)`, seteado ya sobre el precedente que sienta `cola.ts:135` para el mismo problema con el mismo campo.
+4. **Task 4** — la versión original de `elegirProveedor` usaba `getPool()` (conexión real) directo. El test la llama sobre un comprobante insertado dentro de `conRollback` (transacción sin commitear) — la fila queda con lock exclusivo hasta que el test termina, y el `UPDATE` de `elegirProveedor` desde la conexión separada queda esperando ese lock para siempre: deadlock real, no hipotético (se reprodujo dos veces con timeout de 20s). Se corrigió separando en `elegirProveedorEn(e: Ejecutor, ...)` (testeable con cualquier conexión) + `elegirProveedor(...)` (wrapper de producción sobre el pool real) — mismo patrón que ya usa `guardarCampoEn`/`guardarCampo` y `obtenerDetalleEn`/`obtenerDetalle`. **Si alguna task futura (6-9) necesita testear una función que combine "usa el pool real" + "el test inserta datos vía `conRollback`", aplicar el mismo patrón `_En`/wrapper desde el vamos, no esperar a que un test cuelgue para descubrirlo.**
+
+**Dato de infraestructura verificado y relevante para lo anterior:** la base de datos tiene `READ_COMMITTED_SNAPSHOT` **activado** (`is_read_committed_snapshot_on: true`). Esto significa que una **lectura** (`SELECT`) desde una conexión separada NO se bloquea contra una fila con una transacción de escritura sin commitear — lee la última versión commiteada (o simplemente no ve la fila si nunca se commiteó). Por eso Task 5 (que hace una lectura vía `validarComprobante` dentro de `confirmarComprobante`, no una escritura) **no** tuvo el mismo problema que Task 4: se verificó esto explícitamente antes de despachar la Task 5 para no perder tiempo con otro deadlock. La regla práctica: **escrituras** (`UPDATE`/`INSERT`/`MERGE`) desde el pool real SÍ pueden colgarse contra un `conRollback` que insertó la fila; **lecturas** (`SELECT`) no.
+
+### Interrupciones por límite MENSUAL de gasto de la API (distinto de los límites de sesión/semanales)
+
+Pasó dos veces en esta fase (Task 4 y Task 5), siempre durante el paso opcional de "verificación visual en navegador" al final de una task — nunca durante la implementación/tests/tsc, que siempre habían terminado y estaban verificados antes del corte. Patrón para manejarlo si vuelve a pasar:
+
+1. Verificar desde afuera (el controller, no el agente) que el código, los tests y `tsc --noEmit` están bien — normalmente ya lo están, el corte llega tarde en el flujo de la task.
+2. Commitear igual si todo lo anterior está verde (no hace falta esperar a que el agente mismo commitee).
+3. Opcionalmente, reanudar el mismo agente (por `agentId`, no uno nuevo) pidiéndole solo que escriba su reporte, sin reprocesar nada pesado — a veces alcanza cuota para eso aunque no para más trabajo.
+4. Si la verificación visual en navegador quedó pendiente, el controller puede completarla él mismo con las herramientas de Browser pane (`preview_start` con `{name: "ph-fac-dev"}`, `navigate`, `read_page`/`get_page_text` — el `screenshot` con píxeles reales no funciona en este entorno, da "the Browser pane is not displayed, so the page is not compositing frames"; usar el árbol de accesibilidad/texto en su lugar).
+5. Si el límite bloquea directamente el *despacho* de un agente (no solo lo corta a mitad de camino), no hay mucho margen: puede que haya que esperar a que se renueve el mes, o que el usuario lo suba desde `claude.ai/settings/usage`. No confundir con los límites de sesión/semanales vistos en fases anteriores, que se resuelven solos en horas o días — este es mensual.
+
+### Convención de commits de esta fase (igual que el resto del proyecto)
+
+Español, imperativo, terminando en `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`. Cuando el controller corrige un bug del plan encontrado durante la implementación, hace un commit aparte solo para el archivo del plan (no mezclado con el código), con el mensaje explicando qué estaba mal. Ver `git log` en la rama para los ejemplos exactos (`515d1b4`, `bad48af` no — ese es el fix de código, buscar `f89d315` y el commit del fixture de Task 1).
 
 ---
 
