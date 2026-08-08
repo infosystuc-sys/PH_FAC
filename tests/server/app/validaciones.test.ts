@@ -4,7 +4,7 @@ import { conRollback } from '@/server/db/tx'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
-import { validarComprobanteEn } from '@/server/app/validaciones'
+import { validarComprobanteEn, validarListoParaRegistrarEn } from '@/server/app/validaciones'
 import { elegirProveedorEn } from '@/server/app/acciones'
 
 afterAll(async () => {
@@ -208,6 +208,69 @@ describe('elegirProveedorEn resuelve la validacion bloqueante de proveedor', () 
       const despues = await validarComprobanteEn(tx, id)
       expect(despues.proveedor.estado).toBe('ok')
       expect(despues.bloqueante).toBe(false)
+    })
+  })
+})
+
+describe('validarListoParaRegistrarEn', () => {
+  it('bloqueante si falta condcompra', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0011')
+      await guardarCampoEn(tx, id, 'nro', '63576')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.condCompra.estado).toBe('error')
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+
+  it('bloqueante si hay percepcion de IIBB sin codigo', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0011')
+      await guardarCampoEn(tx, id, 'nro', '63576')
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+      await guardarCampoEn(tx, id, 'perciibb', '13.248,69')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.percepcionIibb.estado).toBe('error')
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+
+  it('bloqueante si el numero de comprobante no calza en el formato', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '123456')
+      await guardarCampoEn(tx, id, 'nro', '63576')
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.formatoComp.estado).toBe('error')
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+
+  it('no bloqueante si todo esta completo', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0011')
+      await guardarCampoEn(tx, id, 'nro', '63576')
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+      await guardarCampoEn(tx, id, 'perciibb', '13.248,69')
+      await guardarCampoEn(tx, id, 'codpercibb', '60')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.condCompra.estado).toBe('ok')
+      expect(r.percepcionIibb.estado).toBe('ok')
+      expect(r.percepcionIva3.estado).toBe('ok')
+      expect(r.formatoComp.estado).toBe('ok')
+      expect(r.bloqueante).toBe(false)
     })
   })
 })

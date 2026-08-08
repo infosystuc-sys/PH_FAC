@@ -10,6 +10,9 @@ import {
   validarDuplicado,
   validarTotales,
   validarCae,
+  validarFormatoNComp,
+  validarCondCompra,
+  validarPercepcionIva,
   type ResultadoValidacion,
 } from '@/lib/validaciones'
 
@@ -119,4 +122,49 @@ export async function validarComprobanteEn(
 
 export async function validarComprobante(id: number, detallePrevio?: Detalle): Promise<Validaciones> {
   return validarComprobanteEn(await getPool(), id, detallePrevio)
+}
+
+export type ResultadoListoParaRegistrar = {
+  condCompra: ResultadoValidacion
+  percepcionIibb: ResultadoValidacion
+  percepcionIva3: ResultadoValidacion
+  formatoComp: ResultadoValidacion
+  bloqueante: boolean
+}
+
+/**
+ * Gate de la transicion confirmado -> registrado, distinto del de Fase 3
+ * (leido/observacion -> confirmado). Las 4 validaciones de Fase 3 ya
+ * bloquearon esa primera transicion y se vuelven a chequear server-side
+ * dentro de la propia transaccion de registro -- no se repiten aca.
+ */
+export async function validarListoParaRegistrarEn(
+  e: Ejecutor,
+  id: number,
+  detallePrevio?: Detalle,
+): Promise<ResultadoListoParaRegistrar> {
+  const detalle = detallePrevio ?? (await obtenerDetalleEn(e, id))
+  const valores: Record<string, string | null | undefined> = {}
+  for (const c of detalle.campos) valores[c.clave] = c.valorFinal
+
+  const condCompra = validarCondCompra(valores.condcompra)
+  const percepcionIibb = validarPercepcionIva('IIBB', valores.perciibb, valores.codpercibb)
+  // impiva2 es donde, en los datos reales verificados durante el diseño de
+  // esta fase, cayo la percepcion de IVA del 3% (ver spec de Fase 4,
+  // seccion 6). Si en la implementacion real aparece en otro slot, revisar.
+  const percepcionIva3 = validarPercepcionIva('IVA3', valores.impiva2, valores.codpercepiva)
+  const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
+
+  const bloqueante = [condCompra, percepcionIibb, percepcionIva3, formatoComp].some(
+    (v) => v.estado === 'error',
+  )
+
+  return { condCompra, percepcionIibb, percepcionIva3, formatoComp, bloqueante }
+}
+
+export async function validarListoParaRegistrar(
+  id: number,
+  detallePrevio?: Detalle,
+): Promise<ResultadoListoParaRegistrar> {
+  return validarListoParaRegistrarEn(await getPool(), id, detallePrevio)
 }
