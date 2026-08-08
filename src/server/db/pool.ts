@@ -26,7 +26,13 @@ function leerConfig(): sql.config {
       useUTC: false,
     },
     pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
-    requestTimeout: 30000,
+    // 30s alcanzaba mientras la app solo leia. El registro en Tango (Fase 4)
+    // escribe CPA04 -- verificado en vivo contra la base real que ese INSERT
+    // puntual puede tardar entre ~20s y más de 30s bajo contención (tabla
+    // legacy muy usada, 25.000+ filas). Un timeout mas chico que esa
+    // variabilidad real le hace fallar el registro a un operador que hizo
+    // todo bien. 60s da margen sin ocultar un cuelgue real indefinido.
+    requestTimeout: 60000,
     connectionTimeout: 15000,
   }
 }
