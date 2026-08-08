@@ -6,3 +6,4 @@ storage/
 .superpowers/
 tsconfig.tsbuildinfo
 .claude/settings.local.json
+.playwright-mcp/
