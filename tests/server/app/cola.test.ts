@@ -177,14 +177,23 @@ describe('desnormalizarBandejaEn', () => {
 })
 
 describe('resolverProveedorEn', () => {
-  it('completa el codigo de proveedor a partir del CUIT extraido', async () => {
-    // Se descubre un CUIT real de CPA01 en vez de hardcodearlo.
+  it('completa el codigo de proveedor a partir del CUIT extraido cuando matchea uno solo', async () => {
+    // Se descubre un CUIT real de CPA01 sin duplicar en vez de hardcodearlo:
+    // un CUIT que aparece una sola vez en toda la tabla, no solo "el primero
+    // de 11 digitos" (que podria estar duplicado y volver el test flaky
+    // desde que resolverProveedorEn dejo de resolver a ciegas el primero).
     const pool = await getPool()
     const p = await pool.request().query(`
-      SELECT TOP 1 LTRIM(RTRIM(COD_PROVEE)) AS cod, LTRIM(RTRIM(N_CUIT)) AS cuit
-      FROM CPA01
-      WHERE LEN(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', '')) = 11
-      ORDER BY COD_PROVEE
+      SELECT TOP 1 cuit, MIN(cod) AS cod
+      FROM (
+        SELECT LTRIM(RTRIM(COD_PROVEE)) AS cod,
+               REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '') AS cuit
+        FROM CPA01
+        WHERE LEN(REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '')) = 11
+      ) x
+      GROUP BY cuit
+      HAVING COUNT(*) = 1
+      ORDER BY cuit
     `)
     const real = p.recordset[0]
 
@@ -214,6 +223,36 @@ describe('resolverProveedorEn', () => {
       await resolverProveedorEn(tx, id, '99-99999999-9')
       const d = await obtenerDetalleEn(tx, id)
       expect(d.campos.find((c) => c.clave === 'codprovee')).toBeUndefined()
+    })
+  })
+
+  it('no escribe nada cuando el CUIT matchea 2 o mas proveedores -- queda para el selector manual', async () => {
+    // Antes resolvia a ciegas el primero por COD_PROVEE (buscarProveedorPorCuit,
+    // singular). Eso dejaba un codigo de proveedor arbitrario ya escrito
+    // cuando el CUIT esta duplicado, y la validacion bloqueante de la Fase 3
+    // nunca lo detectaba porque el campo ya estaba "resuelto". Se descubre un
+    // CUIT duplicado real en vez de hardcodearlo (7 casos verificados en
+    // CPA01, el conjunto puede cambiar).
+    const pool = await getPool()
+    const dup = await pool.request().query(`
+      SELECT TOP 1 REPLACE(REPLACE(REPLACE(N_CUIT,'-',''),' ',''),'.','') AS cuit
+      FROM CPA01
+      WHERE N_CUIT IS NOT NULL AND N_CUIT <> ''
+      GROUP BY REPLACE(REPLACE(REPLACE(N_CUIT,'-',''),' ',''),'.','')
+      HAVING COUNT(*) > 1
+    `)
+    if (dup.recordset.length === 0) return // no hay CUIT duplicado hoy: no hay nada que probar
+    const cuitDuplicado = String(dup.recordset[0].cuit)
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await resolverProveedorEn(tx, id, cuitDuplicado)
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'codprovee')).toBeUndefined()
+
+      const r = await tx.request().input('id', sql.Int, id)
+        .query('SELECT COD_PROVEE FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(r.recordset[0].COD_PROVEE).toBeNull()
     })
   })
 

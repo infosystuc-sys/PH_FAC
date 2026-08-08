@@ -2,7 +2,7 @@ import sql from 'mssql'
 import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
 import { extraerDePdf, type Extraccion } from '../ia/extraccion'
-import { buscarProveedorPorCuit } from '../tango/proveedores'
+import { buscarProveedoresPorCuit } from '../tango/proveedores'
 import { normalizarCuit, parsearImporteONulo } from '@/lib/formato'
 import { guardarExtraccionEn, guardarCampoEn, auditarEn } from './detalle'
 import { leerPdf } from './archivos'
@@ -152,9 +152,12 @@ export async function desnormalizarBandejaEn(
 
 /**
  * Busca el proveedor de Tango por el CUIT que leyó la IA y deja el código
- * en el campo `codprovee` y en la columna de bandeja. Si no matchea, no
- * escribe nada: la validación bloqueante y la resolución de CUIT
- * duplicados son de la Fase 3.
+ * en el campo `codprovee` y en la columna de bandeja. Si no matchea, o si
+ * matchea a mas de uno (hay 7 CUIT duplicados en CPA01), no escribe nada:
+ * la validación bloqueante y la resolución de CUIT duplicados son de la
+ * Fase 3, y quedan para que el operador elija a mano desde el selector
+ * manual -- escribir el primer match a ciegas dejaria un codigo de
+ * proveedor arbitrario que la validacion bloqueante nunca detectaria.
  *
  * Es el único punto de la app fuera de src/server/tango/ que necesita un
  * dato del ERP, y lo pide por la función de esa capa: no emite SQL contra
@@ -167,8 +170,9 @@ export async function resolverProveedorEn(
 ): Promise<void> {
   if (!cuit || !normalizarCuit(cuit)) return
 
-  const proveedor = await buscarProveedorPorCuit(cuit)
-  if (!proveedor) return
+  const candidatos = await buscarProveedoresPorCuit(cuit)
+  if (candidatos.length !== 1) return
+  const proveedor = candidatos[0]
 
   // No es una correccion del operador: lo resolvio el sistema por el CUIT.
   // CORREGIDO_POR_USUARIO en 1 aca contaminaria la metrica de que tan bien

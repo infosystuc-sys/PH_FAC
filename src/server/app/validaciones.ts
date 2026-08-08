@@ -1,6 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
-import { obtenerDetalleEn } from './detalle'
+import { obtenerDetalleEn, type Detalle } from './detalle'
 import { buscarProveedoresPorCuit, type Proveedor } from '@/server/tango/proveedores'
 import { buscarFacturaEnCpa04 } from '@/server/tango/comprobantes'
 import {
@@ -24,20 +24,47 @@ export type Validaciones = {
   bloqueante: boolean
 }
 
-export async function validarComprobanteEn(e: Ejecutor, id: number): Promise<Validaciones> {
-  const detalle = await obtenerDetalleEn(e, id)
+/**
+ * `detallePrevio` evita un segundo round-trip a PHF_CAMPO/PHF_RENGLON/
+ * PHF_AUDITORIA cuando quien llama (la pantalla de revisión) ya lo leyó
+ * para renderizar el formulario. Si no se pasa, se lee acá como antes --
+ * `confirmarComprobante`, por ejemplo, no tiene un detalle a mano.
+ */
+export async function validarComprobanteEn(
+  e: Ejecutor,
+  id: number,
+  detallePrevio?: Detalle,
+): Promise<Validaciones> {
+  const detalle = detallePrevio ?? (await obtenerDetalleEn(e, id))
   const valores: Record<string, string | null> = {}
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
 
   const cuit = valores.cuit ?? ''
   const candidatosProveedor = cuit ? await buscarProveedoresPorCuit(cuit) : []
-  const proveedor = validarProveedor(candidatosProveedor.length)
+
+  // `codprovee` gana sobre el CUIT: lo escribe `elegirProveedorEn` cuando el
+  // operador resuelve a mano un CUIT sin match o con 2+ matches, y tambien
+  // `resolverProveedorEn` cuando el CUIT matchea a uno solo. Si se siguiera
+  // revalidando solo contra `candidatosProveedor.length`, un CUIT duplicado
+  // (2+ matches) quedaria bloqueante para siempre aunque el operador ya
+  // hubiera elegido: `validarProveedor` volveria a contar los mismos 2+
+  // matches del CUIT en vez de mirar la eleccion ya hecha.
+  const codProveeElegido = valores.codprovee?.trim() || null
+  const proveedor = codProveeElegido ? validarProveedor(1) : validarProveedor(candidatosProveedor.length)
+
+  // Codigo de proveedor a usar para el chequeo de duplicados: el elegido a
+  // mano si existe, si no el unico candidato por CUIT (si hay exactamente
+  // uno). Con 0 o 2+ candidatos y sin eleccion manual no hay con que
+  // consultar CPA04 -- el chequeo no corre, y eso se refleja como
+  // "advertencia", no como un falso "ok".
+  const codProveeParaDuplicado =
+    codProveeElegido ?? (candidatosProveedor.length === 1 ? candidatosProveedor[0].codProvee : null)
 
   let hayDuplicado = false
   let referenciaDuplicado: string | null = null
+  let duplicadoNoVerificado: string | null = null
 
-  if (candidatosProveedor.length === 1) {
-    const codProvee = candidatosProveedor[0].codProvee
+  if (codProveeParaDuplicado) {
     const letra = letraComprobante(valores.tipo ?? '')
     const ptovta = valores.ptovta ?? ''
     const nro = valores.nro ?? ''
@@ -45,7 +72,7 @@ export async function validarComprobanteEn(e: Ejecutor, id: number): Promise<Val
     if (letra && ptovta && nro) {
       const candidato = armarNComp(letra, ptovta, nro)
 
-      const enTango = await buscarFacturaEnCpa04(codProvee, candidato)
+      const enTango = await buscarFacturaEnCpa04(codProveeParaDuplicado, candidato)
       if (enTango) {
         hayDuplicado = true
         referenciaDuplicado = `factura ${enTango.nComp} ya registrada en Tango`
@@ -53,7 +80,7 @@ export async function validarComprobanteEn(e: Ejecutor, id: number): Promise<Val
         const enApp = await e
           .request()
           .input('id', sql.Int, id)
-          .input('cp', sql.VarChar(20), codProvee)
+          .input('cp', sql.VarChar(20), codProveeParaDuplicado)
           .input('tipo', sql.VarChar(10), valores.tipo?.slice(0, 10) ?? null)
           .input('pv', sql.VarChar(10), ptovta)
           .input('nro', sql.VarChar(20), nro)
@@ -67,10 +94,16 @@ export async function validarComprobanteEn(e: Ejecutor, id: number): Promise<Val
           referenciaDuplicado = `comprobante interno ${enApp.recordset[0].ID}`
         }
       }
+    } else {
+      duplicadoNoVerificado = 'No se pudo verificar duplicados: falta tipo, punto de venta o número.'
     }
+  } else {
+    duplicadoNoVerificado = 'No se pudo verificar duplicados: falta resolver el proveedor.'
   }
 
-  const duplicado = validarDuplicado(hayDuplicado, referenciaDuplicado)
+  const duplicado: ResultadoValidacion = duplicadoNoVerificado
+    ? { estado: 'advertencia', mensaje: duplicadoNoVerificado }
+    : validarDuplicado(hayDuplicado, referenciaDuplicado)
   const totales = validarTotales(valores)
   const cae = validarCae(valores.cae, valores.vtocae, new Date())
 
@@ -84,6 +117,6 @@ export async function validarComprobanteEn(e: Ejecutor, id: number): Promise<Val
   }
 }
 
-export async function validarComprobante(id: number): Promise<Validaciones> {
-  return validarComprobanteEn(await getPool(), id)
+export async function validarComprobante(id: number, detallePrevio?: Detalle): Promise<Validaciones> {
+  return validarComprobanteEn(await getPool(), id, detallePrevio)
 }

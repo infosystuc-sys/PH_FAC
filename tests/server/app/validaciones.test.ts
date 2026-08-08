@@ -1,10 +1,11 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, afterAll, beforeAll } from 'vitest'
 import sql from 'mssql'
 import { conRollback } from '@/server/db/tx'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
 import { validarComprobanteEn } from '@/server/app/validaciones'
+import { elegirProveedorEn } from '@/server/app/acciones'
 
 afterAll(async () => {
   await cerrarPool()
@@ -24,6 +25,28 @@ describe('validarComprobanteEn', () => {
       expect(v.proveedor.estado).toBe('error')
       expect(v.bloqueante).toBe(true)
       expect(v.candidatosProveedor).toEqual([])
+      // El chequeo de duplicados nunca corrio (no hay con que consultar
+      // CPA04 sin proveedor resuelto): tiene que avisar, no decir "Sin
+      // duplicados." como si hubiera corrido y no hubiera encontrado nada.
+      expect(v.duplicado.estado).toBe('advertencia')
+      expect(v.duplicado.mensaje).toMatch(/falta resolver el proveedor/i)
+    })
+  })
+
+  it('duplicado en advertencia (no verificado) si falta tipo, ptovta o numero aunque el proveedor este resuelto', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const cuitAmx = await tx.request().query(`SELECT TOP 1 N_CUIT FROM CPA01 WHERE COD_PROVEE = '010151'`)
+      await guardarCampoEn(tx, id, 'cuit', String(cuitAmx.recordset[0].N_CUIT))
+      // Sin tipo/ptovta/nro: el proveedor si se resuelve (CUIT con un solo
+      // match), pero no hay con que armar el N_COMP para consultar CPA04.
+      await guardarCampoEn(tx, id, 'total', '100,00')
+
+      const v = await validarComprobanteEn(tx, id)
+      expect(v.proveedor.estado).toBe('ok')
+      expect(v.duplicado.estado).toBe('advertencia')
+      expect(v.duplicado.mensaje).toMatch(/falta tipo, punto de venta o número/i)
+      expect(v.bloqueante).toBe(false)
     })
   })
 
@@ -110,6 +133,81 @@ describe('validarComprobanteEn', () => {
       const v = await validarComprobanteEn(tx, id)
       expect(v.totales.estado).toBe('advertencia')
       expect(v.bloqueante).toBe(false)
+    })
+  })
+})
+
+/**
+ * Regresion del bug critico de la revision final de Fase 3: elegir un
+ * proveedor a mano (`elegirProveedorEn`) para un CUIT duplicado tenia que
+ * destrabar la validacion bloqueante, y no lo hacia -- `validarComprobanteEn`
+ * solo miraba `candidatosProveedor.length` (derivado del CUIT) y nunca leia
+ * `codprovee`, asi que un CUIT con 2+ matches quedaba en error para siempre
+ * aunque el operador ya hubiera elegido.
+ *
+ * Se descubre un CUIT duplicado real de CPA01 en vez de hardcodearlo (mismo
+ * patron que 'devuelve mas de un resultado para un CUIT duplicado real de la
+ * base' en tests/server/tango/proveedores.test.ts): el conjunto de
+ * duplicados es un dato de la base, no una constante del codigo.
+ *
+ * `elegirProveedorEn` y `validarComprobanteEn` corren sobre la misma `tx`
+ * para quedarse en la misma conexion/transaccion que `insertarComprobantePrueba`
+ * -- si `elegirProveedorEn` abriera su propia conexion de pool, su UPDATE (y
+ * el INSERT en PHF_AUDITORIA, que tiene FK a PHF_COMPROBANTE) quedarian
+ * esperando el lock de esta transaccion, que no comitea hasta que el test
+ * termina: un deadlock por diseño del test, no una carrera real. Mismo
+ * motivo documentado en tests/server/app/acciones.test.ts.
+ */
+describe('elegirProveedorEn resuelve la validacion bloqueante de proveedor', () => {
+  let cuitDuplicado: string | null = null
+  let candidatos: { cod: string; razon: string }[] = []
+
+  beforeAll(async () => {
+    const pool = await getPool()
+    const dup = await pool.request().query(`
+      SELECT TOP 1 REPLACE(REPLACE(REPLACE(N_CUIT,'-',''),' ',''),'.','') AS cuit
+      FROM CPA01
+      WHERE N_CUIT IS NOT NULL AND N_CUIT <> ''
+      GROUP BY REPLACE(REPLACE(REPLACE(N_CUIT,'-',''),' ',''),'.','')
+      HAVING COUNT(*) > 1
+    `)
+    if (dup.recordset.length === 0) return // no hay CUIT duplicado hoy: no hay nada que probar
+    cuitDuplicado = String(dup.recordset[0].cuit)
+
+    const r = await pool
+      .request()
+      .input('cuit', sql.VarChar(11), cuitDuplicado)
+      .query(`
+        SELECT LTRIM(RTRIM(COD_PROVEE)) AS cod, LTRIM(RTRIM(ISNULL(NOM_PROVEE,''))) AS razon
+        FROM CPA01
+        WHERE REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '') = @cuit
+        ORDER BY COD_PROVEE
+      `)
+    candidatos = r.recordset.map((x) => ({ cod: String(x.cod), razon: String(x.razon) }))
+  })
+
+  it('bloquea antes de elegir y desbloquea despues de que el operador elige a mano', async () => {
+    if (!cuitDuplicado || candidatos.length < 2) return // no hay CUIT duplicado hoy: no hay nada que probar
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'cuit', cuitDuplicado!)
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '99995')
+      await guardarCampoEn(tx, id, 'nro', '99999995')
+      await guardarCampoEn(tx, id, 'total', '100,00')
+
+      const antes = await validarComprobanteEn(tx, id)
+      expect(antes.proveedor.estado).toBe('error')
+      expect(antes.candidatosProveedor.length).toBeGreaterThan(1)
+      expect(antes.bloqueante).toBe(true)
+
+      const elegido = candidatos[0]
+      await elegirProveedorEn(tx, id, elegido.cod, elegido.razon, true)
+
+      const despues = await validarComprobanteEn(tx, id)
+      expect(despues.proveedor.estado).toBe('ok')
+      expect(despues.bloqueante).toBe(false)
     })
   })
 })
