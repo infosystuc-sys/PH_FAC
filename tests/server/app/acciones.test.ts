@@ -11,10 +11,11 @@ import {
   marcarObservacionEn,
   marcarObservacion,
   registrarComprobante as registrarComprobanteAccion,
+  asignarRemitoEn,
 } from '@/server/app/acciones'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { obtenerDetalleEn } from '@/server/app/detalle'
-import { insertarComprobantePrueba } from '@/server/app/comprobantes'
+import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
 
 const creados: string[] = []
 
@@ -195,5 +196,41 @@ describe('registrarComprobante (server action)', () => {
     } finally {
       await pool.request().input('id', sql.Int, id).query('DELETE FROM PHF_COMPROBANTE WHERE ID=@id')
     }
+  })
+})
+
+describe('asignarRemitoEn', () => {
+  it('guarda el link al renglon de remito', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: '106817', descripcion: 'Articulo', cantidad: '4',
+        precioUnitario: '80745.57', importe: '322982.28',
+      })
+
+      await asignarRemitoEn(tx, renglonId, '00003805', 1)
+
+      const r = await tx.request().input('id', sql.Int, renglonId)
+        .query(`SELECT REMITO_NCOMP_IN_S, REMITO_N_RENGL_S FROM PHF_RENGLON WHERE ID=@id`)
+      expect(String(r.recordset[0].REMITO_NCOMP_IN_S).trim()).toBe('00003805')
+      expect(Number(r.recordset[0].REMITO_N_RENGL_S)).toBe(1)
+    })
+  })
+
+  it('desasigna con null', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: '106817', descripcion: 'Articulo', cantidad: '4',
+        precioUnitario: '80745.57', importe: '322982.28',
+      })
+      await asignarRemitoEn(tx, renglonId, '00003805', 1)
+      await asignarRemitoEn(tx, renglonId, null, null)
+
+      const r = await tx.request().input('id', sql.Int, renglonId)
+        .query(`SELECT REMITO_NCOMP_IN_S, REMITO_N_RENGL_S FROM PHF_RENGLON WHERE ID=@id`)
+      expect(r.recordset[0].REMITO_NCOMP_IN_S).toBeNull()
+      expect(r.recordset[0].REMITO_N_RENGL_S).toBeNull()
+    })
   })
 })

@@ -7,11 +7,13 @@ import { AvisoIA } from './aviso-ia'
 import { PanelValidaciones } from './validaciones'
 import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
+import { RemitosPendientes } from './remitos-pendientes'
 import { Historial } from './historial'
 import type { RenglonGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
 import type { AlicuotaIva, CodigoImpuesto } from '@/server/tango/impuestos'
+import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './pantalla.module.css'
 
 /**
@@ -59,6 +61,7 @@ export function Pantalla({
   condicionesCompra,
   codigosIibb,
   codigosPercepcionIva3,
+  remitosPendientes,
   soloLectura = false,
 }: {
   comprobanteId: number
@@ -76,6 +79,7 @@ export function Pantalla({
   condicionesCompra: CondicionCompra[]
   codigosIibb: CodigoImpuesto[]
   codigosPercepcionIva3: AlicuotaIva[]
+  remitosPendientes: RemitoPendiente[]
   // Comprobante `registrado`: terminal e inmutable. Se pasa a Formulario
   // para que los inputs queden de solo lectura (ver comentario ahí); el
   // backend ya bloquea la escritura de todos modos, esto es solo UI.
@@ -107,6 +111,7 @@ export function Pantalla({
           codigosPercepcionIva3={codigosPercepcionIva3}
         />
         <Renglones renglones={renglones} />
+        <RemitosPendientes comprobanteId={comprobanteId} renglones={renglones} remitos={remitosPendientes} />
         <Historial entradas={auditoria} />
       </div>
     </div>

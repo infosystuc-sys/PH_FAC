@@ -4,6 +4,7 @@ import { obtenerDetalle } from '@/server/app/detalle'
 import { validarComprobante, validarListoParaRegistrar } from '@/server/app/validaciones'
 import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
 import { listarAlicuotasIva, listarCodigosImpuesto } from '@/server/tango/impuestos'
+import { buscarRemitosPendientes } from '@/server/tango/remitos'
 import { probarConexion } from '@/server/db/pool'
 import { leerFiltro } from '@/lib/estados'
 import { Pantalla } from '@/components/revision/pantalla'
@@ -89,6 +90,10 @@ export default async function RevisionPage({
   const listoParaRegistrar =
     encabezado.estado === 'confirmado' ? await validarListoParaRegistrar(id, detalle) : null
 
+  const codProveeCampo = detalle.campos.find((c) => c.clave === 'codprovee')?.valorFinal ?? null
+  const remitosPendientes =
+    codProveeCampo && detalle.renglones.length > 0 ? await buscarRemitosPendientes(codProveeCampo) : []
+
   return (
     <div className={styles.pantalla}>
       <BarraAcciones
@@ -136,6 +141,7 @@ export default async function RevisionPage({
           condicionesCompra={condicionesCompra}
           codigosIibb={codigosIibb}
           codigosPercepcionIva3={codigosPercepcionIva3}
+          remitosPendientes={remitosPendientes}
           // `registrado` es terminal e inmutable (mismo criterio que ya
           // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El
           // backend ya bloquea la escritura en guardarCampoEn con un no-op

@@ -256,3 +256,27 @@ export async function marcarObservacion(id: number, motivo: string, nota: string
   revalidatePath('/comprobantes')
   revalidatePath(`/comprobantes/${id}`)
 }
+
+export async function asignarRemitoEn(
+  e: Ejecutor,
+  renglonId: number,
+  remitoNcompInS: string | null,
+  remitoNRenglS: number | null,
+): Promise<void> {
+  await e.request()
+    .input('id', sql.Int, renglonId)
+    .input('ncompInS', sql.VarChar(8), remitoNcompInS)
+    .input('nRenglS', sql.Int, remitoNRenglS)
+    .query(`UPDATE PHF_RENGLON SET REMITO_NCOMP_IN_S=@ncompInS, REMITO_N_RENGL_S=@nRenglS WHERE ID=@id`)
+}
+
+export async function asignarRemito(
+  comprobanteId: number,
+  renglonId: number,
+  remitoNcompInS: string | null,
+  remitoNRenglS: number | null,
+): Promise<void> {
+  const pool = await getPool()
+  await asignarRemitoEn(pool, renglonId, remitoNcompInS, remitoNRenglS)
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+}
