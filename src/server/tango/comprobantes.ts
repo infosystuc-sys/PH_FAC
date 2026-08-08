@@ -1,5 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { listarAlicuotasIva } from './impuestos'
 
 export type ComprobanteCpa04 = {
   nComp: string
@@ -37,4 +38,26 @@ export async function buscarFacturaEnCpa04(
     total: Number(row.IMPORTE_TO),
     fechaEmision: new Date(row.FECHA_EMIS),
   }
+}
+
+/**
+ * Resuelve un porcentaje de alicuota extraido del comprobante al COD_IVA
+ * real de CPA14. Verificado contra la base: la mayoria de los porcentajes
+ * (0%, 10.5%, 21%, 27%) tienen un unico codigo posible. El 3% es ambiguo
+ * entre COD_IVA 15 ("PERCEPCION R.G.3337") y 16 ("PERCEP. DE IVA") -- ahi
+ * hace falta el codigo que eligio el operador (codpercepiva).
+ */
+export async function mapearAlicuotaIva(
+  porcentaje: number,
+  codigoElegido: string | null,
+): Promise<{ codigo: number; porcentaje: number } | null> {
+  const alicuotas = await listarAlicuotasIva()
+  const candidatos = alicuotas.filter((a) => a.porcentaje === porcentaje)
+
+  if (candidatos.length === 0) return null
+  if (candidatos.length === 1) return { codigo: candidatos[0].codigo, porcentaje }
+
+  const elegido = codigoElegido ? Number(codigoElegido) : null
+  const match = candidatos.find((a) => a.codigo === elegido)
+  return match ? { codigo: match.codigo, porcentaje } : null
 }
