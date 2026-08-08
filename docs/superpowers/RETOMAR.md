@@ -1,7 +1,6 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-08. Fase 4 completa (las 10 tareas del plan), verificada de punta a punta contra la base real. Todavía no mergeada a `master` — es la próxima decisión pendiente, ver "Lo que sigue".
-**Rama actual:** `fase-4-registro-tango-remitos` (creada desde `master`, que ya tenía Fase 3 integrada).
+**Última actualización:** 2026-08-08. Fase 4 completa e integrada a `master` (fast-forward, sin conflictos). La rama `fase-4-registro-tango-remitos` ya no existe (se borró después del merge). No hay una Fase 5 planificada todavía.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
 
