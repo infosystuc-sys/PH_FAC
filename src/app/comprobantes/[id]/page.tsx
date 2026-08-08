@@ -43,10 +43,26 @@ export default async function RevisionPage({
   const filtro = leerFiltro(sp.filtro)
   const query = sp.q ?? ''
 
+  // El id tiene que ser válido y el comprobante tiene que existir antes de
+  // pedir nada más: gatean el 404, así que van antes del Promise.all.
   const encabezado = await obtenerEncabezado(id)
   if (!encabezado) notFound()
 
-  const vecinos = await obtenerVecinos({ filtro, query }, id)
+  // Solo hace falta para la pantalla de revisión (implica leer Tango: CUIT,
+  // duplicados en CPA04). En `procesando` y `error` ni siquiera se muestra
+  // el formulario, así que evaluarla ahí sería trabajo tirado.
+  const mostrarRevision = encabezado.estado !== 'procesando' && encabezado.estado !== 'error'
+
+  // Estas tres no dependen entre sí ni del resultado de las otras -- van en
+  // paralelo en vez de en serie. `validarComprobante` queda afuera del
+  // Promise.all porque necesita el `detalle` ya resuelto (se lo pasa para
+  // no releer PHF_CAMPO/PHF_RENGLON/PHF_AUDITORIA una segunda vez adentro).
+  const [vecinos, detalle, condicionesCompra] = await Promise.all([
+    obtenerVecinos({ filtro, query }, id),
+    obtenerDetalle(id),
+    mostrarRevision ? listarCondicionesCompra() : Promise.resolve([]),
+  ])
+
   const qs = new URLSearchParams()
   if (filtro !== 'todos') qs.set('filtro', filtro)
   if (query) qs.set('q', query)
@@ -55,15 +71,9 @@ export default async function RevisionPage({
   const anteriorHref = vecinos.anteriorId ? `/comprobantes/${vecinos.anteriorId}${sufijo}` : null
   const siguienteHref = vecinos.siguienteId ? `/comprobantes/${vecinos.siguienteId}${sufijo}` : null
 
-  const detalle = await obtenerDetalle(id)
   const hayCorrecciones = detalle.campos.some((c) => c.corregido)
 
-  // Solo hace falta para la pantalla de revisión (implica leer Tango: CUIT,
-  // duplicados en CPA04). En `procesando` y `error` ni siquiera se muestra
-  // el formulario, así que evaluarla ahí sería trabajo tirado.
-  const mostrarRevision = encabezado.estado !== 'procesando' && encabezado.estado !== 'error'
-  const validaciones = mostrarRevision ? await validarComprobante(id) : null
-  const condicionesCompra = mostrarRevision ? await listarCondicionesCompra() : []
+  const validaciones = mostrarRevision ? await validarComprobante(id, detalle) : null
 
   return (
     <div className={styles.pantalla}>

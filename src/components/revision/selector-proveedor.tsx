@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useRef } from 'react'
 import { buscarProveedores, elegirProveedor } from '@/server/app/acciones'
 import type { Proveedor } from '@/server/tango/proveedores'
 import { formatCuit } from '@/lib/formato'
+import { useToast } from '@/components/toast/toast-provider'
 import styles from './selector-proveedor.module.css'
 
 export function SelectorProveedor({
@@ -17,6 +18,7 @@ export function SelectorProveedor({
   const [resultados, setResultados] = useState<Proveedor[]>([])
   const [pendiente, arrancar] = useTransition()
   const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const toast = useToast()
 
   useEffect(() => {
     clearTimeout(debounce.current)
@@ -38,7 +40,11 @@ export function SelectorProveedor({
 
   function elegir(p: Proveedor, corregido: boolean) {
     arrancar(async () => {
-      await elegirProveedor(comprobanteId, p.codProvee, p.razonSocial, corregido)
+      try {
+        await elegirProveedor(comprobanteId, p.codProvee, p.razonSocial, corregido)
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'No se pudo elegir el proveedor.')
+      }
     })
   }
 

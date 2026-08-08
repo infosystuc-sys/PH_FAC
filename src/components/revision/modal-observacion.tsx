@@ -27,10 +27,14 @@ export function ModalObservacion({
   function confirmar() {
     if (!motivo) return
     arrancar(async () => {
-      await marcarObservacion(id, motivo, nota)
-      toast('Comprobante marcado en observación.')
-      onCerrar()
-      router.push('/comprobantes')
+      try {
+        await marcarObservacion(id, motivo, nota)
+        toast('Comprobante marcado en observación.')
+        onCerrar()
+        router.push('/comprobantes')
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'No se pudo marcar el comprobante en observación.')
+      }
     })
   }
 
@@ -59,6 +63,7 @@ export function ModalObservacion({
           className={styles.nota}
           placeholder="Nota para el equipo (opcional)"
           value={nota}
+          maxLength={1000}
           onChange={(e) => setNota(e.target.value)}
         />
 
