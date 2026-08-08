@@ -10,6 +10,7 @@ import {
   confirmarComprobante,
   marcarObservacionEn,
   marcarObservacion,
+  registrarComprobante as registrarComprobanteAccion,
 } from '@/server/app/acciones'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { obtenerDetalleEn } from '@/server/app/detalle'
@@ -177,5 +178,22 @@ describe('marcarObservacion', () => {
       const id = await insertarComprobantePrueba(tx, { estado: 'registrado' })
       await expect(marcarObservacionEn(tx, id, MOTIVOS_OBSERVACION[0], '')).rejects.toThrow()
     })
+  })
+})
+
+describe('registrarComprobante (server action)', () => {
+  it('rechaza si el comprobante no esta confirmado', async () => {
+    // `registrarComprobanteAccion` abre su propia transaccion sobre el pool
+    // real -- un conRollback de afuera no le sirve de nada (READ_COMMITTED_
+    // SNAPSHOT hace que no vea la fila sin commitear, mismo criterio que
+    // documento Fase 3). Se inserta fuera de cualquier transaccion y se
+    // borra a mano al final.
+    const pool = await getPool()
+    const id = await insertarComprobantePrueba(pool as unknown as sql.Transaction, { estado: 'leido' })
+    try {
+      await expect(registrarComprobanteAccion(id)).rejects.toThrow()
+    } finally {
+      await pool.request().input('id', sql.Int, id).query('DELETE FROM PHF_COMPROBANTE WHERE ID=@id')
+    }
   })
 })

@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { confirmarComprobante } from '@/server/app/acciones'
+import { confirmarComprobante, registrarComprobante } from '@/server/app/acciones'
 import type { Estado } from '@/lib/estados'
 import { BadgeEstado } from '@/components/badge-estado'
 import { useToast } from '@/components/toast/toast-provider'
@@ -22,11 +22,15 @@ function BotonPrimario({
   estado,
   bloqueante,
   pendiente,
+  sinConexion,
+  bloqueanteRegistro,
   onClick,
 }: {
   estado: Estado
   bloqueante: boolean
   pendiente: boolean
+  sinConexion: boolean
+  bloqueanteRegistro: boolean
   onClick: () => void
 }) {
   if (estado === 'leido' || estado === 'observacion') {
@@ -45,15 +49,27 @@ function BotonPrimario({
 
   if (estado === 'confirmado') {
     return (
-      <button type="button" className={styles.registrar} disabled title="Llega en la Fase 4">
-        Registrar en Tango
+      <button
+        type="button"
+        className={styles.registrar}
+        disabled={pendiente || sinConexion || bloqueanteRegistro}
+        title={
+          sinConexion
+            ? 'Sin conexión a Tango'
+            : bloqueanteRegistro
+              ? 'Resolvé los ítems del panel "Listo para registrar" antes de continuar'
+              : undefined
+        }
+        onClick={onClick}
+      >
+        {pendiente ? 'Registrando…' : 'Registrar en Tango'}
       </button>
     )
   }
 
   if (estado === 'registrado') {
     return (
-      <button type="button" className={styles.verAsiento} disabled title="Llega en la Fase 4">
+      <button type="button" className={styles.verAsiento} disabled title="Sin funcionalidad todavía">
         Ver asiento en Tango
       </button>
     )
@@ -68,6 +84,8 @@ export function BarraAcciones({
   proveedor,
   comprobante,
   bloqueante,
+  sinConexion,
+  bloqueanteRegistro,
   anteriorHref,
   siguienteHref,
 }: {
@@ -76,6 +94,8 @@ export function BarraAcciones({
   proveedor: string
   comprobante: string
   bloqueante: boolean
+  sinConexion: boolean
+  bloqueanteRegistro: boolean
   anteriorHref: string | null
   siguienteHref: string | null
 }) {
@@ -85,6 +105,7 @@ export function BarraAcciones({
   const toast = useToast()
   const puedeObservar = estado === 'leido' || estado === 'observacion'
   const puedeConfirmar = puedeObservar && !bloqueante
+  const puedeRegistrar = estado === 'confirmado' && !sinConexion && !bloqueanteRegistro
 
   function confirmar() {
     if (!puedeConfirmar || pendiente) return
@@ -97,6 +118,24 @@ export function BarraAcciones({
         toast(err instanceof Error ? err.message : 'No se pudo confirmar el comprobante.')
       }
     })
+  }
+
+  function registrar() {
+    if (!puedeRegistrar || pendiente) return
+    arrancar(async () => {
+      try {
+        await registrarComprobante(id)
+        toast('Comprobante registrado en Tango.')
+        router.refresh()
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'No se pudo registrar el comprobante.')
+      }
+    })
+  }
+
+  function accionPrimaria() {
+    if (estado === 'confirmado') registrar()
+    else confirmar()
   }
 
   useAtajos({
@@ -127,7 +166,14 @@ export function BarraAcciones({
         >
           Marcar en observación
         </button>
-        <BotonPrimario estado={estado} bloqueante={bloqueante} pendiente={pendiente} onClick={confirmar} />
+        <BotonPrimario
+          estado={estado}
+          bloqueante={bloqueante}
+          pendiente={pendiente}
+          sinConexion={sinConexion}
+          bloqueanteRegistro={bloqueanteRegistro}
+          onClick={accionPrimaria}
+        />
       </div>
 
       <ModalObservacion id={id} abierto={modalAbierto} onCerrar={() => setModalAbierto(false)} />

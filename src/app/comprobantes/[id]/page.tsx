@@ -4,6 +4,7 @@ import { obtenerDetalle } from '@/server/app/detalle'
 import { validarComprobante, validarListoParaRegistrar } from '@/server/app/validaciones'
 import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
 import { listarAlicuotasIva, listarCodigosImpuesto } from '@/server/tango/impuestos'
+import { probarConexion } from '@/server/db/pool'
 import { leerFiltro } from '@/lib/estados'
 import { Pantalla } from '@/components/revision/pantalla'
 import { BarraAcciones } from '@/components/revision/barra-acciones'
@@ -58,12 +59,13 @@ export default async function RevisionPage({
   // paralelo en vez de en serie. `validarComprobante` queda afuera del
   // Promise.all porque necesita el `detalle` ya resuelto (se lo pasa para
   // no releer PHF_CAMPO/PHF_RENGLON/PHF_AUDITORIA una segunda vez adentro).
-  const [vecinos, detalle, condicionesCompra, alicuotasIva, codigosImpuesto] = await Promise.all([
+  const [vecinos, detalle, condicionesCompra, alicuotasIva, codigosImpuesto, conexion] = await Promise.all([
     obtenerVecinos({ filtro, query }, id),
     obtenerDetalle(id),
     mostrarRevision ? listarCondicionesCompra() : Promise.resolve([]),
     mostrarRevision ? listarAlicuotasIva() : Promise.resolve([]),
     mostrarRevision ? listarCodigosImpuesto() : Promise.resolve([]),
+    probarConexion(),
   ])
 
   // codpercepiva desambigua el unico porcentaje ambiguo de CPA14 (3%, entre
@@ -95,6 +97,8 @@ export default async function RevisionPage({
         proveedor={encabezado.razonSocial ?? '—'}
         comprobante={formatComprobante(encabezado.tipo, encabezado.numero)}
         bloqueante={validaciones?.bloqueante ?? false}
+        sinConexion={!conexion.ok}
+        bloqueanteRegistro={listoParaRegistrar?.bloqueante ?? false}
         anteriorHref={anteriorHref}
         siguienteHref={siguienteHref}
       />

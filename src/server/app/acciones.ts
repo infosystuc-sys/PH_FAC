@@ -11,6 +11,7 @@ import { usuarioActual } from '@/lib/usuario'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
+import { registrarComprobante as registrarComprobanteTango } from '@/server/tango/comprobantes'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -111,6 +112,28 @@ export async function confirmarComprobante(id: number): Promise<void> {
     }
     await auditarEn(tx, id, 'Datos confirmados por el operador')
   })
+
+  revalidatePath('/comprobantes')
+  revalidatePath(`/comprobantes/${id}`)
+}
+
+/**
+ * Wrapper delgado sobre la unica funcion de escritura del ERP
+ * (src/server/tango/comprobantes.ts). El estado y las validaciones
+ * bloqueantes se vuelven a chequear server-side dentro de la propia
+ * transaccion de `registrarComprobanteTango` -- este wrapper solo agrega el
+ * chequeo de estado (que sea `confirmado`) antes de intentarlo, para dar un
+ * mensaje mas claro que dejar que la transaccion falle mas adentro.
+ */
+export async function registrarComprobante(id: number): Promise<void> {
+  const pool = await getPool()
+  const fila = await pool.request().input('id', sql.Int, id).query(`SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID=@id`)
+  if (fila.recordset.length === 0) throw new Error('El comprobante no existe.')
+  if (fila.recordset[0].ESTADO !== 'confirmado') {
+    throw new Error('Solo se puede registrar un comprobante confirmado.')
+  }
+
+  await registrarComprobanteTango(id)
 
   revalidatePath('/comprobantes')
   revalidatePath(`/comprobantes/${id}`)
