@@ -73,10 +73,23 @@ describe('validarComprobanteEn', () => {
 
   it('duplicado en error si el N_COMP ya existe en CPA04 para ese proveedor', async () => {
     await conRollback(async (tx) => {
+      // Excluye proveedores con CUIT duplicado en CPA01 (hay 7 reales, ver
+      // RETOMAR.md): si la fila mas reciente de CPA04 resulta ser de uno de
+      // esos proveedores, el CUIT no resuelve a un match unico y el
+      // resultado es 'advertencia' (proveedor no verificado), no 'error' --
+      // rompe este test sin que el codigo bajo prueba tenga nada mal. Pasó
+      // en la práctica: el registro real de un comprobante de prueba contra
+      // el proveedor 010246 (CUIT duplicado con 010270) durante la
+      // verificacion manual de Fase 4 paso a ser la fila mas reciente.
       const existente = await tx.request().query(`
         SELECT TOP 1 c.COD_PROVEE, c.N_COMP, p.N_CUIT
         FROM CPA04 c JOIN CPA01 p ON p.COD_PROVEE = c.COD_PROVEE
         WHERE c.T_COMP = 'FAC' AND p.N_CUIT IS NOT NULL AND p.N_CUIT <> ''
+          AND p.N_CUIT NOT IN (
+            SELECT N_CUIT FROM CPA01
+            WHERE N_CUIT IS NOT NULL AND N_CUIT <> ''
+            GROUP BY N_CUIT HAVING COUNT(*) > 1
+          )
         ORDER BY c.NCOMP_IN_C DESC
       `)
       const fila = existente.recordset[0]
