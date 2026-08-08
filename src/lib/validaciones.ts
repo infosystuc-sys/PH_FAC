@@ -67,7 +67,7 @@ export function validarTotales(valores: Record<string, string | null | undefined
 
 const RE_CAE = /^\d{14}$/
 
-function parsearFechaArg(f: string): Date | null {
+export function parsearFechaArg(f: string): Date | null {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(f.trim())
   if (!m) return null
   const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]))
@@ -88,4 +88,58 @@ export function validarCae(
     return { estado: 'advertencia', mensaje: `CAE vencido el ${vtocae}.` }
   }
   return { estado: 'ok', mensaje: 'CAE válido.' }
+}
+
+export function validarFormatoNComp(
+  ptovta: string | null | undefined,
+  nro: string | null | undefined,
+): ResultadoValidacion {
+  const pv = (ptovta ?? '').trim()
+  const n = (nro ?? '').trim()
+
+  if (!pv || !n) {
+    return { estado: 'error', mensaje: 'Falta punto de venta o número de comprobante.' }
+  }
+  if (!/^\d+$/.test(pv) || !/^\d+$/.test(n)) {
+    return { estado: 'error', mensaje: 'El punto de venta y el número tienen que ser numéricos.' }
+  }
+  if (pv.length > 5) {
+    return { estado: 'error', mensaje: `El punto de venta tiene ${pv.length} dígitos, el máximo son 5.` }
+  }
+  if (n.length > 8) {
+    return { estado: 'error', mensaje: `El número tiene ${n.length} dígitos, el máximo son 8.` }
+  }
+  return { estado: 'ok', mensaje: 'Formato de comprobante correcto.' }
+}
+
+export function validarCondCompra(condcompra: string | null | undefined): ResultadoValidacion {
+  const v = (condcompra ?? '').trim()
+  if (!v) {
+    return { estado: 'error', mensaje: 'Elegí una condición de compra antes de registrar.' }
+  }
+  return { estado: 'ok', mensaje: 'Condición de compra elegida.' }
+}
+
+const ETIQUETA_PERCEPCION: Record<'IIBB' | 'IVA3', string> = {
+  IIBB: 'la percepción de IIBB',
+  IVA3: 'la percepción de IVA del 3%',
+}
+
+export function validarPercepcionIva(
+  clave: 'IIBB' | 'IVA3',
+  importe: string | null | undefined,
+  codigo: string | null | undefined,
+): ResultadoValidacion {
+  const imp = (importe ?? '').trim()
+  if (!imp) {
+    return { estado: 'ok', mensaje: 'No aplica.' }
+  }
+  const cod = (codigo ?? '').trim()
+  if (!cod) {
+    return {
+      estado: 'error',
+      mensaje: `Elegí el código de ${ETIQUETA_PERCEPCION[clave]} antes de registrar.`,
+    }
+  }
+  return { estado: 'ok', mensaje: 'Código elegido.' }
 }

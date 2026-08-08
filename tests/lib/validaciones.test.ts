@@ -6,6 +6,9 @@ import {
   validarCae,
   validarProveedor,
   validarDuplicado,
+  validarFormatoNComp,
+  validarCondCompra,
+  validarPercepcionIva,
 } from '@/lib/validaciones'
 
 describe('letraComprobante', () => {
@@ -95,5 +98,61 @@ describe('validarCae', () => {
   })
   it('advertencia si no hay CAE', () => {
     expect(validarCae('', '', hoy).estado).toBe('advertencia')
+  })
+})
+
+describe('validarFormatoNComp', () => {
+  it('ok si ptovta tiene hasta 5 digitos y nro hasta 8', () => {
+    expect(validarFormatoNComp('0011', '63576').estado).toBe('ok')
+    expect(validarFormatoNComp('11', '576').estado).toBe('ok')
+  })
+  it('error si ptovta supera 5 digitos', () => {
+    const r = validarFormatoNComp('123456', '576')
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('punto de venta')
+  })
+  it('error si nro supera 8 digitos', () => {
+    const r = validarFormatoNComp('0011', '123456789')
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('número')
+  })
+  it('error si ptovta o nro no son numericos', () => {
+    expect(validarFormatoNComp('AB11', '576').estado).toBe('error')
+    expect(validarFormatoNComp('0011', 'X576').estado).toBe('error')
+  })
+  it('error si falta ptovta o nro', () => {
+    expect(validarFormatoNComp(null, '576').estado).toBe('error')
+    expect(validarFormatoNComp('0011', undefined).estado).toBe('error')
+  })
+})
+
+describe('validarCondCompra', () => {
+  it('ok si tiene un valor', () => {
+    expect(validarCondCompra('60').estado).toBe('ok')
+  })
+  it('error si esta vacio o ausente', () => {
+    expect(validarCondCompra('').estado).toBe('error')
+    expect(validarCondCompra(null).estado).toBe('error')
+    expect(validarCondCompra(undefined).estado).toBe('error')
+  })
+})
+
+describe('validarPercepcionIva', () => {
+  it('ok si el importe esta vacio (no aplica)', () => {
+    expect(validarPercepcionIva('IIBB', '', null).estado).toBe('ok')
+    expect(validarPercepcionIva('IIBB', null, null).estado).toBe('ok')
+  })
+  it('ok si el importe tiene valor y el codigo tambien', () => {
+    expect(validarPercepcionIva('IIBB', '13.248,69', '60').estado).toBe('ok')
+  })
+  it('error si el importe tiene valor pero falta el codigo', () => {
+    const r = validarPercepcionIva('IIBB', '13.248,69', null)
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('IIBB')
+  })
+  it('mismo criterio para IVA3, con mensaje propio', () => {
+    const r = validarPercepcionIva('IVA3', '9.689,47', '')
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('IVA')
   })
 })
