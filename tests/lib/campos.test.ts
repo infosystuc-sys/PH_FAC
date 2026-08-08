@@ -43,6 +43,14 @@ describe('catalogo de campos', () => {
   it('condcompra es un campo de tipo select', () => {
     expect(campoPorClave('condcompra')?.tipo).toBe('select')
   })
+
+  it('codpercibb es un campo de tipo select', () => {
+    expect(campoPorClave('codpercibb')?.tipo).toBe('select')
+  })
+
+  it('codpercepiva es un campo de tipo select', () => {
+    expect(campoPorClave('codpercepiva')?.tipo).toBe('select')
+  })
 })
 
 describe('schemaExtraccion', () => {
