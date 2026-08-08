@@ -299,3 +299,21 @@ export async function insertarComprobantePrueba(
     `)
   return Number(r.recordset[0].ID)
 }
+
+/** Inserta un renglon minimo para un comprobante de prueba. Es para los tests. */
+export async function insertarRenglonPrueba(
+  e: Ejecutor,
+  comprobanteId: number,
+  datos: { codigo: string; descripcion: string; cantidad: string; precioUnitario: string; importe: string },
+): Promise<number> {
+  const r = await e.request()
+    .input('cid', sql.Int, comprobanteId).input('orden', sql.Int, 1)
+    .input('cod', sql.VarChar(60), datos.codigo).input('desc', sql.NVarChar(300), datos.descripcion)
+    .input('cant', sql.VarChar(30), datos.cantidad).input('precio', sql.VarChar(30), datos.precioUnitario)
+    .input('imp', sql.VarChar(30), datos.importe)
+    .query(`
+      INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA)
+      OUTPUT INSERTED.ID
+      VALUES (@cid, @orden, @cod, @desc, @cant, @precio, @imp)`)
+  return Number(r.recordset[0].ID)
+}

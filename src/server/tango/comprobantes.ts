@@ -380,7 +380,106 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         VALUES (@codProvee, '', 'PEN', @fechaVto, @importeVto, @nComp, @tComp, 'PEN', @importeVto, '')`)
   }
 
-  // 7. CONTABILIZ=0 ya quedo en CPA04_CONSTANTES. No se escribe ASIENTO_COMPROBANTE_CP.
+  // 7. Renglones con remito asignado (solo si hay).
+  const renglonesConRemito = detalle.renglones.filter((r) => r.remitoNcompInS && r.remitoNRenglS)
+  const remitosAfectados = new Set<string>()
+
+  for (const renglon of renglonesConRemito) {
+    const remitoNcompInS = renglon.remitoNcompInS!
+    const remitoNRenglS = renglon.remitoNRenglS!
+
+    const staRow = await tx.request()
+      .input('n', sql.VarChar(8), remitoNcompInS).input('r', sql.Int, remitoNRenglS)
+      .query(`
+        SELECT r.COD_ARTICU, r.COD_DEPOSI, r.CANTIDAD, r.CANT_FACTU, r.CANT_PEND, r.PRECIO_REM, h.NRO_SUCURS
+        FROM STA20 r JOIN STA14 h ON h.TCOMP_IN_S=r.TCOMP_IN_S AND h.NCOMP_IN_S=r.NCOMP_IN_S
+        WHERE r.TCOMP_IN_S='RP' AND r.NCOMP_IN_S=@n AND r.N_RENGL_S=@r`)
+    if (staRow.recordset.length === 0) {
+      throw new Error(`El renglón ${remitoNRenglS} del remito ${remitoNcompInS} ya no existe.`)
+    }
+    const sta = staRow.recordset[0]
+    // La cantidad facturada es la que dice la propia factura (el renglon del
+    // comprobante), no un dato del remito -- el spec de esta fase es explicito:
+    // CPA46 copia "código de artículo, depósito y precio" DEL REMITO, la
+    // cantidad no está en esa lista a propósito. Usar CANT_PEND o CANTIDAD del
+    // remito en su lugar facturaría lo que el remito tiene pendiente, no lo que
+    // el documento real dice, y rompería si el remito ya estaba parcialmente
+    // facturado por otro comprobante (se re-facturaría lo ya facturado).
+    const cantidad = parsearImporte(renglon.cantidad)
+    if (cantidad <= 0) {
+      throw new Error(`El renglón no tiene una cantidad válida para facturar contra el remito ${remitoNcompInS}.`)
+    }
+    const codArticu = String(sta.COD_ARTICU).trim()
+    const codDeposi = String(sta.COD_DEPOSI ?? '').trim()
+    const precio = Number(sta.PRECIO_REM)
+    const importeNetoRenglon = Math.round(cantidad * precio * 100) / 100
+
+    const nRenglC = renglonesConRemito.indexOf(renglon) + 1
+
+    await tx.request()
+      .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
+      .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
+      .input('codDeposi', sql.VarChar(10), codDeposi).input('cantidad', sql.Decimal(18, 4), cantidad)
+      .input('precioNet', sql.Decimal(18, 4), precio).input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
+      .input('fechaMov', sql.DateTime, fechaEmision).input('idSta11', sql.Int, null)
+      .query(`
+        INSERT INTO CPA46 (
+          TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_ARTICU, COD_DEPOSI, CANTIDAD,
+          PRECIO_NET, PRECIO_PAN, IMP_NETO_P, FECHA_MOV, EQUIVALENC, FALTA_REM,
+          PORCE_DCTO, FILLER, COD_CLASIF, IMPORTE_EXENTO, IMPORTE_GRAVADO,
+          CANTIDAD_2, FALTA_REM_2, UNIDAD_MEDIDA_SELECCIONADA, IMPORTE_FLETE,
+          IMPORTE_IMPUESTOS_COSTOS, ID_STA11
+        ) VALUES (
+          @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
+          @precioNet, @precioNet, @impNetoP, @fechaMov, 1, 0,
+          0, '', '', 0, @impNetoP,
+          0, 0, 'P', 0,
+          0, NULL
+        )`)
+
+    await tx.request()
+      .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
+      .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
+      .input('codDeposi', sql.VarChar(10), codDeposi).input('cantidad', sql.Decimal(18, 4), cantidad)
+      .input('precioNet', sql.Decimal(18, 4), precio).input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
+      .input('fechaMov', sql.DateTime, fechaEmision).input('nroSucurs', sql.SmallInt, Number(sta.NRO_SUCURS) || 1001)
+      .query(`
+        INSERT INTO CTA07 (
+          TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_ARTICU, COD_DEPOSI, CANTIDAD,
+          PRECIO_NET, PRECIO_PAN, IMP_NETO_P, FECHA_MOV, EQUIVALENC, NRO_SUCURS,
+          PORC_DTO, FILLER, COD_CLASIF, CANTIDAD_2, UNIDAD_MEDIDA_SELECCIONADA
+        ) VALUES (
+          @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
+          @precioNet, @precioNet, @impNetoP, @fechaMov, 1, @nroSucurs,
+          0, '', '', 0, 'P'
+        )`)
+
+    await tx.request()
+      .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
+      .input('nRenglC', sql.Int, nRenglC).input('nRenglS', sql.Int, remitoNRenglS)
+      .input('ncompInS', sql.VarChar(8), remitoNcompInS).input('cantidad', sql.Decimal(18, 4), cantidad)
+      .query(`
+        INSERT INTO CPA48 (TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, N_RENGL_S, NCOMP_IN_S, TCOMP_IN_S, CANTIDAD, FILLER, CANTIDAD_2)
+        VALUES (@tcompInC, @ncompInC, @nRenglC, @nRenglS, @ncompInS, 'RP', @cantidad, '', 0)`)
+
+    const nuevoPend = Math.max(0, Number(sta.CANT_PEND) - cantidad)
+    await tx.request()
+      .input('n', sql.VarChar(8), remitoNcompInS).input('r', sql.Int, remitoNRenglS)
+      .input('cantFactu', sql.Decimal(18, 4), Number(sta.CANT_FACTU) + cantidad)
+      .input('cantPend', sql.Decimal(18, 4), nuevoPend)
+      .query(`UPDATE STA20 SET CANT_FACTU=@cantFactu, CANT_PEND=@cantPend WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n AND N_RENGL_S=@r`)
+
+    remitosAfectados.add(remitoNcompInS)
+  }
+
+  for (const ncompInS of remitosAfectados) {
+    const pendiente = await tx.request().input('n', sql.VarChar(8), ncompInS).query(`
+      SELECT SUM(CANT_PEND) AS pend FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+    if (Number(pendiente.recordset[0].pend) <= 0) {
+      await tx.request().input('n', sql.VarChar(8), ncompInS).query(`
+        UPDATE STA14 SET ESTADO_MOV='F' WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+    }
+  }
 
   // 8. Actualizar PHF_COMPROBANTE + auditoria.
   await tx.request()

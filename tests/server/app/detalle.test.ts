@@ -142,6 +142,46 @@ describe('guardarCampoEn', () => {
   })
 })
 
+describe('obtenerDetalleEn — renglones con remito', () => {
+  it('expone id y el link a remito de cada renglon', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const r = await tx.request()
+        .input('cid', sql.Int, id).input('orden', sql.Int, 1)
+        .query(`
+          INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA)
+          OUTPUT INSERTED.ID
+          VALUES (@cid, @orden, '106817', 'Articulo', 4, 80745.57, 322982.28)`)
+      const renglonId = Number(r.recordset[0].ID)
+
+      await tx.request()
+        .input('id', sql.Int, renglonId).input('n', sql.VarChar(8), '00003805').input('nr', sql.Int, 1)
+        .query(`UPDATE PHF_RENGLON SET REMITO_NCOMP_IN_S=@n, REMITO_N_RENGL_S=@nr WHERE ID=@id`)
+
+      const detalle = await obtenerDetalleEn(tx, id)
+      expect(detalle.renglones).toHaveLength(1)
+      expect(detalle.renglones[0].id).toBe(renglonId)
+      expect(detalle.renglones[0].remitoNcompInS?.trim()).toBe('00003805')
+      expect(detalle.renglones[0].remitoNRenglS).toBe(1)
+    })
+  })
+
+  it('renglon sin remito asignado expone null en ambos campos', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await tx.request()
+        .input('cid', sql.Int, id).input('orden', sql.Int, 1)
+        .query(`
+          INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA)
+          VALUES (@cid, @orden, '1', 'Sin remito')`)
+
+      const detalle = await obtenerDetalleEn(tx, id)
+      expect(detalle.renglones[0].remitoNcompInS).toBeNull()
+      expect(detalle.renglones[0].remitoNRenglS).toBeNull()
+    })
+  })
+})
+
 describe('auditarEn', () => {
   it('escribe una entrada y la devuelve en el detalle', async () => {
     await conRollback(async (tx) => {

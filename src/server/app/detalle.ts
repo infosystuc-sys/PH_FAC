@@ -14,7 +14,12 @@ export type CampoGuardado = {
   corregido: boolean
 }
 
-export type RenglonGuardado = RenglonExtraido & { orden: number }
+export type RenglonGuardado = RenglonExtraido & {
+  id: number
+  orden: number
+  remitoNcompInS: string | null
+  remitoNRenglS: number | null
+}
 
 export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
 
@@ -99,8 +104,8 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       SELECT CLAVE, VALOR_IA, CONFIANZA, VALOR_FINAL, CORREGIDO_POR_USUARIO
       FROM PHF_CAMPO WHERE COMPROBANTE_ID = @id ORDER BY CLAVE;
 
-      SELECT ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
-             PRECIO_UNITARIO_IA, IMPORTE_IA
+      SELECT ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
+             PRECIO_UNITARIO_IA, IMPORTE_IA, REMITO_NCOMP_IN_S, REMITO_N_RENGL_S
       FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
       SELECT FECHA, TEXTO, USUARIO
@@ -118,12 +123,15 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       corregido: Boolean(x.CORREGIDO_POR_USUARIO),
     })),
     renglones: g.map((x) => ({
+      id: Number(x.ID),
       orden: Number(x.ORDEN),
       codigo: x.CODIGO_IA === null ? null : String(x.CODIGO_IA),
       descripcion: x.DESCRIPCION_IA === null ? null : String(x.DESCRIPCION_IA),
       cantidad: x.CANTIDAD_IA === null ? null : String(x.CANTIDAD_IA),
       precioUnitario: x.PRECIO_UNITARIO_IA === null ? null : String(x.PRECIO_UNITARIO_IA),
       importe: x.IMPORTE_IA === null ? null : String(x.IMPORTE_IA),
+      remitoNcompInS: x.REMITO_NCOMP_IN_S === null ? null : String(x.REMITO_NCOMP_IN_S),
+      remitoNRenglS: x.REMITO_N_RENGL_S === null ? null : Number(x.REMITO_N_RENGL_S),
     })),
     auditoria: a.map((x) => ({
       fecha: new Date(x.FECHA as string),

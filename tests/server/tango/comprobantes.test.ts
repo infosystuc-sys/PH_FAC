@@ -3,7 +3,7 @@ import sql from 'mssql'
 import { getPool } from '@/server/db/pool'
 import { cerrarPool } from '@/server/db/pool'
 import { conRollback } from '@/server/db/tx'
-import { insertarComprobantePrueba } from '@/server/app/comprobantes'
+import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
 import { buscarFacturaEnCpa04, mapearAlicuotaIva, registrarComprobanteEn } from '@/server/tango/comprobantes'
 
@@ -160,4 +160,61 @@ describe('registrarComprobanteEn', () => {
       expect(Number(cpa04.recordset[0].c)).toBe(1)
     })
   }, 150000)
+})
+
+describe('registrarComprobanteEn con remito asignado', () => {
+  it('copia el renglon del remito a CPA46 y actualiza STA20/STA14', async () => {
+    await conRollback(async (tx) => {
+      // Un remito pendiente real, descubierto en runtime.
+      const remito = await tx.request().query(`
+        SELECT TOP 1 h.NCOMP_IN_S, h.COD_PRO_CL, r.N_RENGL_S, r.COD_ARTICU, r.COD_DEPOSI,
+               r.CANT_PEND, r.PRECIO_REM
+        FROM STA14 h JOIN STA20 r ON r.TCOMP_IN_S=h.TCOMP_IN_S AND r.NCOMP_IN_S=h.NCOMP_IN_S
+        WHERE h.TCOMP_IN_S='RP' AND h.ESTADO_MOV='P' AND r.CANT_PEND > 0`)
+      const codProvee = String(remito.recordset[0].COD_PRO_CL).trim()
+      const ncompInS = String(remito.recordset[0].NCOMP_IN_S).trim()
+      const nRenglS = Number(remito.recordset[0].N_RENGL_S)
+      const cantPendAntes = Number(remito.recordset[0].CANT_PEND)
+
+      const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
+      const condCompra = String(condicion.recordset[0].COD_CONDIC)
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0088')
+      await guardarCampoEn(tx, id, 'nro', '00054321')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+      await guardarCampoEn(tx, id, 'codprovee', codProvee)
+      await guardarCampoEn(tx, id, 'condcompra', condCompra)
+      await guardarCampoEn(tx, id, 'total', '1.000,00')
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: '', descripcion: '', cantidad: '1', precioUnitario: '1000', importe: '1000',
+      })
+      // asignarRemitoEn llega en la Task 9 (server/app/acciones.ts, escribe una tabla
+      // propia). Para no crear una dependencia entre tasks, este test escribe el link
+      // directo -- lo unico que valida esta task es que registrarComprobanteEn lo lea
+      // y lo procese bien, no como se escribio.
+      await tx.request()
+        .input('id', sql.Int, renglonId).input('n', sql.VarChar(8), ncompInS).input('r', sql.Int, nRenglS)
+        .query(`UPDATE PHF_RENGLON SET REMITO_NCOMP_IN_S=@n, REMITO_N_RENGL_S=@r WHERE ID=@id`)
+
+      const registro = await registrarComprobanteEn(tx, id)
+
+      const cpa46 = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT * FROM CPA46 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n`)
+      expect(cpa46.recordset).toHaveLength(1)
+      expect(cpa46.recordset[0].COD_ARTICU.trim()).toBe(String(remito.recordset[0].COD_ARTICU).trim())
+
+      const cpa48 = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT * FROM CPA48 WHERE TCOMP_IN_C=@t AND LTRIM(RTRIM(NCOMP_IN_C))=CAST(@n AS VARCHAR)`)
+      expect(cpa48.recordset).toHaveLength(1)
+
+      const sta20 = await tx.request()
+        .input('n', sql.VarChar(8), ncompInS).input('r', sql.Int, nRenglS)
+        .query(`SELECT CANT_FACTU, CANT_PEND FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n AND N_RENGL_S=@r`)
+      expect(Number(sta20.recordset[0].CANT_PEND)).toBe(cantPendAntes - 1)
+    })
+  }, 90000)
 })
