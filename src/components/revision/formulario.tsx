@@ -5,6 +5,7 @@ import { GRUPOS, camposDelGrupo, type GrupoCampo, type DefCampo } from '@/lib/ca
 import { guardarCampo } from '@/server/app/acciones'
 import { totalImputado, formatMoneda } from '@/lib/formato'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
+import type { AlicuotaIva, CodigoImpuesto } from '@/server/tango/impuestos'
 import { Campo } from './campo'
 import styles from './formulario.module.css'
 
@@ -37,6 +38,26 @@ function contarSlotsAlicuota(iniciales: Record<string, ValorInicial>): number {
 
 const RE_SLOT_ALICUOTA = /^(?:porciva|impiva)([1-5])$/
 
+type Opcion = { valor: string; label: string }
+
+function opcionesPara(
+  clave: string,
+  condicionesCompra: CondicionCompra[],
+  codigosIibb: CodigoImpuesto[],
+  codigosPercepcionIva3: AlicuotaIva[],
+): Opcion[] | undefined {
+  if (clave === 'condcompra') {
+    return condicionesCompra.map((c) => ({ valor: String(c.codigo), label: c.descripcion }))
+  }
+  if (clave === 'codpercibb') {
+    return codigosIibb.map((c) => ({ valor: String(c.codigo), label: c.descripcion }))
+  }
+  if (clave === 'codpercepiva') {
+    return codigosPercepcionIva3.map((a) => ({ valor: String(a.codigo), label: a.descripcion }))
+  }
+  return undefined
+}
+
 function camposVisibles(grupo: GrupoCampo, slots: number): DefCampo[] {
   const todos = camposDelGrupo(grupo)
   if (grupo !== 'importes') return todos
@@ -52,6 +73,8 @@ export function Formulario({
   onEnfocar,
   soloLectura = false,
   condicionesCompra,
+  codigosIibb,
+  codigosPercepcionIva3,
 }: {
   comprobanteId: number
   iniciales: Record<string, ValorInicial>
@@ -63,9 +86,11 @@ export function Formulario({
   // silencioso; esto es puramente para que la UI no mienta mostrando el
   // campo como editable.
   soloLectura?: boolean
-  // Poblado real de Tango para el único campo `tipo: 'select'` del
-  // catálogo (condcompra). Ver Campo -- el resto de los campos lo ignora.
+  // Poblado real de Tango para los campos `tipo: 'select'` del catálogo.
+  // Ver Campo -- el resto de los campos los ignora.
   condicionesCompra: CondicionCompra[]
+  codigosIibb: CodigoImpuesto[]
+  codigosPercepcionIva3: AlicuotaIva[]
 }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(iniciales).map(([k, v]) => [k, v.valor])),
@@ -122,14 +147,7 @@ export function Formulario({
                     valor={valores[def.clave] ?? ''}
                     confianza={iniciales[def.clave]?.confianza ?? null}
                     bloqueado={soloLectura}
-                    opciones={
-                      def.clave === 'condcompra'
-                        ? condicionesCompra.map((c) => ({
-                            valor: String(c.codigo),
-                            label: c.descripcion,
-                          }))
-                        : undefined
-                    }
+                    opciones={opcionesPara(def.clave, condicionesCompra, codigosIibb, codigosPercepcionIva3)}
                     onCambio={(v) => cambiar(def.clave, v)}
                     onFoco={onEnfocar}
                     onDesenfoque={() => onEnfocar(null)}

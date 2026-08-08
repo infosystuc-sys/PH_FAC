@@ -149,10 +149,14 @@ export async function validarListoParaRegistrarEn(
 
   const condCompra = validarCondCompra(valores.condcompra)
   const percepcionIibb = validarPercepcionIva('IIBB', valores.perciibb, valores.codpercibb)
-  // impiva2 es donde, en los datos reales verificados durante el diseño de
-  // esta fase, cayo la percepcion de IVA del 3% (ver spec de Fase 4,
-  // seccion 6). Si en la implementacion real aparece en otro slot, revisar.
-  const percepcionIva3 = validarPercepcionIva('IVA3', valores.impiva2, valores.codpercepiva)
+  // El 3% no vive en un slot fijo: verificado en vivo contra un comprobante
+  // real (AMX ARGENTINA, factura 1340-00147868) que lo trae en porciva3/
+  // impiva3, no en el slot 2 que asumia una version anterior de este
+  // codigo. Se escanean los 5 slots y se usa el importe del que tenga
+  // porcentaje 3 -- si ninguno lo tiene, no aplica (ok, no bloqueante).
+  const slotIva3 = [1, 2, 3, 4, 5].find((i) => Number(valores[`porciva${i}`]) === 3)
+  const importeIva3 = slotIva3 ? valores[`impiva${slotIva3}`] : null
+  const percepcionIva3 = validarPercepcionIva('IVA3', importeIva3, valores.codpercepiva)
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
 
   const bloqueante = [condCompra, percepcionIibb, percepcionIva3, formatoComp].some(

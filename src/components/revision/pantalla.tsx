@@ -5,11 +5,13 @@ import dynamic from 'next/dynamic'
 import { Formulario, type ValorInicial } from './formulario'
 import { AvisoIA } from './aviso-ia'
 import { PanelValidaciones } from './validaciones'
+import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
 import { Historial } from './historial'
 import type { RenglonGuardado, EntradaAuditoria } from '@/server/app/detalle'
-import type { Validaciones } from '@/server/app/validaciones'
+import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
+import type { AlicuotaIva, CodigoImpuesto } from '@/server/tango/impuestos'
 import styles from './pantalla.module.css'
 
 /**
@@ -53,7 +55,10 @@ export function Pantalla({
   renglones,
   auditoria,
   validaciones,
+  listoParaRegistrar,
   condicionesCompra,
+  codigosIibb,
+  codigosPercepcionIva3,
   soloLectura = false,
 }: {
   comprobanteId: number
@@ -67,7 +72,10 @@ export function Pantalla({
   renglones: RenglonGuardado[]
   auditoria: EntradaAuditoria[]
   validaciones: Validaciones
+  listoParaRegistrar: ResultadoListoParaRegistrar | null
   condicionesCompra: CondicionCompra[]
+  codigosIibb: CodigoImpuesto[]
+  codigosPercepcionIva3: AlicuotaIva[]
   // Comprobante `registrado`: terminal e inmutable. Se pasa a Formulario
   // para que los inputs queden de solo lectura (ver comentario ahí); el
   // backend ya bloquea la escritura de todos modos, esto es solo UI.
@@ -88,12 +96,15 @@ export function Pantalla({
           hayCorrecciones={hayCorrecciones}
         />
         <PanelValidaciones comprobanteId={comprobanteId} validaciones={validaciones} />
+        {listoParaRegistrar && <ListoParaRegistrar resultado={listoParaRegistrar} />}
         <Formulario
           comprobanteId={comprobanteId}
           iniciales={iniciales}
           onEnfocar={setEnfocado}
           soloLectura={soloLectura}
           condicionesCompra={condicionesCompra}
+          codigosIibb={codigosIibb}
+          codigosPercepcionIva3={codigosPercepcionIva3}
         />
         <Renglones renglones={renglones} />
         <Historial entradas={auditoria} />

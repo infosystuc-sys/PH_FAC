@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation'
 import { obtenerEncabezado, obtenerVecinos } from '@/server/app/comprobantes'
 import { obtenerDetalle } from '@/server/app/detalle'
-import { validarComprobante } from '@/server/app/validaciones'
+import { validarComprobante, validarListoParaRegistrar } from '@/server/app/validaciones'
 import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
+import { listarAlicuotasIva, listarCodigosImpuesto } from '@/server/tango/impuestos'
 import { leerFiltro } from '@/lib/estados'
 import { Pantalla } from '@/components/revision/pantalla'
 import { BarraAcciones } from '@/components/revision/barra-acciones'
@@ -57,11 +58,20 @@ export default async function RevisionPage({
   // paralelo en vez de en serie. `validarComprobante` queda afuera del
   // Promise.all porque necesita el `detalle` ya resuelto (se lo pasa para
   // no releer PHF_CAMPO/PHF_RENGLON/PHF_AUDITORIA una segunda vez adentro).
-  const [vecinos, detalle, condicionesCompra] = await Promise.all([
+  const [vecinos, detalle, condicionesCompra, alicuotasIva, codigosImpuesto] = await Promise.all([
     obtenerVecinos({ filtro, query }, id),
     obtenerDetalle(id),
     mostrarRevision ? listarCondicionesCompra() : Promise.resolve([]),
+    mostrarRevision ? listarAlicuotasIva() : Promise.resolve([]),
+    mostrarRevision ? listarCodigosImpuesto() : Promise.resolve([]),
   ])
+
+  // codpercepiva desambigua el unico porcentaje ambiguo de CPA14 (3%, entre
+  // "PERCEPCION R.G.3337" y "PERCEP. DE IVA" -- ver spec de Fase 4, seccion
+  // 2). codpercibb lista los codigos de percepcion de IIBB (tipo IB), una
+  // jurisdiccion por codigo.
+  const codigosPercepcionIva3 = alicuotasIva.filter((a) => a.porcentaje === 3)
+  const codigosIibb = codigosImpuesto.filter((c) => c.tipo === 'IB')
 
   const qs = new URLSearchParams()
   if (filtro !== 'todos') qs.set('filtro', filtro)
@@ -74,6 +84,8 @@ export default async function RevisionPage({
   const hayCorrecciones = detalle.campos.some((c) => c.corregido)
 
   const validaciones = mostrarRevision ? await validarComprobante(id, detalle) : null
+  const listoParaRegistrar =
+    encabezado.estado === 'confirmado' ? await validarListoParaRegistrar(id, detalle) : null
 
   return (
     <div className={styles.pantalla}>
@@ -116,7 +128,10 @@ export default async function RevisionPage({
           renglones={detalle.renglones}
           auditoria={detalle.auditoria}
           validaciones={validaciones}
+          listoParaRegistrar={listoParaRegistrar}
           condicionesCompra={condicionesCompra}
+          codigosIibb={codigosIibb}
+          codigosPercepcionIva3={codigosPercepcionIva3}
           // `registrado` es terminal e inmutable (mismo criterio que ya
           // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El
           // backend ya bloquea la escritura en guardarCampoEn con un no-op
