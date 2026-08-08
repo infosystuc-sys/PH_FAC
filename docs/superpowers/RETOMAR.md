@@ -1,8 +1,31 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-08. Fase 3 completa, revisada de punta a punta (revisión final de rango + fix wave + re-revisión, todo limpio) y lista para decidir el merge a `master`.
-**Rama actual:** `fase-3-validaciones-observacion-toasts` (creada desde `master` en el commit `628425e`). `master` se llama así, no `main` — `git init` la creó así. Todavía no mergeada — es la próxima decisión pendiente, ver "Lo que sigue".
+**Última actualización:** 2026-08-08. Fase 4 completa (las 10 tareas del plan), verificada de punta a punta contra la base real. Todavía no mergeada a `master` — es la próxima decisión pendiente, ver "Lo que sigue".
+**Rama actual:** `fase-4-registro-tango-remitos` (creada desde `master`, que ya tenía Fase 3 integrada).
+**Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
+
+---
+
+## Fase 4: completa
+
+Las 10 tareas del plan (`docs/superpowers/plans/2026-08-08-fase4-registro-tango-remitos.md`) están implementadas y verificadas contra la base real (`PUNTO_HOGAR_1`). **264 tests en verde**, `tsc --noEmit` limpio. Ejecutada inline (`superpowers:executing-plans`, no subagent-driven — el usuario eligió la vía más rápida), con checkpoints propios antes y después de la Task 6 (la más grande y riesgosa del plan).
+
+Lo que se agregó:
+
+- **`registrarComprobanteEn`/`registrarComprobante`** (`src/server/tango/comprobantes.ts`) — la única función de escritura de todo el proyecto contra el ERP. Un `sp_getapplock` serializa registros concurrentes; idempotente (llamar dos veces devuelve el mismo `TANGO_NCOMP_IN_C` sin duplicar). Escribe 9 tablas del ERP en una transacción `SERIALIZABLE`: `CPA04`/`CTA05` (cabecera), `CPA18`/`CTA06` (percepciones IIBB + impuesto interno fijo código 40), `CPA63`/clasificación IVA (alícuotas), `CPA54` (vencimientos, por cuota de `CPA49` o 100%/0 días si no hay), y si hay renglones con remito asignado, `CPA46`/`CTA07`/`CPA48` + `UPDATE STA20.CANT_FACTU/CANT_PEND` + `UPDATE STA14.ESTADO_MOV` (a `'F'` si el remito queda completamente consumido).
+- **Panel "Listo para registrar"** (`src/components/revision/listo-para-registrar.tsx`): cuatro chequeos bloqueantes antes de habilitar el registro — condición de compra elegida, código de percepción IIBB elegido (si hay importe), código de percepción de IVA 3% elegido (si hay importe — desambigua entre "PERCEPCION R.G.3337" y "PERCEP. DE IVA", el único porcentaje ambiguo de `CPA14`), formato de `N_COMP` válido.
+- **Selectores `codpercibb`/`codpercepiva`** en el formulario, poblados con datos reales de Tango (`listarCodigosImpuesto`/`listarAlicuotasIva`, ya existían desde la capa de lectura).
+- **Botón "Registrar en Tango"** funcional en estado `confirmado` — deshabilitado si el indicador de conexión está caído o si el panel "Listo para registrar" tiene algo bloqueante. "Ver asiento en Tango" (estado `registrado`) queda **permanentemente deshabilitado**: decisión explícita del usuario — el asiento contable lo genera un proceso aparte en Tango, esta app no lo toca (`CONTABILIZ = 0`, verificado en la base real tras registrar).
+- **Asociación manual de renglones a remitos pendientes** (`src/components/revision/remitos-pendientes.tsx` + `asignarRemitoEn`/`asignarRemito` en `acciones.ts`): un `<select>` por renglón, listando los remitos pendientes reales del proveedor (`buscarRemitosPendientes`, Fase 1) con su cantidad pendiente. La cantidad que se copia a `CPA46` es la del renglón de la propia factura (`PHF_RENGLON.cantidad`), no la del remito — el remito solo aporta código de artículo, depósito y precio.
+
+**Un bug real del plan, encontrado en Task 6 vía TDD contra la base real (no lo habría atrapado `tsc` ni una revisión de código):** el plan confundía dos códigos de Tango que se parecen pero son distintos — `TCOMP_IN_C` (código interno de secuenciación, `varchar(2)`, tiene que ser `'FP'`) vs `T_COMP` (código de visualización, `varchar(3)`, `'FAC'`). El plan ataba la misma variable a los dos, lo que rompía el `INSERT` de `CPA04` con "String or binary data would be truncated". Corregido separando en dos constantes (`tComp`/`tcompInC`) y rebindeando los 9 sitios afectados. De paso salieron dos bugs más de infraestructura, también solo detectables contra datos reales: `CPA04.LEYENDA` es `varchar(30)` (no 60, como asumía el plan), y el `requestTimeout` global de `mssql` (30s) es insuficiente para un `INSERT` real en `CPA04` bajo contención (se midió hasta 95s en esta misma fase) — subido a 60s en `src/server/db/pool.ts`, con impacto real de producción, no solo de tests.
+
+**Verificación manual de punta a punta en el navegador**, con datos reales:
+
+- Comprobante sin renglones (factura AMX/Claro real, `Comprobante_147868-CLARO.pdf`): elegidos condición de compra, código IIBB (Tucumán) y código de percepción IVA 3% ("PERCEP. DE IVA") a mano en el formulario; "Registrar en Tango" pasó de deshabilitado a habilitado en cuanto los tres quedaron en verde; el registro tardó 95s (contención real de `CPA04`); badge pasó a "Registrado en Tango", botón quedó "Ver asiento en Tango" deshabilitado, persistió al recargar. `CPA04` verificada: `TCOMP_IN_C='FP'`, `T_COMP='FAC'`, `N_COMP='A0134000147868'`, `CONTABILIZ=0`.
+- Comprobante con un renglón y remito asignado (proveedor `010246`, remito real `R0008400337724`): antes del registro, `STA20.CANT_PEND=8`/`CANT_FACTU=0`; después, `CANT_PEND=6`/`CANT_FACTU=2` (coincide con la cantidad de la factura, no con la del remito), `STA14.ESTADO_MOV` se mantuvo `'P'` (correcto: quedan 6 unidades pendientes de otro renglón). `CPA46`/`CPA48` verificadas con la cantidad correcta.
+- Indicador de conexión: **no se pudo verificar de forma aislada tal como lo describe la Task 10 del plan.** `probarConexion()` comparte el mismo pool (`getPool()`, `src/server/db/pool.ts`) que usan `PHF_*` y las tablas de Tango — viven en la misma instancia de SQL Server. Al simular una conexión caída (`SQLSERVER_HOST` inválido), **toda** la pantalla de revisión devuelve 500 antes de llegar a renderizar el botón, porque `obtenerEncabezado` (que corre antes que `probarConexion` en `page.tsx`) también depende del mismo pool roto. No es un bug de la Task 8: es una característica inherente de tener una sola instancia de SQL Server para datos propios y del ERP. La lógica de gating en sí (`disabled={pendiente || sinConexion || bloqueanteRegistro}`, `src/components/revision/barra-acciones.tsx`) es trivial y quedó revisada por tipo; su valor práctico real es acotado a una ventana de carrera (la conexión se cae *después* de que la página ya cargó bien, justo antes del click) que no se puede reproducir de forma segura sin infraestructura de mocks, ajena al estilo de test de este proyecto.
 
 ---
 
@@ -114,10 +137,14 @@ cd /d/APP/PH_FAC && git status --short && pnpm test
 
 ## Lo que sigue
 
-**Decidir el merge de Fase 3 a `master`** — usar `superpowers:finishing-a-development-branch`. Es lo primero, antes de arrancar Fase 4.
-**Fase 4** — registro en Tango y asociación de remitos. Sin plan escrito todavía. Antes de escribirlo, conviene aplicar las dos correcciones al spec que ya están documentadas en la sección "La capa de lectura de Tango" más abajo (§9 paso 7 y §266), y decidir qué hacer con los 3 items Minor que dejó la revisión final de Fase 3 (arriba) y con las recomendaciones de esa misma revisión (representación unificada de "sin valor" para `condcompra`/`codprovee` antes de escribir `CPA04`, revisar el formato de `N_COMP` en el camino de escritura, índice en `FECHA_ALTA`).
+**Decidir el merge de Fase 4 a `master`** — usar `superpowers:finishing-a-development-branch`. Es la única decisión pendiente ahora mismo; no hay una Fase 5 planificada todavía.
 
-Cada fase lleva su propio plan. El diseño completo está en `docs/superpowers/specs/2026-08-04-importador-facturas-tango-design.md`. La Fase 2 tuvo su propio spec: `docs/superpowers/specs/2026-08-05-fase2-importacion-extraccion-revision-design.md`. La Fase 3 tuvo el suyo: `docs/superpowers/specs/2026-08-07-fase3-validaciones-observacion-toasts-design.md`.
+Ítems que quedaron abiertos para cuando se retome trabajo en esta área (ver también "Cosas que hay que arrastrar" más abajo):
+
+- `CPA04.UNIDADES` es la única columna de todo el registro en Tango sin fórmula confirmada — se usa `IMPORTE_TO` como aproximación, no bloquea el registro, pero vale la pena revisarla con atención si aparece algún desvío en producción.
+- El indicador de conexión (`sinConexion`) no protege contra una caída de la base **antes** de que la pantalla de revisión cargue (ver el detalle en "Fase 4: completa" más arriba) — solo contra la ventana en que se cae después de cargar y antes de tocar el botón. Si en algún momento se quiere un manejo más robusto (una pantalla de error dedicada para "sin conexión a la base" a nivel de toda la app), es trabajo nuevo, no un bug de esta fase.
+
+Cada fase lleva su propio plan. El diseño completo está en `docs/superpowers/specs/2026-08-04-importador-facturas-tango-design.md`. La Fase 2 tuvo su propio spec: `docs/superpowers/specs/2026-08-05-fase2-importacion-extraccion-revision-design.md`. La Fase 3 tuvo el suyo: `docs/superpowers/specs/2026-08-07-fase3-validaciones-observacion-toasts-design.md`. La Fase 4 tuvo el suyo: `docs/superpowers/specs/2026-08-08-fase4-registro-tango-remitos-design.md`.
 
 La API key de Anthropic ya está cargada en `ANTHROPIC_API_KEY`, en `D:\APP\PH_FAC\.env.local` (verificado el 2026-08-04, y de nuevo el 2026-08-06 con una extracción real).
 
@@ -125,7 +152,7 @@ La API key de Anthropic ya está cargada en `ANTHROPIC_API_KEY`, en `D:\APP\PH_F
 
 ## Cosas que hay que arrastrar a las fases siguientes
 
-Las primeras dos activas salieron de la revisión final de la Fase 1; una se cerró en Fase 3. Las siguientes, de cerrar la Fase 2 (Tarea 11) — una de ellas también se cerró en Fase 3. Las últimas tres salieron de la revisión final de la Fase 3. Ninguna de las que quedan está resuelta. Anotarlas acá es la única forma de que no se pierdan.
+Las primeras dos activas salieron de la revisión final de la Fase 1; una se cerró en Fase 3. Las siguientes, de cerrar la Fase 2 (Tarea 11) — una de ellas también se cerró en Fase 3. Las últimas tres salieron de la revisión final de la Fase 3; dos de esas tres (#6 y #8) se cerraron en Fase 4. Quedan abiertas: #3, #4, #5, #7, #9. Anotarlas acá es la única forma de que no se pierdan.
 
 ### 1. Siete CUIT duplicados en `CPA01`, uno de ellos en cuatro filas — CERRADO en Fase 3
 
@@ -151,21 +178,21 @@ Un solo comprobante real disponible en `D:\CASOS\RAM - APP FAC\` (`Comprobante_1
 
 Descubierto armando la barra de acciones de la pantalla de revisión (Tarea 11). Los comprobantes que vienen de `pnpm seed` guardan `PHF_COMPROBANTE.NUMERO` ya combinado con el punto de venta (`"0003-00018742"`); los que vienen de una extracción real dejan `NUMERO` y `PUNTO_VENTA` por separado (`"00018742"` + `"0003"`). La bandeja (`src/components/bandeja/tabla.tsx`) ya convivía con esto mostrando `NUMERO` solo, sin combinarlo — la barra de acciones nueva sigue el mismo criterio (`formatComprobante` en `src/app/comprobantes/[id]/page.tsx`) para no duplicar el punto de venta en pantalla. Si en algún momento se unifica el formato de `NUMERO`, hay que revisar los dos lugares.
 
-### 6. `condcompra` de texto libre a select — CERRADO en Fase 3
+### 6. `condcompra` de texto libre a select — CERRADO en Fase 3 y Fase 4
 
-Salió de la revisión final de la Fase 2. Resuelto en la Task 8 de Fase 3: "Condición de pago" es ahora un `<select>` poblado con `listarCondicionesCompra()`. Queda un punto abierto para antes de que Fase 4 escriba `CPA04.COND_COMPR`: hoy "sin valor" se representa de tres formas distintas en la app (`condcompra` guarda `''`, el motivo de observación guarda `null`, `codprovee` ausente es directamente la falta de la fila) y Tango tiene una cuarta convención (`COD_CONDIC = 0` significa "sin condición"). Conviene decidir una representación única antes de escribir.
+Salió de la revisión final de la Fase 2. Resuelto en la Task 8 de Fase 3: "Condición de pago" es ahora un `<select>` poblado con `listarCondicionesCompra()`. El punto que quedaba abierto (representación unificada de "sin valor" antes de escribir `CPA04.COND_COMPR`) se resolvió en la Task 2/3 de Fase 4 con una decisión más simple que unificar las tres representaciones: `validarCondCompra` bloquea el registro directamente si `condcompra` está vacío, sin default silencioso. `codprovee` ya bloqueaba de la misma forma desde Fase 3 (el proveedor tiene que estar resuelto para confirmar).
 
 ### 7. `desnormalizarBandejaEn` trunca con `.slice()` sin avisar
 
 Salió de la misma revisión. `TIPO`, `PUNTO_VENTA`, `NUMERO` y `CUIT` se truncan con `.slice(10)`, `.slice(20)`, etc. antes de escribirlos en `PHF_COMPROBANTE` (`src/server/app/cola.ts`), para calzar con el ancho de columna. Si la IA devuelve un valor más largo que el límite, se guarda cortado y sin ningún aviso. Hoy es un riesgo bajo porque esas columnas son solo de visualización en la bandeja (el valor completo sigue disponible en `PHF_CAMPO.VALOR_IA`/`VALOR_FINAL`), pero si alguna vez alimentan directamente la escritura en Tango, un truncado silencioso ahí sí sería un problema.
 
-### 8. `nComp` (formato `letra + ptovta(5) + nro(8)`) solo se ejercitó en el camino de lectura
+### 8. `nComp` (formato `letra + ptovta(5) + nro(8)`) solo se ejercitó en el camino de lectura — CERRADO en Fase 4
 
-Salió de la revisión final de la Fase 3. Se usa hoy para el chequeo de duplicados contra `CPA04` (lectura). La Fase 4 lo va a necesitar también para escribir, donde una fila real conocida (`A1326200252367`) no calza con el formato esperado — ahí deja de ser una curiosidad y pasa a ser una pregunta de corrección. Revisar antes de que Fase 4 escriba `N_COMP`.
+Salió de la revisión final de la Fase 3. Se usaba solo para el chequeo de duplicados contra `CPA04` (lectura); una fila real conocida (`A1326200252367`) no calza con el formato `letra + ptovta(5) + nro(8)`. Resuelto en la Task 2/3 de Fase 4: no se intentó "corregir" el formato (no hay forma de saber cuál de los dos lados está mal para esa fila puntual), sino agregar `validarFormatoNComp` como validación bloqueante antes de escribir — así un valor mal formado no se guarda truncado en Tango sin aviso, se bloquea el registro y el operador lo corrige a mano. Verificado en vivo: un comprobante real se registró con `N_COMP='A0134000147868'` (14 caracteres, formato correcto).
 
 ### 9. Sin índice en `PHF_COMPROBANTE.FECHA_ALTA`
 
-Salió de la revisión final de la Fase 3. La navegación J/K (Task 9) y la bandeja ordenan por `FECHA_ALTA DESC, ID DESC` en cada carga. Al volumen actual no importa; a 20-100 comprobantes/día son ~25.000 filas/año. Agregar `IX_PHF_COMP_ALTA` en la migración que toque Fase 4, no hace falta una migración solo para esto.
+Salió de la revisión final de la Fase 3. La navegación J/K (Task 9) y la bandeja ordenan por `FECHA_ALTA DESC, ID DESC` en cada carga. Al volumen actual no importa; a 20-100 comprobantes/día son ~25.000 filas/año. La Fase 4 no tocó `src/scripts/migrate.ts` (no hizo falta ninguna tabla ni columna nueva), así que sigue pendiente. Agregar `IX_PHF_COMP_ALTA` en la próxima migración que toque el esquema propio, no hace falta una migración solo para esto.
 
 ---
 
@@ -189,10 +216,10 @@ La documentación oficial de Axoft lista las tablas por módulo. Son la referenc
 
 **`CTA09` y `CTA11` no figuran en ningún módulo.** Son tablas de Tango Central, el espejo para consolidación entre sucursales, igual que `CTA05`/`CTA06`/`CTA07` respecto de `CPA04`/`CPA18`/`CPA46`. No son la fuente de verdad y no hay que leerlas ni escribirlas. La primera versión de `remitos.ts` se escribió contra `CTA09`/`CTA11` y se rehízo contra `STA14`/`STA20`.
 
-### Dos correcciones al spec
+### Dos correcciones al spec — CERRADAS en Fase 4
 
-1. **§9 paso 7 dice `UPDATE CTA11.FALTA_REM`. Está mal por partida doble:** `CTA11` no tiene ninguna columna `FALTA_REM`, y no es la tabla que hay que actualizar. Lo que Tango mantiene son `STA20.CANT_FACTU` y `STA20.CANT_PEND`, más `STA14.ESTADO_MOV`. Hay que corregirlo antes de la Fase 4.
-2. **§266 define el remito pendiente sobre `CTA09`.** La definición correcta es sobre `STA14`: cabecera con `TCOMP_IN_S = 'RP'` y `ESTADO_MOV = 'P'`, con al menos un renglón de `STA20` con `CANT_PEND > 0`.
+1. ~~§9 paso 7 dice `UPDATE CTA11.FALTA_REM`~~. Corregido en la Task 10 de Fase 4: ahora dice `UPDATE STA20.CANT_FACTU/CANT_PEND` + `UPDATE STA14.ESTADO_MOV`, que es lo que el código de `registrarComprobanteEn` (`src/server/tango/comprobantes.ts`) usa en la práctica desde la Task 7.
+2. ~~§266 define el remito pendiente sobre `CTA09`~~. Corregido a `STA14`: cabecera con `TCOMP_IN_S = 'RP'` y `ESTADO_MOV = 'P'`, con al menos un renglón de `STA20` con `CANT_PEND > 0`.
 
 ---
 

@@ -253,7 +253,7 @@ Una transacción `SERIALIZABLE`. El número interno se protege con `sp_getapploc
 4. `INSERT CPA18` (percepciones) + `INSERT CTA06` (espejo).
 5. `INSERT CPA63` (alícuotas de IVA) + `INSERT CTA_COMPROBANTE_COMPRAS_CLASIFICACION_IVA`.
 6. `INSERT CPA54` (vencimientos), derivados de la condición de compra del proveedor.
-7. **Solo si hay remito asociado:** `INSERT CPA46` (renglones copiados del remito) + `INSERT CTA07` (espejo) + `INSERT CPA48` (link factura↔remito) + `UPDATE CTA11.FALTA_REM` y `UPDATE CTA09.ESTADO_MOV`.
+7. **Solo si hay remito asociado:** `INSERT CPA46` (renglones copiados del remito) + `INSERT CTA07` (espejo) + `INSERT CPA48` (link factura↔remito) + `UPDATE STA20.CANT_FACTU/CANT_PEND` y `UPDATE STA14.ESTADO_MOV`.
 8. `CONTABILIZ = 0`. No se escribe `ASIENTO_COMPROBANTE_CP`.
 9. Escribir `TANGO_NCOMP_IN_C` en `PHF_COMPROBANTE`, estado `registrado`, y la entrada de auditoría.
 
@@ -265,7 +265,7 @@ Cada `INSERT` replica el patrón de columnas de la factura de referencia (`NCOMP
 
 En la pantalla de revisión, si el proveedor resuelto tiene remitos pendientes de facturar, la app los lista con sus renglones. El operador tilda cuáles corresponden a esta factura. Los renglones de `PHF_RENGLON` que quedan sin remito no se graban en Tango.
 
-Un remito pendiente es una cabecera en `CTA09` con `TCOMP_IN_S = 'RP'` del proveedor, cuyos renglones en `CTA11` tienen cantidad no facturada.
+Un remito pendiente es una cabecera en `STA14` con `TCOMP_IN_S = 'RP'` del proveedor y `ESTADO_MOV = 'P'`, cuyos renglones en `STA20` tienen `CANT_PEND > 0`.
 
 ---
 
