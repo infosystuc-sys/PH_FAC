@@ -1,8 +1,32 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-08. Fase 4 completa e integrada a `master` (fast-forward, sin conflictos). La rama `fase-4-registro-tango-remitos` ya no existe (se borró después del merge). No hay una Fase 5 planificada todavía.
+**Última actualización:** 2026-08-09. Registro por conceptos completo, en la rama `registro-por-conceptos` (todavía no mergeada — próxima decisión pendiente). Fase 4 completa e integrada a `master`.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
+
+---
+
+## Registro por conceptos: completo
+
+Las 7 tareas del plan (`docs/superpowers/plans/2026-08-09-registro-por-conceptos.md`) están implementadas y verificadas contra la base real. **275 tests en verde**, `tsc --noEmit` limpio. Spec: `docs/superpowers/specs/2026-08-09-registro-por-conceptos-design.md`.
+
+Hasta ahora `registrarComprobanteEn` solo sabía grabar renglones de artículo (`CPA46`, vía remito) o cabecera sola. Esto agrega el otro camino real del negocio: facturas de **conceptos** (servicios, sin remito ni stock de por medio) — el operador elige "Tipo de factura: por conceptos / por artículos" en el formulario, y si elige "por conceptos", el registro busca el concepto configurado del proveedor en `CPA_CONCEPTOS_PROVEEDOR` y graba un renglón en `CPA47`. La ruta "por artículos" no se tocó — es aditivo.
+
+Lo que se agregó:
+
+- **Campo `tipoFactura`** (select, dos valores fijos: `'conceptos'`/`'articulos'`) en el grupo "Imputación en Tango". Sin elegir, bloquea el registro — mismo criterio sin-default-silencioso de Fase 4. Ocupa una fila propia completa (`span: 6`) porque `codprovee`+`condcompra` ya suman los 6 de una fila — hay una invariante en `tests/lib/campos.test.ts` que exige que cada grupo sume múltiplo de 6, encontrada recién al correr el test de Task 1.
+- **`buscarConceptoProveedor`** (`src/server/tango/conceptos.ts`, lectura nueva): `CPA_CONCEPTOS_PROVEEDOR` es 1:1 por proveedor en toda la base hoy (ningún `COD_PROVEE` tiene más de una fila) — no hace falta un selector de ambigüedad como con las percepciones de Fase 4. Hoy solo hay **un proveedor con concepto cargado en toda la base**: `010151` (AMX/Claro, concepto `712`, "TELEFONOS LOCALES") — el resto va a bloquear "por conceptos" hasta que se cargue más data en Tango.
+- **Panel "Listo para registrar"** gana dos chequeos: tipo de factura elegido, y si es "por conceptos", que el proveedor tenga concepto configurado (bloquea si no).
+- **`registrarComprobanteEn`** inserta un solo renglón en `CPA47` cuando `tipoFactura='conceptos'` — confirmado contra la base real que esto es el patrón dominante (13.030 de 13.062 facturas de conceptos, 99,75%, tienen exactamente un renglón en `CPA47`; el resto son la excepción, fuera de alcance de este trabajo). El concepto se resuelve y valida **antes** del `INSERT` de `CPA04` (no después, como decía la primera versión del plan — ver más abajo), para no desperdiciar ese insert caro si el proveedor no tiene concepto.
+- **Panel "Remitos pendientes"** se oculta cuando `tipoFactura='conceptos'` (un concepto no se ata a un remito).
+
+**Un hallazgo real durante la revisión crítica del plan, antes de implementar (no llegó a ser un bug porque se corrigió antes del Step 3 de la Task 5):** el plan original ponía la resolución/validación del concepto *después* del `INSERT` en `CPA04` (~10-30s bajo contención real, medido en Fase 4). Eso hubiera desperdiciado ese insert completo en cada intento fallido por falta de concepto — el propio código ya establece el patrón correcto (`armarAlicuotas`/`mapearAlicuotaIva` se resuelven *antes* del insert, en Fase 4). Se corrigió el plan con su propio commit antes de tocar código.
+
+**Verificación manual en el navegador**, con datos reales: comprobante de prueba contra el proveedor real `010151`, eligiendo "Por conceptos" — el panel mostró "Concepto: 712 — TELEFONOS LOCALES." en verde, "Remitos pendientes" no apareció; tras completar condición de compra, el registro escribió `CPA47` con `COD_CONCEP='712'`, `IMPORTE_GRAVADO=10000`, `IMPORTE_EXENTO=500`, `IMPORTE_NE=IMPORT_PAN=IMP_NETO_P=10500` — exactamente como predecía el diseño derivado empíricamente de las filas reales de `CPA47`.
+
+### Próximo paso: decidir el merge
+
+Falta correr `superpowers:finishing-a-development-branch` para decidir con el usuario qué hacer con la rama `registro-por-conceptos` (mergear a `master`, como el resto de las fases).
 
 ---
 
