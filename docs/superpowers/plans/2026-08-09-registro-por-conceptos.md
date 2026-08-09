@@ -541,6 +541,13 @@ describe('registrarComprobanteEn con tipoFactura=conceptos', () => {
       await guardarCampoEn(tx, id, 'total', '100,00')
 
       await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/no tiene un concepto configurado/i)
+
+      // Falla temprano, antes del INSERT de CPA04: no debe haber quedado
+      // nada escrito ni el comprobante marcado como registrado.
+      const comp = await tx.request().input('id', sql.Int, id)
+        .query(`SELECT ESTADO, TANGO_NCOMP_IN_C FROM PHF_COMPROBANTE WHERE ID=@id`)
+      expect(comp.recordset[0].ESTADO).toBe('confirmado')
+      expect(comp.recordset[0].TANGO_NCOMP_IN_C).toBeNull()
     })
   }, 30000)
 })
@@ -553,13 +560,41 @@ Expected: FAIL — `CPA47` queda vacía (el código todavía no la escribe) / no
 
 - [ ] **Step 3: Implementar**
 
-En `src/server/tango/comprobantes.ts`, agregar el import de `buscarConceptoProveedor`:
+**Ojo con dónde va cada parte.** El concepto se resuelve y valida temprano (antes del `INSERT` de `CPA04`, que tarda ~10-30s bajo contención) para no desperdiciar ese insert si el proveedor no tiene concepto — mismo criterio que ya usa `armarAlicuotas`/`mapearAlicuotaIva` un poco más abajo en la misma función. El `INSERT` a `CPA47` en sí va más tarde, porque necesita `ncompInC`, que recién se conoce después del paso "2. Numero interno".
+
+En `src/server/tango/comprobantes.ts`, agregar el import de `buscarConceptoProveedor` y su tipo:
 
 ```ts
-import { buscarConceptoProveedor } from './conceptos'
+import { buscarConceptoProveedor, type ConceptoProveedor } from './conceptos'
 ```
 
-Agregar el bloque nuevo dentro de `registrarComprobanteEn`, después del bloque `// 6. CPA54 (vencimientos)...` y antes de `// 7. Renglones con remito asignado (solo si hay).`:
+Agregar la resolución temprana justo después de este bloque ya existente (la validación de `condcompra`):
+
+```ts
+  const codCondCompra = Number(valores.condcompra)
+  const condiciones = await listarCondicionesCompra()
+  const condicion = condiciones.find((c) => c.codigo === codCondCompra)
+  if (!condicion) throw new Error(`La condición de compra ${codCondCompra} no existe en Tango.`)
+```
+
+agregando inmediatamente después:
+
+```ts
+  // Se resuelve y valida temprano, antes del INSERT de CPA04, para no
+  // desperdiciarlo si el proveedor no tiene concepto configurado -- mismo
+  // criterio que armarAlicuotas() mas abajo. El INSERT a CPA47 en si va
+  // despues (seccion 6b): necesita ncompInC, que recien se conoce en el
+  // paso "2. Numero interno".
+  let concepto: ConceptoProveedor | null = null
+  if (valores.tipoFactura === 'conceptos') {
+    concepto = await buscarConceptoProveedor(codProvee)
+    if (!concepto) {
+      throw new Error(`El proveedor ${codProvee} no tiene un concepto configurado en Tango.`)
+    }
+  }
+```
+
+Agregar el bloque de escritura, después del bloque `// 6. CPA54 (vencimientos)...` y antes de `// 7. Renglones con remito asignado (solo si hay).`:
 
 ```ts
   // 6b. CPA47 (renglon de concepto), solo si tipoFactura='conceptos'. Un
@@ -567,11 +602,7 @@ Agregar el bloque nuevo dentro de `registrarComprobanteEn`, después del bloque 
   // de 13.062 facturas de conceptos (99,75%) tienen exactamente un renglon
   // en CPA47. La ruta "por articulos" (bloque 7, mas abajo) sigue corriendo
   // igual sin condicionarla a esto -- ver spec, "Caso borde aceptado".
-  if (valores.tipoFactura === 'conceptos') {
-    const concepto = await buscarConceptoProveedor(codProvee)
-    if (!concepto) {
-      throw new Error(`El proveedor ${codProvee} no tiene un concepto configurado en Tango.`)
-    }
+  if (concepto) {
     const importeNeRenglon = Math.round((neto + exento) * 100) / 100
 
     await tx.request()
