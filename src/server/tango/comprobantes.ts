@@ -7,6 +7,7 @@ import { parsearImporte } from '@/lib/formato'
 import { listarCondicionesCompra } from './condicionesCompra'
 import { usuarioActual } from '@/lib/usuario'
 import { listarAlicuotasIva } from './impuestos'
+import { buscarConceptoProveedor, type ConceptoProveedor } from './conceptos'
 
 export type ComprobanteCpa04 = {
   nComp: string
@@ -146,6 +147,19 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const condiciones = await listarCondicionesCompra()
   const condicion = condiciones.find((c) => c.codigo === codCondCompra)
   if (!condicion) throw new Error(`La condición de compra ${codCondCompra} no existe en Tango.`)
+
+  // Se resuelve y valida temprano, antes del INSERT de CPA04, para no
+  // desperdiciarlo si el proveedor no tiene concepto configurado -- mismo
+  // criterio que armarAlicuotas() mas abajo. El INSERT a CPA47 en si va
+  // despues (seccion 6b): necesita ncompInC, que recien se conoce en el
+  // paso "2. Numero interno".
+  let concepto: ConceptoProveedor | null = null
+  if (valores.tipoFactura === 'conceptos') {
+    concepto = await buscarConceptoProveedor(codProvee)
+    if (!concepto) {
+      throw new Error(`El proveedor ${codProvee} no tiene un concepto configurado en Tango.`)
+    }
+  }
 
   const fechaEmision = parsearFechaArg((valores.fecha ?? '').trim()) ?? new Date()
   const neto = parsearImporte(valores.neto)
@@ -378,6 +392,31 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       .query(`
         INSERT INTO CPA54 (COD_PROVEE, ESTADO_AUT, ESTADO_VTO, FECHA_VTO, IMPORT_VTO, N_COMP, T_COMP, ESTADO_UNIDADES, IMPORTE_VENCIMIENTO_UNIDADES, FILLER)
         VALUES (@codProvee, '', 'PEN', @fechaVto, @importeVto, @nComp, @tComp, 'PEN', @importeVto, '')`)
+  }
+
+  // 6b. CPA47 (renglon de concepto), solo si tipoFactura='conceptos'. Un
+  // solo renglon por comprobante -- confirmado contra la base real: 13.030
+  // de 13.062 facturas de conceptos (99,75%) tienen exactamente un renglon
+  // en CPA47. La ruta "por articulos" (bloque 7, mas abajo) sigue corriendo
+  // igual sin condicionarla a esto -- ver spec, "Caso borde aceptado".
+  if (concepto) {
+    const importeNeRenglon = Math.round((neto + exento) * 100) / 100
+
+    await tx.request()
+      .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
+      .input('codConcep', sql.VarChar(3), concepto.codConcepto).input('fechaMov', sql.DateTime, fechaEmision)
+      .input('importeNe', sql.Decimal(18, 2), importeNeRenglon)
+      .input('gravado', sql.Decimal(18, 2), neto).input('exentoRenglon', sql.Decimal(18, 2), exento)
+      .query(`
+        INSERT INTO CPA47 (
+          TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_CONCEP, FECHA_MOV,
+          IMPORTE_NE, IMPORT_PAN, IMP_NETO_P, IMPORTE_GRAVADO, IMPORTE_EXENTO,
+          COD_CLASIF, FILLER
+        ) VALUES (
+          @tcompInC, @ncompInC, 1, @codConcep, @fechaMov,
+          @importeNe, @importeNe, @importeNe, @gravado, @exentoRenglon,
+          '', ''
+        )`)
   }
 
   // 7. Renglones con remito asignado (solo si hay).

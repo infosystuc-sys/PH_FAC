@@ -218,3 +218,72 @@ describe('registrarComprobanteEn con remito asignado', () => {
     })
   }, 90000)
 })
+
+describe('registrarComprobanteEn con tipoFactura=conceptos', () => {
+  it('inserta un renglon en CPA47 con el concepto del proveedor', async () => {
+    await conRollback(async (tx) => {
+      // 010151 (AMX/Claro) es el unico proveedor con concepto configurado
+      // hoy en CPA_CONCEPTOS_PROVEEDOR (concepto 712, "TELEFONOS LOCALES").
+      const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
+      const condCompra = String(condicion.recordset[0].COD_CONDIC)
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0077')
+      await guardarCampoEn(tx, id, 'nro', '00011111')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+      await guardarCampoEn(tx, id, 'condcompra', condCompra)
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'neto', '10.000,00')
+      await guardarCampoEn(tx, id, 'exento', '500,00')
+      await guardarCampoEn(tx, id, 'total', '10.500,00')
+
+      const registro = await registrarComprobanteEn(tx, id)
+
+      const cpa47 = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT * FROM CPA47 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n`)
+      expect(cpa47.recordset).toHaveLength(1)
+      expect(cpa47.recordset[0].COD_CONCEP.trim()).toBe('712')
+      expect(Number(cpa47.recordset[0].N_RENGL_C)).toBe(1)
+      expect(Number(cpa47.recordset[0].IMPORTE_GRAVADO)).toBe(10000)
+      expect(Number(cpa47.recordset[0].IMPORTE_EXENTO)).toBe(500)
+      expect(Number(cpa47.recordset[0].IMPORTE_NE)).toBe(10500)
+      expect(Number(cpa47.recordset[0].IMPORT_PAN)).toBe(10500)
+      expect(Number(cpa47.recordset[0].IMP_NETO_P)).toBe(10500)
+    })
+  }, 90000)
+
+  it('bloquea el registro si el proveedor no tiene concepto configurado', async () => {
+    await conRollback(async (tx) => {
+      const prov = await tx.request().query(`
+        SELECT TOP 1 p.COD_PROVEE FROM CPA01 p
+        WHERE p.COD_PROVEE NOT IN (SELECT COD_PROVEE FROM CPA_CONCEPTOS_PROVEEDOR)
+        ORDER BY p.COD_PROVEE`)
+      const codProvee = String(prov.recordset[0].COD_PROVEE).trim()
+
+      const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
+      const condCompra = String(condicion.recordset[0].COD_CONDIC)
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0077')
+      await guardarCampoEn(tx, id, 'nro', '00022222')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+      await guardarCampoEn(tx, id, 'codprovee', codProvee)
+      await guardarCampoEn(tx, id, 'condcompra', condCompra)
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'total', '100,00')
+
+      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/no tiene un concepto configurado/i)
+
+      // Falla temprano, antes del INSERT de CPA04: no debe haber quedado
+      // nada escrito ni el comprobante marcado como registrado.
+      const comp = await tx.request().input('id', sql.Int, id)
+        .query(`SELECT ESTADO, TANGO_NCOMP_IN_C FROM PHF_COMPROBANTE WHERE ID=@id`)
+      expect(comp.recordset[0].ESTADO).toBe('confirmado')
+      expect(comp.recordset[0].TANGO_NCOMP_IN_C).toBeNull()
+    })
+  }, 30000)
+})
