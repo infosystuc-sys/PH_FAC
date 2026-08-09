@@ -69,12 +69,12 @@ En `src/lib/campos.ts`, agregar la entrada al final del array `CAMPOS`, después
 ```ts
   { clave: 'condcompra', label: 'Condición de compra', grupo: 'imputacion', span: 3,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
-  { clave: 'tipoFactura', label: 'Tipo de factura', grupo: 'imputacion', span: 3,
+  { clave: 'tipoFactura', label: 'Tipo de factura', grupo: 'imputacion', span: 6,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
 ]
 ```
 
-(Reemplaza el cierre `]` existente después de `condcompra` — la entrada de `tipoFactura` se agrega antes de ese `]`.)
+(Reemplaza el cierre `]` existente después de `condcompra` — la entrada de `tipoFactura` se agrega antes de ese `]`. `span: 6` porque `tests/lib/campos.test.ts` tiene una invariante existente que exige que cada grupo sume un múltiplo de 6: `codprovee`(3) + `condcompra`(3) ya suman 6, así que `tipoFactura` necesita ocupar una fila propia completa, no sumarse a la mitad de otra.)
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
 

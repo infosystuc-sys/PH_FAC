@@ -86,6 +86,8 @@ export const CAMPOS: DefCampo[] = [
     tipo: 'texto', mono: true, extraePorIA: false, soloLectura: true },
   { clave: 'condcompra', label: 'Condición de compra', grupo: 'imputacion', span: 3,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
+  { clave: 'tipoFactura', label: 'Tipo de factura', grupo: 'imputacion', span: 6,
+    tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
 ]
 
 function c(
