@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-09. Registro por conceptos completo, en la rama `registro-por-conceptos` (todavía no mergeada — próxima decisión pendiente). Fase 4 completa e integrada a `master`.
+**Última actualización:** 2026-08-09. Registro por conceptos completo e integrado a `master` (fast-forward, sin conflictos). La rama `registro-por-conceptos` ya no existe (se borró después del merge). Fase 4 completa e integrada a `master`.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
 
@@ -24,9 +24,7 @@ Lo que se agregó:
 
 **Verificación manual en el navegador**, con datos reales: comprobante de prueba contra el proveedor real `010151`, eligiendo "Por conceptos" — el panel mostró "Concepto: 712 — TELEFONOS LOCALES." en verde, "Remitos pendientes" no apareció; tras completar condición de compra, el registro escribió `CPA47` con `COD_CONCEP='712'`, `IMPORTE_GRAVADO=10000`, `IMPORTE_EXENTO=500`, `IMPORTE_NE=IMPORT_PAN=IMP_NETO_P=10500` — exactamente como predecía el diseño derivado empíricamente de las filas reales de `CPA47`.
 
-### Próximo paso: decidir el merge
-
-Falta correr `superpowers:finishing-a-development-branch` para decidir con el usuario qué hacer con la rama `registro-por-conceptos` (mergear a `master`, como el resto de las fases).
+Mergeado a `master` el mismo día (fast-forward, sin conflictos). **275 tests en verde** sobre el resultado mergeado, `tsc --noEmit` limpio. La rama `registro-por-conceptos` se borró después del merge.
 
 ---
 
