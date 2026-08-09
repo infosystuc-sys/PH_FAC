@@ -9,6 +9,7 @@ import {
   validarFormatoNComp,
   validarCondCompra,
   validarPercepcionIva,
+  validarTipoFactura,
 } from '@/lib/validaciones'
 
 describe('letraComprobante', () => {
@@ -134,6 +135,18 @@ describe('validarCondCompra', () => {
     expect(validarCondCompra('').estado).toBe('error')
     expect(validarCondCompra(null).estado).toBe('error')
     expect(validarCondCompra(undefined).estado).toBe('error')
+  })
+})
+
+describe('validarTipoFactura', () => {
+  it('ok si es "conceptos" o "articulos"', () => {
+    expect(validarTipoFactura('conceptos').estado).toBe('ok')
+    expect(validarTipoFactura('articulos').estado).toBe('ok')
+  })
+  it('error si esta vacio o ausente', () => {
+    expect(validarTipoFactura('').estado).toBe('error')
+    expect(validarTipoFactura(null).estado).toBe('error')
+    expect(validarTipoFactura(undefined).estado).toBe('error')
   })
 })
 

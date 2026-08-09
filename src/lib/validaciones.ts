@@ -120,6 +120,14 @@ export function validarCondCompra(condcompra: string | null | undefined): Result
   return { estado: 'ok', mensaje: 'Condición de compra elegida.' }
 }
 
+export function validarTipoFactura(tipoFactura: string | null | undefined): ResultadoValidacion {
+  const v = (tipoFactura ?? '').trim()
+  if (!v) {
+    return { estado: 'error', mensaje: 'Elegí el tipo de factura antes de registrar.' }
+  }
+  return { estado: 'ok', mensaje: 'Tipo de factura elegido.' }
+}
+
 const ETIQUETA_PERCEPCION: Record<'IIBB' | 'IVA3', string> = {
   IIBB: 'la percepción de IIBB',
   IVA3: 'la percepción de IVA del 3%',
