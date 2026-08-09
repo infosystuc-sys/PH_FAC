@@ -13,8 +13,10 @@ import {
   validarFormatoNComp,
   validarCondCompra,
   validarPercepcionIva,
+  validarTipoFactura,
   type ResultadoValidacion,
 } from '@/lib/validaciones'
+import { buscarConceptoProveedor } from '@/server/tango/conceptos'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -129,6 +131,8 @@ export type ResultadoListoParaRegistrar = {
   percepcionIibb: ResultadoValidacion
   percepcionIva3: ResultadoValidacion
   formatoComp: ResultadoValidacion
+  tipoFactura: ResultadoValidacion
+  concepto: ResultadoValidacion
   bloqueante: boolean
 }
 
@@ -158,12 +162,25 @@ export async function validarListoParaRegistrarEn(
   const importeIva3 = slotIva3 ? valores[`impiva${slotIva3}`] : null
   const percepcionIva3 = validarPercepcionIva('IVA3', importeIva3, valores.codpercepiva)
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
+  const tipoFactura = validarTipoFactura(valores.tipoFactura)
 
-  const bloqueante = [condCompra, percepcionIibb, percepcionIva3, formatoComp].some(
+  // El concepto solo aplica si se eligio "por conceptos" -- igual criterio
+  // que percepcionIva3 cuando no hay slot al 3%: 'ok'/"No aplica." en vez de
+  // forzar un chequeo que no corresponde.
+  let concepto: ResultadoValidacion = { estado: 'ok', mensaje: 'No aplica.' }
+  if (valores.tipoFactura === 'conceptos') {
+    const codProvee = (valores.codprovee ?? '').trim()
+    const encontrado = codProvee ? await buscarConceptoProveedor(codProvee) : null
+    concepto = encontrado
+      ? { estado: 'ok', mensaje: `Concepto: ${encontrado.codConcepto} — ${encontrado.descripcion}.` }
+      : { estado: 'error', mensaje: 'Este proveedor no tiene un concepto configurado en Tango.' }
+  }
+
+  const bloqueante = [condCompra, percepcionIibb, percepcionIva3, formatoComp, tipoFactura, concepto].some(
     (v) => v.estado === 'error',
   )
 
-  return { condCompra, percepcionIibb, percepcionIva3, formatoComp, bloqueante }
+  return { condCompra, percepcionIibb, percepcionIva3, formatoComp, tipoFactura, concepto, bloqueante }
 }
 
 export async function validarListoParaRegistrar(

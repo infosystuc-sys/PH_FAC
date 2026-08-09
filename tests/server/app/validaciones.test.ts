@@ -301,6 +301,7 @@ describe('validarListoParaRegistrarEn', () => {
       await guardarCampoEn(tx, id, 'condcompra', '60')
       await guardarCampoEn(tx, id, 'perciibb', '13.248,69')
       await guardarCampoEn(tx, id, 'codpercibb', '60')
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
 
       const r = await validarListoParaRegistrarEn(tx, id)
       expect(r.condCompra.estado).toBe('ok')
@@ -308,6 +309,55 @@ describe('validarListoParaRegistrarEn', () => {
       expect(r.percepcionIva3.estado).toBe('ok')
       expect(r.formatoComp.estado).toBe('ok')
       expect(r.bloqueante).toBe(false)
+    })
+  })
+
+  it('bloqueante si falta tipoFactura', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.tipoFactura.estado).toBe('error')
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+
+  it('concepto no aplica si tipoFactura es "articulos"', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.tipoFactura.estado).toBe('ok')
+      expect(r.concepto.estado).toBe('ok')
+      expect(r.concepto.mensaje).toBe('No aplica.')
+    })
+  })
+
+  it('bloqueante si tipoFactura es "conceptos" y el proveedor no tiene concepto configurado', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '999999')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.concepto.estado).toBe('error')
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+
+  it('ok si tipoFactura es "conceptos" y el proveedor tiene concepto configurado (010151)', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.concepto.estado).toBe('ok')
     })
   })
 })
