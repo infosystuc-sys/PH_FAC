@@ -91,8 +91,11 @@ export default async function RevisionPage({
     encabezado.estado === 'confirmado' ? await validarListoParaRegistrar(id, detalle) : null
 
   const codProveeCampo = detalle.campos.find((c) => c.clave === 'codprovee')?.valorFinal ?? null
+  const tipoFacturaValor = detalle.campos.find((c) => c.clave === 'tipoFactura')?.valorFinal ?? null
   const remitosPendientes =
-    codProveeCampo && detalle.renglones.length > 0 ? await buscarRemitosPendientes(codProveeCampo) : []
+    tipoFacturaValor !== 'conceptos' && codProveeCampo && detalle.renglones.length > 0
+      ? await buscarRemitosPendientes(codProveeCampo)
+      : []
 
   return (
     <div className={styles.pantalla}>

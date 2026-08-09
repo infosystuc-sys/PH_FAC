@@ -9,6 +9,8 @@ export function ListoParaRegistrar({ resultado }: { resultado: ResultadoListoPar
     resultado.percepcionIibb,
     resultado.percepcionIva3,
     resultado.formatoComp,
+    resultado.tipoFactura,
+    resultado.concepto,
   ]
 
   return (

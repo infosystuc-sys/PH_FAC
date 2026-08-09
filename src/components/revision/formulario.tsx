@@ -55,6 +55,12 @@ function opcionesPara(
   if (clave === 'codpercepiva') {
     return codigosPercepcionIva3.map((a) => ({ valor: String(a.codigo), label: a.descripcion }))
   }
+  if (clave === 'tipoFactura') {
+    return [
+      { valor: 'conceptos', label: 'Por conceptos' },
+      { valor: 'articulos', label: 'Por artículos' },
+    ]
+  }
   return undefined
 }
 
