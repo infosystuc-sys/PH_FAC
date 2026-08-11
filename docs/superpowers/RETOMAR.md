@@ -1,8 +1,18 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-11. Agregado el tercer valor de `tipoFactura` ("Liquidación de tarjeta"), bloqueado hasta que se implemente (ver "Cosas que hay que arrastrar" más abajo). Restricción de percepciones de IVA/IIBB completa. Todo en `master` directamente, sin rama propia. Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
+**Última actualización:** 2026-08-11. La IA ya no detecta renglones en comprobantes de servicios (ver sección abajo). Agregado el tercer valor de `tipoFactura` ("Liquidación de tarjeta"), bloqueado hasta que se implemente. Restricción de percepciones de IVA/IIBB completa. Todo en `master` directamente, sin rama propia. Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
+
+---
+
+## La IA no detecta renglones en comprobantes de servicios
+
+Pedido directo del usuario, mismo día que lo de arriba: "en las facturas de conceptos no es necesario detectar renglones". El problema real es de orden — la extracción con IA corre al importar el PDF, **antes** de que el operador elija `tipoFactura` en la revisión, así que la app no puede filtrar por tipo de antemano. El usuario eligió, sabiendo el riesgo, que sea la propia IA la que decida: `PROMPT_EXTRACCION` (`src/server/ia/prompt.ts`, regla 6 nueva) le dice a Claude que si el comprobante es de un proveedor de servicios (telefonía, luz, gas, seguros, alquiler, honorarios, publicidad, gastos bancarios, etc. — no mercadería para la venta), devuelva los renglones vacíos aunque el PDF liste sub-ítems (líneas telefónicas, planes, consumos), porque esos detalles no se usan para ese tipo de comprobante.
+
+**Riesgo aceptado explícitamente:** si Claude clasifica mal un comprobante (lo confunde con servicio cuando en realidad es mercadería atada a un remito), se pierden renglones reales que hacían falta para la ruta "por artículos" (`CPA46`). No hay una verificación automática de esto — si aparece un caso así en producción, es candidato a revisar el prompt o a mover el corte de "no detectar renglones" a después de que el operador clasifique (la alternativa más segura que se descartó esta vez).
+
+**Verificado en vivo:** la factura real de AMX/Claro (`Comprobante_147868-CLARO.pdf`), que antes traía ~20 renglones (líneas de plan telefónico), ahora devuelve `renglones: []` — sin afectar el resto de la extracción (`codpercibb` siguió sugiriendo `60` con 93% de confianza).
 
 ---
 
