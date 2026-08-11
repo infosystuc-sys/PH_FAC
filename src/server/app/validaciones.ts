@@ -17,6 +17,7 @@ import {
   type ResultadoValidacion,
 } from '@/lib/validaciones'
 import { buscarConceptoProveedor } from '@/server/tango/conceptos'
+import { listarCodigosImpuesto } from '@/server/tango/impuestos'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -151,7 +152,21 @@ export async function validarListoParaRegistrarEn(
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
 
   const condCompra = validarCondCompra(valores.condcompra)
-  const percepcionIibb = validarPercepcionIibb(valores.perciibb, valores.codpercibb)
+  let percepcionIibb = validarPercepcionIibb(valores.perciibb, valores.codpercibb)
+  // Con codigo elegido, el mensaje generico "Codigo elegido." no le dice al
+  // operador cual alicuota de Tango se va a grabar de verdad -- se busca la
+  // descripcion real (misma idea que el mensaje de "concepto" mas abajo).
+  const codIibb = (valores.codpercibb ?? '').trim()
+  if (percepcionIibb.estado === 'ok' && codIibb) {
+    const codigos = await listarCodigosImpuesto()
+    const encontrado = codigos.find((c) => String(c.codigo) === codIibb)
+    if (encontrado) {
+      percepcionIibb = {
+        estado: 'ok',
+        mensaje: `Percepción IIBB: ${encontrado.codigo} — ${encontrado.descripcion}.`,
+      }
+    }
+  }
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)
 

@@ -254,6 +254,19 @@ describe('validarListoParaRegistrarEn', () => {
     })
   })
 
+  it('muestra la descripcion real de Tango cuando el codigo de IIBB esta elegido', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+      await guardarCampoEn(tx, id, 'perciibb', '13.248,69')
+      await guardarCampoEn(tx, id, 'codpercibb', '60')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.percepcionIibb.estado).toBe('ok')
+      expect(r.percepcionIibb.mensaje).toBe('Percepción IIBB: 60 — PERCEPCION IIBB TUC.')
+    })
+  })
+
   it('bloqueante si el numero de comprobante no calza en el formato', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
