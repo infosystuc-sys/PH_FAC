@@ -55,17 +55,18 @@ export const CAMPOS: DefCampo[] = [
   // van intercalados a proposito -- cada par ocupa una fila completa de la
   // grilla (2 + 4 = 6) -- y mezclan alicuotas con percepciones de la
   // familia IVA, que es como Tango las guarda de verdad. Ver design doc
-  // 2026-08-05, seccion 3 y 11. codpercibb/codpercepiva (Fase 4) resuelven
-  // la ambiguedad de codigo de Tango que el porcentaje/importe solo no
-  // alcanza a distinguir -- ver spec de Fase 4, seccion 2.
+  // 2026-08-05, seccion 3 y 11. La percepcion de IVA del 3% se resuelve
+  // siempre al codigo 15 (decision del usuario, 2026-08-10): no hay
+  // ambiguedad que elegir, asi que no hay campo de seleccion para eso.
+  // codpercibb (percepcion de IIBB) si necesita eleccion -- la sugiere la
+  // IA leyendo la jurisdiccion del comprobante (ver prompt.ts), y el
+  // operador la puede corregir contra las opciones reales de Tango.
   c('neto',        'Neto gravado',          'importes',    3, 'decimal', true),
   c('exento',      'No gravado / exento',   'importes',    3, 'decimal', true),
   c('porciva1',    'Alícuota 1',            'importes',    2, 'porcentaje', true),
   c('impiva1',     'Importe 1',             'importes',    4, 'decimal', true),
   c('porciva2',    'Alícuota 2',            'importes',    2, 'porcentaje', true),
   c('impiva2',     'Importe 2',             'importes',    4, 'decimal', true),
-  { clave: 'codpercepiva', label: 'Código percepción IVA 3%', grupo: 'importes', span: 3,
-    tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
   c('porciva3',    'Alícuota 3',            'importes',    2, 'porcentaje', true),
   c('impiva3',     'Importe 3',             'importes',    4, 'decimal', true),
   c('porciva4',    'Alícuota 4',            'importes',    2, 'porcentaje', true),
@@ -73,8 +74,7 @@ export const CAMPOS: DefCampo[] = [
   c('porciva5',    'Alícuota 5',            'importes',    2, 'porcentaje', true),
   c('impiva5',     'Importe 5',             'importes',    4, 'decimal', true),
   c('perciibb',    'Percepción IIBB',       'importes',    3, 'decimal', true),
-  { clave: 'codpercibb', label: 'Código percepción IIBB', grupo: 'importes', span: 3,
-    tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
+  c('codpercibb',  'Código percepción IIBB', 'importes',   6, 'select', false),
   c('impint',      'Impuesto interno',      'importes',    3, 'decimal', true),
   c('total',       'Total del comprobante', 'importes',    3, 'decimal', true),
   { clave: 'imputado', label: 'Total imputado', grupo: 'importes', span: 3,

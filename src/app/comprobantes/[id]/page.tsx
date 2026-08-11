@@ -3,10 +3,11 @@ import { obtenerEncabezado, obtenerVecinos } from '@/server/app/comprobantes'
 import { obtenerDetalle } from '@/server/app/detalle'
 import { validarComprobante, validarListoParaRegistrar } from '@/server/app/validaciones'
 import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
-import { listarAlicuotasIva, listarCodigosImpuesto } from '@/server/tango/impuestos'
+import { listarCodigosImpuesto } from '@/server/tango/impuestos'
 import { buscarRemitosPendientes } from '@/server/tango/remitos'
 import { probarConexion } from '@/server/db/pool'
 import { leerFiltro } from '@/lib/estados'
+import { JURISDICCIONES_IIBB } from '@/lib/percepcionIibb'
 import { Pantalla } from '@/components/revision/pantalla'
 import { BarraAcciones } from '@/components/revision/barra-acciones'
 import { PanelProcesando } from '@/components/revision/panel-procesando'
@@ -60,21 +61,21 @@ export default async function RevisionPage({
   // paralelo en vez de en serie. `validarComprobante` queda afuera del
   // Promise.all porque necesita el `detalle` ya resuelto (se lo pasa para
   // no releer PHF_CAMPO/PHF_RENGLON/PHF_AUDITORIA una segunda vez adentro).
-  const [vecinos, detalle, condicionesCompra, alicuotasIva, codigosImpuesto, conexion] = await Promise.all([
+  const [vecinos, detalle, condicionesCompra, codigosImpuesto, conexion] = await Promise.all([
     obtenerVecinos({ filtro, query }, id),
     obtenerDetalle(id),
     mostrarRevision ? listarCondicionesCompra() : Promise.resolve([]),
-    mostrarRevision ? listarAlicuotasIva() : Promise.resolve([]),
     mostrarRevision ? listarCodigosImpuesto() : Promise.resolve([]),
     probarConexion(),
   ])
 
-  // codpercepiva desambigua el unico porcentaje ambiguo de CPA14 (3%, entre
-  // "PERCEPCION R.G.3337" y "PERCEP. DE IVA" -- ver spec de Fase 4, seccion
-  // 2). codpercibb lista los codigos de percepcion de IIBB (tipo IB), una
-  // jurisdiccion por codigo.
-  const codigosPercepcionIva3 = alicuotasIva.filter((a) => a.porcentaje === 3)
-  const codigosIibb = codigosImpuesto.filter((c) => c.tipo === 'IB')
+  // Restringido a mano a las jurisdicciones que la app maneja hoy (ver
+  // JURISDICCIONES_IIBB) -- CPA14 tiene otros codigos que arrancan "IIBB"
+  // pero son retenciones, no percepciones, y mezclarlos escribiria mal el
+  // dato en CPA18.
+  const codigosIibb = codigosImpuesto.filter((c) =>
+    JURISDICCIONES_IIBB.some((j) => j.codigo === String(c.codigo)),
+  )
 
   const qs = new URLSearchParams()
   if (filtro !== 'todos') qs.set('filtro', filtro)
@@ -143,7 +144,6 @@ export default async function RevisionPage({
           listoParaRegistrar={listoParaRegistrar}
           condicionesCompra={condicionesCompra}
           codigosIibb={codigosIibb}
-          codigosPercepcionIva3={codigosPercepcionIva3}
           remitosPendientes={remitosPendientes}
           // `registrado` es terminal e inmutable (mismo criterio que ya
           // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El

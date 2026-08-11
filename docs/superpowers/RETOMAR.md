@@ -1,8 +1,23 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-09. Registro por conceptos completo e integrado a `master` (fast-forward, sin conflictos). La rama `registro-por-conceptos` ya no existe (se borró después del merge). Fase 4 completa e integrada a `master`.
+**Última actualización:** 2026-08-11. Restricción de percepciones de IVA/IIBB completa, en `master` directamente (cambio chico, sin rama propia — ver sección abajo). Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
+
+---
+
+## Restricción de percepciones de IVA/IIBB: completo
+
+Cambio chico pedido directamente por el usuario ("no generes un plan, directamente implementa"), sin spec ni plan formal — implementado en el mismo `master`, sin rama propia. **271 tests en verde**, `tsc --noEmit` limpio.
+
+Dos decisiones de negocio, ambas explícitas del usuario:
+
+- **Percepción de IVA del 3%:** antes ambigua entre `COD_IVA` 15 ("PERCEPCION R.G.3337") y 16 ("PERCEP. DE IVA"), con un selector para que el operador eligiera. Ahora siempre se resuelve a **15** — se sacó el selector (`codpercepiva`) del catálogo y del formulario. `mapearAlicuotaIva` (`src/server/tango/comprobantes.ts`) ya no recibe un código elegido, prefiere 15 cuando hay ambigüedad.
+- **Percepción de IIBB:** restringida a 4 jurisdicciones (`src/lib/percepcionIibb.ts`, fuente única): `60` Tucumán, `61` Salta, `62` CABA, `68` Formosa. **La IA ahora sugiere el código automáticamente**, leyendo la jurisdicción del texto del comprobante (prompt extendido en `src/server/ia/prompt.ts`, regla 8) — `codpercibb` pasó a ser un campo `extraePorIA: true`, igual que cualquier otro campo con badge de confianza; el operador lo puede corregir si hace falta.
+
+**Un hallazgo real, no una suposición del usuario:** los códigos `64`/`66` que el usuario mencionó originalmente ("64 para bancarias") **no son percepciones en Tango — son retenciones** (`CPA14.TIPO_ALI='OT'`, `PERCEPCION=false`, descripciones "RET IIBB BANCARIOS"/"RET IIBB SIRCREB"). Tratarlos como percepción habría escrito mal el dato en `CPA18`. Verificado contra la base real antes de implementar; el usuario confirmó que son un caso aparte, fuera de este alcance. También se corrigió sobre la marcha: el código `68` (Formosa) tiene `PERCEPCION=true` (es una percepción real) pero está clasificado como `TIPO_ALI='OT'`, no `'IB'` — por eso el filtro de `codigosIibb` en `page.tsx` usa una lista explícita de códigos (`JURISDICCIONES_IIBB`), no `TIPO_ALI`, que resultó no ser confiable para esto.
+
+**Verificado en vivo, sin usar el navegador para la parte de IA** (para no gastar una llamada más de la cuenta): se corrió `extraerDePdf` directo contra el PDF real de AMX/Claro (que dice "Perc. IIBB Tucumán RG 22/18") — la IA devolvió `codpercibb: "60"` con 95% de confianza. Después sí se verificó en el navegador (con datos insertados a mano, sin gastar otra llamada) que el select se ve pre-cargado en "PERCEPCION IIBB TUC" con el badge 95%, que la lista de opciones tiene exactamente las 4 jurisdicciones esperadas (ni retenciones ni otros códigos de `CPA14`), y que el selector de percepción de IVA ya no aparece en ningún lado del formulario.
 
 ---
 

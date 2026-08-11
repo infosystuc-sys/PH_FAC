@@ -51,12 +51,12 @@ export async function buscarFacturaEnCpa04(
  * Resuelve un porcentaje de alicuota extraido del comprobante al COD_IVA
  * real de CPA14. Verificado contra la base: la mayoria de los porcentajes
  * (0%, 10.5%, 21%, 27%) tienen un unico codigo posible. El 3% es ambiguo
- * entre COD_IVA 15 ("PERCEPCION R.G.3337") y 16 ("PERCEP. DE IVA") -- ahi
- * hace falta el codigo que eligio el operador (codpercepiva).
+ * entre COD_IVA 15 ("PERCEPCION R.G.3337") y 16 ("PERCEP. DE IVA") --
+ * decision del usuario (2026-08-10): siempre usar 15, sin pedirle al
+ * operador que elija.
  */
 export async function mapearAlicuotaIva(
   porcentaje: number,
-  codigoElegido: string | null,
 ): Promise<{ codigo: number; porcentaje: number } | null> {
   const alicuotas = await listarAlicuotasIva()
   const candidatos = alicuotas.filter((a) => a.porcentaje === porcentaje)
@@ -64,9 +64,8 @@ export async function mapearAlicuotaIva(
   if (candidatos.length === 0) return null
   if (candidatos.length === 1) return { codigo: candidatos[0].codigo, porcentaje }
 
-  const elegido = codigoElegido ? Number(codigoElegido) : null
-  const match = candidatos.find((a) => a.codigo === elegido)
-  return match ? { codigo: match.codigo, porcentaje } : null
+  const preferido = candidatos.find((a) => a.codigo === 15)
+  return preferido ? { codigo: preferido.codigo, porcentaje } : null
 }
 
 export type RegistroTango = { ncompInC: number; tComp: string; nComp: string }
@@ -81,8 +80,7 @@ function horaActual(): string {
 
 /**
  * Arma las hasta 5 alicuotas (codigo/porcentaje/importe) a partir de los
- * campos porcivaN/impivaN. codpercepiva desambigua el 3% (ver
- * mapearAlicuotaIva). Devuelve solo las posiciones con importe > 0.
+ * campos porcivaN/impivaN. Devuelve solo las posiciones con importe > 0.
  */
 async function armarAlicuotas(
   valores: Record<string, string | null | undefined>,
@@ -92,8 +90,7 @@ async function armarAlicuotas(
     const porc = parsearImporte(valores[`porciva${i}`])
     const imp = parsearImporte(valores[`impiva${i}`])
     if (imp <= 0) continue
-    const codigoElegido = porc === 3 ? (valores.codpercepiva ?? null) : null
-    const mapeado = await mapearAlicuotaIva(porc, codigoElegido)
+    const mapeado = await mapearAlicuotaIva(porc)
     if (!mapeado) {
       throw new Error(`No se pudo resolver el código de IVA para la alícuota ${i} (${porc}%).`)
     }

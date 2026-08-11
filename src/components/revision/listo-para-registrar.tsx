@@ -7,7 +7,6 @@ export function ListoParaRegistrar({ resultado }: { resultado: ResultadoListoPar
   const items = [
     resultado.condCompra,
     resultado.percepcionIibb,
-    resultado.percepcionIva3,
     resultado.formatoComp,
     resultado.tipoFactura,
     resultado.concepto,

@@ -5,7 +5,7 @@ import { GRUPOS, camposDelGrupo, type GrupoCampo, type DefCampo } from '@/lib/ca
 import { guardarCampo } from '@/server/app/acciones'
 import { totalImputado, formatMoneda } from '@/lib/formato'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
-import type { AlicuotaIva, CodigoImpuesto } from '@/server/tango/impuestos'
+import type { CodigoImpuesto } from '@/server/tango/impuestos'
 import { Campo } from './campo'
 import styles from './formulario.module.css'
 
@@ -44,16 +44,12 @@ function opcionesPara(
   clave: string,
   condicionesCompra: CondicionCompra[],
   codigosIibb: CodigoImpuesto[],
-  codigosPercepcionIva3: AlicuotaIva[],
 ): Opcion[] | undefined {
   if (clave === 'condcompra') {
     return condicionesCompra.map((c) => ({ valor: String(c.codigo), label: c.descripcion }))
   }
   if (clave === 'codpercibb') {
     return codigosIibb.map((c) => ({ valor: String(c.codigo), label: c.descripcion }))
-  }
-  if (clave === 'codpercepiva') {
-    return codigosPercepcionIva3.map((a) => ({ valor: String(a.codigo), label: a.descripcion }))
   }
   if (clave === 'tipoFactura') {
     return [
@@ -80,7 +76,6 @@ export function Formulario({
   soloLectura = false,
   condicionesCompra,
   codigosIibb,
-  codigosPercepcionIva3,
 }: {
   comprobanteId: number
   iniciales: Record<string, ValorInicial>
@@ -96,7 +91,6 @@ export function Formulario({
   // Ver Campo -- el resto de los campos los ignora.
   condicionesCompra: CondicionCompra[]
   codigosIibb: CodigoImpuesto[]
-  codigosPercepcionIva3: AlicuotaIva[]
 }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(iniciales).map(([k, v]) => [k, v.valor])),
@@ -153,7 +147,7 @@ export function Formulario({
                     valor={valores[def.clave] ?? ''}
                     confianza={iniciales[def.clave]?.confianza ?? null}
                     bloqueado={soloLectura}
-                    opciones={opcionesPara(def.clave, condicionesCompra, codigosIibb, codigosPercepcionIva3)}
+                    opciones={opcionesPara(def.clave, condicionesCompra, codigosIibb)}
                     onCambio={(v) => cambiar(def.clave, v)}
                     onFoco={onEnfocar}
                     onDesenfoque={() => onEnfocar(null)}

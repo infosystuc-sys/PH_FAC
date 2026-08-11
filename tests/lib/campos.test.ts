@@ -25,8 +25,8 @@ describe('catalogo de campos', () => {
     }
   })
 
-  it('la IA extrae 29 campos', () => {
-    expect(CAMPOS_IA.length).toBe(29)
+  it('la IA extrae 30 campos', () => {
+    expect(CAMPOS_IA.length).toBe(30)
   })
 
   it('los campos calculados y de imputacion no los extrae la IA', () => {
@@ -44,12 +44,9 @@ describe('catalogo de campos', () => {
     expect(campoPorClave('condcompra')?.tipo).toBe('select')
   })
 
-  it('codpercibb es un campo de tipo select', () => {
+  it('codpercibb es un campo de tipo select que la IA sugiere', () => {
     expect(campoPorClave('codpercibb')?.tipo).toBe('select')
-  })
-
-  it('codpercepiva es un campo de tipo select', () => {
-    expect(campoPorClave('codpercepiva')?.tipo).toBe('select')
+    expect(campoPorClave('codpercibb')?.extraePorIA).toBe(true)
   })
 
   it('tipoFactura es un campo de tipo select', () => {

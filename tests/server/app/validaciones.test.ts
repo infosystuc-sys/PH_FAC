@@ -268,30 +268,6 @@ describe('validarListoParaRegistrarEn', () => {
     })
   })
 
-  it('detecta la percepcion de IVA 3% aunque no este en el slot 2 (caso real: porciva3)', async () => {
-    await conRollback(async (tx) => {
-      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
-      await guardarCampoEn(tx, id, 'condcompra', '60')
-      // Mismo patron que la factura real AMX/Claro que reveló este bug:
-      // 21% en el slot 1, 27% en el slot 2, y recien el 3% (percepcion) en
-      // el slot 3 -- no siempre cae en impiva2.
-      await guardarCampoEn(tx, id, 'porciva1', '21')
-      await guardarCampoEn(tx, id, 'impiva1', '39.190,99')
-      await guardarCampoEn(tx, id, 'porciva2', '27')
-      await guardarCampoEn(tx, id, 'impiva2', '92.697,41')
-      await guardarCampoEn(tx, id, 'porciva3', '3')
-      await guardarCampoEn(tx, id, 'impiva3', '15.898,43')
-
-      const sinCodigo = await validarListoParaRegistrarEn(tx, id)
-      expect(sinCodigo.percepcionIva3.estado).toBe('error')
-      expect(sinCodigo.bloqueante).toBe(true)
-
-      await guardarCampoEn(tx, id, 'codpercepiva', '16')
-      const conCodigo = await validarListoParaRegistrarEn(tx, id)
-      expect(conCodigo.percepcionIva3.estado).toBe('ok')
-    })
-  })
-
   it('no bloqueante si todo esta completo', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
@@ -306,7 +282,6 @@ describe('validarListoParaRegistrarEn', () => {
       const r = await validarListoParaRegistrarEn(tx, id)
       expect(r.condCompra.estado).toBe('ok')
       expect(r.percepcionIibb.estado).toBe('ok')
-      expect(r.percepcionIva3.estado).toBe('ok')
       expect(r.formatoComp.estado).toBe('ok')
       expect(r.bloqueante).toBe(false)
     })

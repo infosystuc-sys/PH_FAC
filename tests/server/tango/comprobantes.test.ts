@@ -30,33 +30,25 @@ describe('buscarFacturaEnCpa04', () => {
 })
 
 describe('mapearAlicuotaIva', () => {
-  it('resuelve un porcentaje sin ambiguedad (21%) sin necesitar codigo elegido', async () => {
-    const r = await mapearAlicuotaIva(21, null)
+  it('resuelve un porcentaje sin ambiguedad (21%)', async () => {
+    const r = await mapearAlicuotaIva(21)
     expect(r).not.toBeNull()
     expect(r!.codigo).toBe(1)
     expect(r!.porcentaje).toBe(21)
   })
 
   it('resuelve 10,5% sin ambiguedad', async () => {
-    const r = await mapearAlicuotaIva(10.5, null)
+    const r = await mapearAlicuotaIva(10.5)
     expect(r!.codigo).toBe(3)
   })
 
-  it('al 3% (ambiguo), usa el codigo elegido por el operador', async () => {
-    const r16 = await mapearAlicuotaIva(3, '16')
-    expect(r16!.codigo).toBe(16)
-
-    const r15 = await mapearAlicuotaIva(3, '15')
-    expect(r15!.codigo).toBe(15)
-  })
-
-  it('al 3% sin codigo elegido, devuelve null (el llamador debe haber bloqueado esto antes)', async () => {
-    const r = await mapearAlicuotaIva(3, null)
-    expect(r).toBeNull()
+  it('al 3% (ambiguo entre 15 y 16), siempre resuelve al 15', async () => {
+    const r = await mapearAlicuotaIva(3)
+    expect(r!.codigo).toBe(15)
   })
 
   it('devuelve null si el porcentaje no matchea ningun codigo', async () => {
-    const r = await mapearAlicuotaIva(99, null)
+    const r = await mapearAlicuotaIva(99)
     expect(r).toBeNull()
   })
 })

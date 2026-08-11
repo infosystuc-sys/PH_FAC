@@ -128,13 +128,13 @@ export function validarTipoFactura(tipoFactura: string | null | undefined): Resu
   return { estado: 'ok', mensaje: 'Tipo de factura elegido.' }
 }
 
-const ETIQUETA_PERCEPCION: Record<'IIBB' | 'IVA3', string> = {
-  IIBB: 'la percepción de IIBB',
-  IVA3: 'la percepción de IVA del 3%',
-}
-
-export function validarPercepcionIva(
-  clave: 'IIBB' | 'IVA3',
+/**
+ * La percepción de IVA del 3% ya no pasa por acá: se resuelve siempre al
+ * código 15 (ver mapearAlicuotaIva en server/tango/comprobantes.ts), sin
+ * elección del operador. Queda solo la percepción de IIBB, que sí necesita
+ * el código de jurisdicción.
+ */
+export function validarPercepcionIibb(
   importe: string | null | undefined,
   codigo: string | null | undefined,
 ): ResultadoValidacion {
@@ -144,10 +144,7 @@ export function validarPercepcionIva(
   }
   const cod = (codigo ?? '').trim()
   if (!cod) {
-    return {
-      estado: 'error',
-      mensaje: `Elegí el código de ${ETIQUETA_PERCEPCION[clave]} antes de registrar.`,
-    }
+    return { estado: 'error', mensaje: 'Elegí el código de la percepción de IIBB antes de registrar.' }
   }
   return { estado: 'ok', mensaje: 'Código elegido.' }
 }

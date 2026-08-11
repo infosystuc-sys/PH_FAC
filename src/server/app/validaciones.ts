@@ -12,7 +12,7 @@ import {
   validarCae,
   validarFormatoNComp,
   validarCondCompra,
-  validarPercepcionIva,
+  validarPercepcionIibb,
   validarTipoFactura,
   type ResultadoValidacion,
 } from '@/lib/validaciones'
@@ -129,7 +129,6 @@ export async function validarComprobante(id: number, detallePrevio?: Detalle): P
 export type ResultadoListoParaRegistrar = {
   condCompra: ResultadoValidacion
   percepcionIibb: ResultadoValidacion
-  percepcionIva3: ResultadoValidacion
   formatoComp: ResultadoValidacion
   tipoFactura: ResultadoValidacion
   concepto: ResultadoValidacion
@@ -152,21 +151,12 @@ export async function validarListoParaRegistrarEn(
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
 
   const condCompra = validarCondCompra(valores.condcompra)
-  const percepcionIibb = validarPercepcionIva('IIBB', valores.perciibb, valores.codpercibb)
-  // El 3% no vive en un slot fijo: verificado en vivo contra un comprobante
-  // real (AMX ARGENTINA, factura 1340-00147868) que lo trae en porciva3/
-  // impiva3, no en el slot 2 que asumia una version anterior de este
-  // codigo. Se escanean los 5 slots y se usa el importe del que tenga
-  // porcentaje 3 -- si ninguno lo tiene, no aplica (ok, no bloqueante).
-  const slotIva3 = [1, 2, 3, 4, 5].find((i) => Number(valores[`porciva${i}`]) === 3)
-  const importeIva3 = slotIva3 ? valores[`impiva${slotIva3}`] : null
-  const percepcionIva3 = validarPercepcionIva('IVA3', importeIva3, valores.codpercepiva)
+  const percepcionIibb = validarPercepcionIibb(valores.perciibb, valores.codpercibb)
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)
 
-  // El concepto solo aplica si se eligio "por conceptos" -- igual criterio
-  // que percepcionIva3 cuando no hay slot al 3%: 'ok'/"No aplica." en vez de
-  // forzar un chequeo que no corresponde.
+  // El concepto solo aplica si se eligio "por conceptos" -- 'ok'/"No
+  // aplica." en vez de forzar un chequeo que no corresponde.
   let concepto: ResultadoValidacion = { estado: 'ok', mensaje: 'No aplica.' }
   if (valores.tipoFactura === 'conceptos') {
     const codProvee = (valores.codprovee ?? '').trim()
@@ -176,11 +166,11 @@ export async function validarListoParaRegistrarEn(
       : { estado: 'error', mensaje: 'Este proveedor no tiene un concepto configurado en Tango.' }
   }
 
-  const bloqueante = [condCompra, percepcionIibb, percepcionIva3, formatoComp, tipoFactura, concepto].some(
+  const bloqueante = [condCompra, percepcionIibb, formatoComp, tipoFactura, concepto].some(
     (v) => v.estado === 'error',
   )
 
-  return { condCompra, percepcionIibb, percepcionIva3, formatoComp, tipoFactura, concepto, bloqueante }
+  return { condCompra, percepcionIibb, formatoComp, tipoFactura, concepto, bloqueante }
 }
 
 export async function validarListoParaRegistrar(

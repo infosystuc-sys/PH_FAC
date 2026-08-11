@@ -8,7 +8,7 @@ import {
   validarDuplicado,
   validarFormatoNComp,
   validarCondCompra,
-  validarPercepcionIva,
+  validarPercepcionIibb,
   validarTipoFactura,
 } from '@/lib/validaciones'
 
@@ -150,22 +150,17 @@ describe('validarTipoFactura', () => {
   })
 })
 
-describe('validarPercepcionIva', () => {
+describe('validarPercepcionIibb', () => {
   it('ok si el importe esta vacio (no aplica)', () => {
-    expect(validarPercepcionIva('IIBB', '', null).estado).toBe('ok')
-    expect(validarPercepcionIva('IIBB', null, null).estado).toBe('ok')
+    expect(validarPercepcionIibb('', null).estado).toBe('ok')
+    expect(validarPercepcionIibb(null, null).estado).toBe('ok')
   })
   it('ok si el importe tiene valor y el codigo tambien', () => {
-    expect(validarPercepcionIva('IIBB', '13.248,69', '60').estado).toBe('ok')
+    expect(validarPercepcionIibb('13.248,69', '60').estado).toBe('ok')
   })
   it('error si el importe tiene valor pero falta el codigo', () => {
-    const r = validarPercepcionIva('IIBB', '13.248,69', null)
+    const r = validarPercepcionIibb('13.248,69', null)
     expect(r.estado).toBe('error')
     expect(r.mensaje).toContain('IIBB')
-  })
-  it('mismo criterio para IVA3, con mensaje propio', () => {
-    const r = validarPercepcionIva('IVA3', '9.689,47', '')
-    expect(r.estado).toBe('error')
-    expect(r.mensaje).toContain('IVA')
   })
 })

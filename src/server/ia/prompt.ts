@@ -1,4 +1,5 @@
 import { CAMPOS_IA } from '@/lib/campos'
+import { JURISDICCIONES_IIBB } from '@/lib/percepcionIibb'
 
 /**
  * Va en el bloque `system` con cache_control. Tiene que superar los 512
@@ -48,6 +49,14 @@ export const PROMPT_EXTRACCION = [
   '   las repartas entre los pares. Una percepción de IVA ocupa un par como',
   '   cualquier alícuota; la percepción de ingresos brutos va aparte, en',
   '   perciibb, y el impuesto interno en impint.',
+  '8. Si hay una percepción de Ingresos Brutos (perciibb con valor), fijate',
+  '   qué jurisdicción figura junto a esa línea del comprobante (suele decir',
+  '   algo como "Perc. IIBB Tucumán RG 22/18" o similar) y devolvé en',
+  '   codpercibb el código de Tango que corresponde:',
+  ...JURISDICCIONES_IIBB.map((j) => `   - "${j.codigo}" para ${j.jurisdiccion}.`),
+  '   Si no podés determinar con confianza cuál de esas cuatro jurisdicciones',
+  '   es, o el comprobante menciona una jurisdicción distinta, dejá codpercibb',
+  '   vacío -- no adivines un código.',
   '',
   'Campos a extraer:',
   '',
