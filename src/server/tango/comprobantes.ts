@@ -117,6 +117,13 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const valores: Record<string, string | null | undefined> = {}
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
 
+  // 'tarjeta' (liquidacion de tarjeta) todavia no tiene logica de registro
+  // propia -- se bloquea antes de cualquier lectura/escritura, mismo
+  // criterio que el resto de los chequeos tempranos de esta funcion.
+  if (valores.tipoFactura === 'tarjeta') {
+    throw new Error('El registro de liquidaciones de tarjeta todavía no está implementado.')
+  }
+
   const codProvee = (valores.codprovee ?? '').trim()
   const proveedorRow = await tx.request().input('cod', sql.VarChar(6), codProvee).query(`
     SELECT LTRIM(RTRIM(ISNULL(NOM_PROVEE,''))) AS razon, LTRIM(RTRIM(ISNULL(N_CUIT,''))) AS cuit,

@@ -55,6 +55,11 @@ function opcionesPara(
     return [
       { valor: 'conceptos', label: 'Por conceptos' },
       { valor: 'articulos', label: 'Por artículos' },
+      // Todavia no tiene logica de registro propia -- validarTipoFactura
+      // bloquea el registro si se elige esta opcion. Se agrega igual al
+      // selector porque el operador tiene que poder clasificar el
+      // comprobante aunque el registro para este tipo llegue despues.
+      { valor: 'tarjeta', label: 'Liquidación de tarjeta' },
     ]
   }
   return undefined

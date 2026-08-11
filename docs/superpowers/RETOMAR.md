@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-11. Restricción de percepciones de IVA/IIBB completa, en `master` directamente (cambio chico, sin rama propia — ver sección abajo). Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
+**Última actualización:** 2026-08-11. Agregado el tercer valor de `tipoFactura` ("Liquidación de tarjeta"), bloqueado hasta que se implemente (ver "Cosas que hay que arrastrar" más abajo). Restricción de percepciones de IVA/IIBB completa. Todo en `master` directamente, sin rama propia. Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
 
@@ -18,6 +18,13 @@ Dos decisiones de negocio, ambas explícitas del usuario:
 **Un hallazgo real, no una suposición del usuario:** los códigos `64`/`66` que el usuario mencionó originalmente ("64 para bancarias") **no son percepciones en Tango — son retenciones** (`CPA14.TIPO_ALI='OT'`, `PERCEPCION=false`, descripciones "RET IIBB BANCARIOS"/"RET IIBB SIRCREB"). Tratarlos como percepción habría escrito mal el dato en `CPA18`. Verificado contra la base real antes de implementar; el usuario confirmó que son un caso aparte, fuera de este alcance. También se corrigió sobre la marcha: el código `68` (Formosa) tiene `PERCEPCION=true` (es una percepción real) pero está clasificado como `TIPO_ALI='OT'`, no `'IB'` — por eso el filtro de `codigosIibb` en `page.tsx` usa una lista explícita de códigos (`JURISDICCIONES_IIBB`), no `TIPO_ALI`, que resultó no ser confiable para esto.
 
 **Verificado en vivo, sin usar el navegador para la parte de IA** (para no gastar una llamada más de la cuenta): se corrió `extraerDePdf` directo contra el PDF real de AMX/Claro (que dice "Perc. IIBB Tucumán RG 22/18") — la IA devolvió `codpercibb: "60"` con 95% de confianza. Después sí se verificó en el navegador (con datos insertados a mano, sin gastar otra llamada) que el select se ve pre-cargado en "PERCEPCION IIBB TUC" con el badge 95%, que la lista de opciones tiene exactamente las 4 jurisdicciones esperadas (ni retenciones ni otros códigos de `CPA14`), y que el selector de percepción de IVA ya no aparece en ningún lado del formulario.
+
+**Dos ajustes posteriores, mismo día:**
+
+1. **No era un bug de lógica.** El usuario reportó que la sugerencia automática "no funcionaba" en un comprobante real (`Comprobante_147868-CLARO.pdf`, ID 1003). La causa: ese comprobante se había extraído contra un proceso de `next dev` que llevaba corriendo desde antes de este cambio — Node no recarga en caliente el worker de la cola en background (`instrumentation.ts`), así que seguía usando el prompt/schema viejo, sin `codpercibb`. Al reprocesar con el servidor reiniciado, sugirió `60` correctamente. Lección para la próxima: si algo "no toma" un cambio de servidor después de editar código, reiniciar el `pnpm dev` antes de sospechar de la lógica.
+2. **El panel "Listo para registrar" ahora muestra la descripción real de Tango** para la percepción de IIBB elegida (`Percepción IIBB: 60 — PERCEPCION IIBB TUC.`), no solo "Código elegido." — mismo criterio que ya usaba el chequeo de concepto de las facturas por conceptos. Pedido explícito del usuario, verificado en el comprobante real 1003.
+
+**Tercer valor de `tipoFactura`, agregado el mismo día:** el usuario adelantó que además de "por conceptos" y "por artículos" va a haber una tercera categoría, **liquidación de tarjeta**, con interpretación de IA propia — de momento fuera de alcance ("en esta etapa nos vamos a concentrar en las de concepto"). Se agregó la opción al selector (`src/components/revision/formulario.tsx`) para que el operador ya pueda clasificar el comprobante, pero `validarTipoFactura` bloquea el registro con un mensaje explícito si se elige, y `registrarComprobanteEn` tiene el mismo guard al principio de la función (antes de cualquier lectura/escritura), no solo en la UI. Los códigos `64`/`66` (retenciones de IIBB, ver arriba) quedan anotados como candidatos para esta categoría cuando se implemente — no para "por conceptos".
 
 ---
 
@@ -229,6 +236,10 @@ Salió de la revisión final de la Fase 3. Se usaba solo para el chequeo de dupl
 ### 9. Sin índice en `PHF_COMPROBANTE.FECHA_ALTA`
 
 Salió de la revisión final de la Fase 3. La navegación J/K (Task 9) y la bandeja ordenan por `FECHA_ALTA DESC, ID DESC` en cada carga. Al volumen actual no importa; a 20-100 comprobantes/día son ~25.000 filas/año. La Fase 4 no tocó `src/scripts/migrate.ts` (no hizo falta ninguna tabla ni columna nueva), así que sigue pendiente. Agregar `IX_PHF_COMP_ALTA` en la próxima migración que toque el esquema propio, no hace falta una migración solo para esto.
+
+### 10. Registro de "liquidaciones de tarjeta" — sin implementar
+
+Salió de la conversación del 2026-08-11 sobre percepciones. El usuario adelantó una tercera categoría de comprobante (además de "por conceptos" y "por artículos"), con su propia interpretación de IA — todavía sin definir cómo. Hoy el selector `tipoFactura` ya tiene la opción "Liquidación de tarjeta" (`valor: 'tarjeta'`), pero `validarTipoFactura` la bloquea con un mensaje explícito ("El registro de liquidaciones de tarjeta todavía no está implementado.") tanto en el panel "Listo para registrar" como dentro de `registrarComprobanteEn` — el operador puede clasificar el comprobante, pero no se puede registrar todavía. Los códigos `64` (RET IIBB BANCARIOS) y `66` (RET IIBB SIRCREB) de `CPA14` son candidatos a usarse acá cuando se implemente, según lo que dijo el usuario — no están confirmados ni verificados en contexto de una liquidación de tarjeta real, solo anotados como pista.
 
 ---
 

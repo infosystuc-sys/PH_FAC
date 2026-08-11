@@ -148,6 +148,11 @@ describe('validarTipoFactura', () => {
     expect(validarTipoFactura(null).estado).toBe('error')
     expect(validarTipoFactura(undefined).estado).toBe('error')
   })
+  it('error si es "tarjeta": todavia no tiene logica de registro', () => {
+    const r = validarTipoFactura('tarjeta')
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toMatch(/todavía no está implementado/i)
+  })
 })
 
 describe('validarPercepcionIibb', () => {

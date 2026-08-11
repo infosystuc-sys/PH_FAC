@@ -93,8 +93,10 @@ export default async function RevisionPage({
 
   const codProveeCampo = detalle.campos.find((c) => c.clave === 'codprovee')?.valorFinal ?? null
   const tipoFacturaValor = detalle.campos.find((c) => c.clave === 'tipoFactura')?.valorFinal ?? null
+  // 'conceptos' y 'tarjeta' no se atan a un remito -- ver validarTipoFactura.
+  const sinRemito = tipoFacturaValor === 'conceptos' || tipoFacturaValor === 'tarjeta'
   const remitosPendientes =
-    tipoFacturaValor !== 'conceptos' && codProveeCampo && detalle.renglones.length > 0
+    !sinRemito && codProveeCampo && detalle.renglones.length > 0
       ? await buscarRemitosPendientes(codProveeCampo)
       : []
 

@@ -279,3 +279,19 @@ describe('registrarComprobanteEn con tipoFactura=conceptos', () => {
     })
   }, 30000)
 })
+
+describe('registrarComprobanteEn con tipoFactura=tarjeta', () => {
+  it('bloquea el registro antes de cualquier lectura/escritura (todavia no implementado)', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'tarjeta')
+
+      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/todavía no está implementado/i)
+
+      const comp = await tx.request().input('id', sql.Int, id)
+        .query(`SELECT ESTADO, TANGO_NCOMP_IN_C FROM PHF_COMPROBANTE WHERE ID=@id`)
+      expect(comp.recordset[0].ESTADO).toBe('confirmado')
+      expect(comp.recordset[0].TANGO_NCOMP_IN_C).toBeNull()
+    })
+  }, 15000)
+})
