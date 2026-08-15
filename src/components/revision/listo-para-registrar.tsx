@@ -6,7 +6,9 @@ const GLIFO = { ok: '✓', advertencia: '!', error: '✕' } as const
 export function ListoParaRegistrar({ resultado }: { resultado: ResultadoListoParaRegistrar }) {
   const items = [
     resultado.condCompra,
+    resultado.alicuotas,
     resultado.percepcionIibb,
+    resultado.varios,
     resultado.formatoComp,
     resultado.tipoFactura,
     resultado.concepto,

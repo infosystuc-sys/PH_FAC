@@ -4,9 +4,11 @@ import { conTransaccion } from '../db/tx'
 import { obtenerDetalleEn, auditarEn } from '@/server/app/detalle'
 import { nComp as armarNComp, letraComprobante, parsearFechaArg } from '@/lib/validaciones'
 import { parsearImporte } from '@/lib/formato'
+import { resolverAlicuotas, resolverCodigoIva } from '@/lib/alicuotas'
+import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
 import { listarCondicionesCompra } from './condicionesCompra'
 import { usuarioActual } from '@/lib/usuario'
-import { listarAlicuotasIva } from './impuestos'
+import { listarAlicuotasIva, listarCodigosImpuesto } from './impuestos'
 import { buscarConceptoProveedor, type ConceptoProveedor } from './conceptos'
 
 export type ComprobanteCpa04 = {
@@ -49,23 +51,17 @@ export async function buscarFacturaEnCpa04(
 
 /**
  * Resuelve un porcentaje de alicuota extraido del comprobante al COD_IVA
- * real de CPA14. Verificado contra la base: la mayoria de los porcentajes
- * (0%, 10.5%, 21%, 27%) tienen un unico codigo posible. El 3% es ambiguo
- * entre COD_IVA 15 ("PERCEPCION R.G.3337") y 16 ("PERCEP. DE IVA") --
- * decision del usuario (2026-08-10): siempre usar 15, sin pedirle al
- * operador que elija.
+ * real de CPA14. La logica vive en `src/lib/alicuotas.ts` porque el panel
+ * de "listo para registrar" tiene que resolver exactamente igual: si los
+ * dos criterios se separaran, el panel diria "listo" y el registro
+ * fallaria igual.
  */
 export async function mapearAlicuotaIva(
   porcentaje: number,
 ): Promise<{ codigo: number; porcentaje: number } | null> {
   const alicuotas = await listarAlicuotasIva()
-  const candidatos = alicuotas.filter((a) => a.porcentaje === porcentaje)
-
-  if (candidatos.length === 0) return null
-  if (candidatos.length === 1) return { codigo: candidatos[0].codigo, porcentaje }
-
-  const preferido = candidatos.find((a) => a.codigo === 15)
-  return preferido ? { codigo: preferido.codigo, porcentaje } : null
+  const resuelta = resolverCodigoIva(porcentaje, alicuotas)
+  return resuelta ? { codigo: resuelta.codigo, porcentaje } : null
 }
 
 export type RegistroTango = { ncompInC: number; tComp: string; nComp: string }
@@ -79,24 +75,29 @@ function horaActual(): string {
 }
 
 /**
- * Arma las hasta 5 alicuotas (codigo/porcentaje/importe) a partir de los
- * campos porcivaN/impivaN. Devuelve solo las posiciones con importe > 0.
+ * Arma las hasta 5 alicuotas (codigo/porcentaje/importe) que van a los
+ * slots de CPA04, resolviendo con la misma funcion que usa el panel de
+ * "listo para registrar" -- ver el comentario de `resolverAlicuotas`.
+ *
+ * Se lee la lista de CPA14 una sola vez y se resuelven las cinco en
+ * memoria, en vez de una consulta por slot.
  */
 async function armarAlicuotas(
   valores: Record<string, string | null | undefined>,
 ): Promise<{ codigo: number; porcentaje: number; importe: number }[]> {
-  const resultado: { codigo: number; porcentaje: number; importe: number }[] = []
-  for (let i = 1; i <= 5; i++) {
-    const porc = parsearImporte(valores[`porciva${i}`])
-    const imp = parsearImporte(valores[`impiva${i}`])
-    if (imp <= 0) continue
-    const mapeado = await mapearAlicuotaIva(porc)
-    if (!mapeado) {
-      throw new Error(`No se pudo resolver el código de IVA para la alícuota ${i} (${porc}%).`)
-    }
-    resultado.push({ codigo: mapeado.codigo, porcentaje: porc, importe: imp })
+  const lineas = resolverAlicuotas(valores, await listarAlicuotasIva())
+
+  const sinCodigo = lineas.find((l) => l.estado === 'sin-codigo')
+  if (sinCodigo) {
+    throw new Error(
+      `No se pudo resolver el código de IVA para la alícuota ${sinCodigo.slot} (${sinCodigo.porcentaje}%).`,
+    )
   }
-  return resultado
+
+  // Las `omitida` (alicuota 0%) quedan afuera por norma de registracion.
+  return lineas
+    .filter((l) => l.estado === 'registra')
+    .map((l) => ({ codigo: l.alicuota!.codigo, porcentaje: l.porcentaje, importe: l.importe }))
 }
 
 export async function registrarComprobanteEn(tx: sql.Transaction, id: number): Promise<RegistroTango> {
@@ -338,12 +339,29 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         0, 80
       )`)
 
-  // 4. CPA18 + CTA06 (percepciones).
-  const percepciones: { codigo: string; importe: number }[] = []
-  const impIibb = parsearImporte(valores.perciibb)
-  if (impIibb > 0) percepciones.push({ codigo: (valores.codpercibb ?? '').trim(), importe: impIibb })
-  const impInt = parsearImporte(valores.impint)
-  if (impInt > 0) percepciones.push({ codigo: '40', importe: impInt })
+  // 4. CPA18 + CTA06 (percepciones de IIBB e impuestos varios). Una fila
+  // por slot con importe, resueltas con las mismas funciones que usa el
+  // panel de la revision: si el panel dijo "listo", esto no puede fallar.
+  const lineasPercep = resolverPercepciones(valores)
+  const percepSinCodigo = lineasPercep.find((l) => l.estado === 'sin-codigo')
+  if (percepSinCodigo) {
+    throw new Error(
+      `No se reconoce la jurisdicción "${percepSinCodigo.texto}" de la percepción ${percepSinCodigo.slot}.`,
+    )
+  }
+
+  const lineasVarios = resolverVarios(valores, await listarCodigosImpuesto())
+  const variosSinCodigo = lineasVarios.find((l) => l.estado === 'sin-codigo')
+  if (variosSinCodigo) {
+    throw new Error(
+      `El impuesto vario ${variosSinCodigo.slot} no tiene un código de Tango válido.`,
+    )
+  }
+
+  const percepciones: { codigo: string; importe: number }[] = [
+    ...lineasPercep.map((l) => ({ codigo: l.codigo!.codigo, importe: l.importe })),
+    ...lineasVarios.map((l) => ({ codigo: l.codigo, importe: l.importe })),
+  ]
 
   for (const p of percepciones) {
     await tx.request()

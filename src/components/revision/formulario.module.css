@@ -107,3 +107,44 @@
   font-size: 13.5px;
   color: var(--texto);
 }
+
+/* Celda derivada de la fila de alicuota: a que alicuota de Tango resuelve
+   el porcentaje. Comparte la caja del input (alto, radio, padding) para
+   que la fila lea como una sola unidad, pero con el fondo de panel que ya
+   distingue lo calculado de lo editable (mismo criterio que
+   .valorCalculado). Los tonos salen de las variables semanticas del
+   sistema, asi habla el mismo idioma que el panel de validaciones. */
+.derivado {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 11px;
+  border-radius: 7px;
+  border: 1px solid var(--borde-input);
+  background: var(--fondo-panel);
+  font-size: 12.5px;
+  color: var(--texto-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.derivadoVacio {
+  color: var(--texto-6);
+}
+
+.derivadoOk {
+  color: var(--texto-2);
+}
+
+.derivadoAlerta {
+  border-color: var(--alerta-borde);
+  background: var(--alerta-fondo);
+  color: var(--alerta);
+}
+
+.derivadoError {
+  border-color: var(--error-borde);
+  background: var(--error-fondo);
+  color: var(--error);
+}

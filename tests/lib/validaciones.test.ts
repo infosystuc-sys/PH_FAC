@@ -8,7 +8,6 @@ import {
   validarDuplicado,
   validarFormatoNComp,
   validarCondCompra,
-  validarPercepcionIibb,
   validarTipoFactura,
 } from '@/lib/validaciones'
 
@@ -70,7 +69,7 @@ describe('validarTotales', () => {
   it('ok si totalImputado coincide con el total leido (tolerancia de un centavo)', () => {
     const v = { neto: '529.947,50', porciva1: '21.0', impiva1: '39.190,99',
       porciva2: '27.0', impiva2: '92.697,41', porciva3: '3', impiva3: '15.898,43',
-      perciibb: '13.248,69', total: '690.983,02' }
+      imppercep1: '13.248,69', total: '690.983,02' }
     expect(validarTotales(v).estado).toBe('ok')
   })
   it('advertencia con la diferencia exacta si no coinciden', () => {
@@ -155,17 +154,3 @@ describe('validarTipoFactura', () => {
   })
 })
 
-describe('validarPercepcionIibb', () => {
-  it('ok si el importe esta vacio (no aplica)', () => {
-    expect(validarPercepcionIibb('', null).estado).toBe('ok')
-    expect(validarPercepcionIibb(null, null).estado).toBe('ok')
-  })
-  it('ok si el importe tiene valor y el codigo tambien', () => {
-    expect(validarPercepcionIibb('13.248,69', '60').estado).toBe('ok')
-  })
-  it('error si el importe tiene valor pero falta el codigo', () => {
-    const r = validarPercepcionIibb('13.248,69', null)
-    expect(r.estado).toBe('error')
-    expect(r.mensaje).toContain('IIBB')
-  })
-})

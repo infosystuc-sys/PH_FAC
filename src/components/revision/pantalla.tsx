@@ -13,6 +13,7 @@ import type { RenglonGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
 import type { CodigoImpuesto } from '@/server/tango/impuestos'
+import type { AlicuotaTango } from '@/lib/alicuotas'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './pantalla.module.css'
 
@@ -59,7 +60,9 @@ export function Pantalla({
   validaciones,
   listoParaRegistrar,
   condicionesCompra,
-  codigosIibb,
+  codigosImpuesto,
+  alicuotasIva,
+  concepto,
   remitosPendientes,
   soloLectura = false,
 }: {
@@ -76,7 +79,9 @@ export function Pantalla({
   validaciones: Validaciones
   listoParaRegistrar: ResultadoListoParaRegistrar | null
   condicionesCompra: CondicionCompra[]
-  codigosIibb: CodigoImpuesto[]
+  codigosImpuesto: CodigoImpuesto[]
+  alicuotasIva: AlicuotaTango[]
+  concepto: { codConcepto: string; descripcion: string } | null
   remitosPendientes: RemitoPendiente[]
   // Comprobante `registrado`: terminal e inmutable. Se pasa a Formulario
   // para que los inputs queden de solo lectura (ver comentario ahí); el
@@ -105,7 +110,9 @@ export function Pantalla({
           onEnfocar={setEnfocado}
           soloLectura={soloLectura}
           condicionesCompra={condicionesCompra}
-          codigosIibb={codigosIibb}
+          codigosImpuesto={codigosImpuesto}
+          alicuotasIva={alicuotasIva}
+          concepto={concepto}
         />
         <Renglones renglones={renglones} />
         <RemitosPendientes comprobanteId={comprobanteId} renglones={renglones} remitos={remitosPendientes} />

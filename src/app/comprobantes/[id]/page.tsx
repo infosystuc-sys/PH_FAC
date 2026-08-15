@@ -3,11 +3,11 @@ import { obtenerEncabezado, obtenerVecinos } from '@/server/app/comprobantes'
 import { obtenerDetalle } from '@/server/app/detalle'
 import { validarComprobante, validarListoParaRegistrar } from '@/server/app/validaciones'
 import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
-import { listarCodigosImpuesto } from '@/server/tango/impuestos'
+import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impuestos'
 import { buscarRemitosPendientes } from '@/server/tango/remitos'
+import { buscarConceptoProveedor } from '@/server/tango/conceptos'
 import { probarConexion } from '@/server/db/pool'
 import { leerFiltro } from '@/lib/estados'
-import { JURISDICCIONES_IIBB } from '@/lib/percepcionIibb'
 import { Pantalla } from '@/components/revision/pantalla'
 import { BarraAcciones } from '@/components/revision/barra-acciones'
 import { PanelProcesando } from '@/components/revision/panel-procesando'
@@ -61,21 +61,15 @@ export default async function RevisionPage({
   // paralelo en vez de en serie. `validarComprobante` queda afuera del
   // Promise.all porque necesita el `detalle` ya resuelto (se lo pasa para
   // no releer PHF_CAMPO/PHF_RENGLON/PHF_AUDITORIA una segunda vez adentro).
-  const [vecinos, detalle, condicionesCompra, codigosImpuesto, conexion] = await Promise.all([
-    obtenerVecinos({ filtro, query }, id),
-    obtenerDetalle(id),
-    mostrarRevision ? listarCondicionesCompra() : Promise.resolve([]),
-    mostrarRevision ? listarCodigosImpuesto() : Promise.resolve([]),
-    probarConexion(),
-  ])
-
-  // Restringido a mano a las jurisdicciones que la app maneja hoy (ver
-  // JURISDICCIONES_IIBB) -- CPA14 tiene otros codigos que arrancan "IIBB"
-  // pero son retenciones, no percepciones, y mezclarlos escribiria mal el
-  // dato en CPA18.
-  const codigosIibb = codigosImpuesto.filter((c) =>
-    JURISDICCIONES_IIBB.some((j) => j.codigo === String(c.codigo)),
-  )
+  const [vecinos, detalle, condicionesCompra, codigosImpuesto, alicuotasIva, conexion] =
+    await Promise.all([
+      obtenerVecinos({ filtro, query }, id),
+      obtenerDetalle(id),
+      mostrarRevision ? listarCondicionesCompra() : Promise.resolve([]),
+      mostrarRevision ? listarCodigosImpuesto() : Promise.resolve([]),
+      mostrarRevision ? listarAlicuotasIva() : Promise.resolve([]),
+      probarConexion(),
+    ])
 
   const qs = new URLSearchParams()
   if (filtro !== 'todos') qs.set('filtro', filtro)
@@ -88,8 +82,13 @@ export default async function RevisionPage({
   const hayCorrecciones = detalle.campos.some((c) => c.corregido)
 
   const validaciones = mostrarRevision ? await validarComprobante(id, detalle) : null
-  const listoParaRegistrar =
-    encabezado.estado === 'confirmado' ? await validarListoParaRegistrar(id, detalle) : null
+  // Se calcula durante toda la revisión, no solo en `confirmado`: es el
+  // panel que muestra a qué alícuota y a qué percepción de Tango va cada
+  // línea del comprobante, y eso es justamente lo que el operador tiene
+  // que poder cotejar contra el PDF mientras revisa. Calcularlo recién al
+  // confirmar dejaba esa correspondencia invisible en el único momento en
+  // que sirve para corregirla.
+  const listoParaRegistrar = mostrarRevision ? await validarListoParaRegistrar(id, detalle) : null
 
   const codProveeCampo = detalle.campos.find((c) => c.clave === 'codprovee')?.valorFinal ?? null
   const tipoFacturaValor = detalle.campos.find((c) => c.clave === 'tipoFactura')?.valorFinal ?? null
@@ -99,6 +98,11 @@ export default async function RevisionPage({
     !sinRemito && codProveeCampo && detalle.renglones.length > 0
       ? await buscarRemitosPendientes(codProveeCampo)
       : []
+
+  // El concepto sale de la ficha del proveedor en Tango, asi que se
+  // resuelve aca: depende de codprovee, y cuando el operador elige otro
+  // proveedor `elegirProveedor` hace revalidatePath y esto se recalcula.
+  const concepto = codProveeCampo ? await buscarConceptoProveedor(codProveeCampo) : null
 
   return (
     <div className={styles.pantalla}>
@@ -145,7 +149,9 @@ export default async function RevisionPage({
           validaciones={validaciones}
           listoParaRegistrar={listoParaRegistrar}
           condicionesCompra={condicionesCompra}
-          codigosIibb={codigosIibb}
+          codigosImpuesto={codigosImpuesto}
+          alicuotasIva={alicuotasIva}
+          concepto={concepto}
           remitosPendientes={remitosPendientes}
           // `registrado` es terminal e inmutable (mismo criterio que ya
           // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El

@@ -13,8 +13,8 @@ describe('totalImputado', () => {
       porciva3: '3',    impiva3: '15.898,43',
       porciva4: '',     impiva4: '',
       porciva5: '',     impiva5: '',
-      perciibb: '13.248,69',
-      impint: '',
+      imppercep1: '13.248,69',
+      impvarios1: '',
       total: '690.983,02',
     }
     expect(totalImputado(v)).toBeCloseTo(690983.02, 2)
@@ -22,7 +22,7 @@ describe('totalImputado', () => {
 
   it('no suma los porcentajes de alicuota', () => {
     // Si los porciva entraran en la suma, esto daría 121 en vez de 100.
-    const v = { neto: '100,00', porciva1: '21.0', porciva2: '', impiva1: '', perciibb: '' }
+    const v = { neto: '100,00', porciva1: '21.0', porciva2: '', impiva1: '', imppercep1: '' }
     expect(totalImputado(v)).toBeCloseTo(100, 2)
   })
 

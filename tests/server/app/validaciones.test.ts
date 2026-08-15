@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest'
 import sql from 'mssql'
+import { TIPOS_FACTURA, analizaCampo } from '@/lib/tipoFactura'
 import { conRollback } from '@/server/db/tx'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
@@ -225,6 +226,48 @@ describe('elegirProveedorEn resuelve la validacion bloqueante de proveedor', () 
   })
 })
 
+describe('el CAE solo se valida en los tipos que lo analizan', () => {
+  it.each(TIPOS_FACTURA.map((t) => t.clave))(
+    'en %s el item de CAE aparece solo si ese tipo analiza el campo',
+    async (tipo) => {
+      // Hoy ningun tipo lo analiza, asi que el item no se muestra en
+      // ninguno. Antes esto devolvia advertencia "CAE con formato invalido"
+      // en TODO comprobante, que es la forma mas rapida de que el operador
+      // deje de leer el panel. El aserto se ata a analizaCampo y no a un
+      // null fijo: si un tipo vuelve a pedir el CAE, el item tiene que
+      // volver con el.
+      await conRollback(async (tx) => {
+        const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+        await guardarCampoEn(tx, id, 'tipoFactura', tipo)
+
+        const r = await validarComprobanteEn(tx, id)
+        if (analizaCampo(tipo, 'cae')) expect(r.cae).not.toBeNull()
+        else expect(r.cae).toBeNull()
+      })
+    },
+  )
+})
+
+describe('CUIT propio: el emisor no puede ser la propia empresa', () => {
+  it('bloquea cuando la IA cargo el CUIT del cliente en vez del proveedor', async () => {
+    // El bug real: en una factura de LIETUVA SRL a RAM SRL, la IA cargo
+    // como proveedor los datos del cliente. El prompt es la primera
+    // barrera; esta es la que agarra el caso si igual se equivoca.
+    const propio = process.env.PHF_CUIT_PROPIO
+    if (!propio) return // sin CUIT configurado la barrera no aplica
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'cuit', propio)
+
+      const r = await validarComprobanteEn(tx, id)
+      expect(r.proveedor.estado).toBe('error')
+      expect(r.proveedor.mensaje).toMatch(/propia empresa/i)
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+})
+
 describe('validarListoParaRegistrarEn', () => {
   it('bloqueante si falta condcompra', async () => {
     await conRollback(async (tx) => {
@@ -246,7 +289,7 @@ describe('validarListoParaRegistrarEn', () => {
       await guardarCampoEn(tx, id, 'ptovta', '0011')
       await guardarCampoEn(tx, id, 'nro', '63576')
       await guardarCampoEn(tx, id, 'condcompra', '60')
-      await guardarCampoEn(tx, id, 'perciibb', '13.248,69')
+      await guardarCampoEn(tx, id, 'imppercep1', '13.248,69')
 
       const r = await validarListoParaRegistrarEn(tx, id)
       expect(r.percepcionIibb.estado).toBe('error')
@@ -254,16 +297,18 @@ describe('validarListoParaRegistrarEn', () => {
     })
   })
 
-  it('muestra la descripcion real de Tango cuando el codigo de IIBB esta elegido', async () => {
+  it('muestra a que codigo de Tango resuelve la jurisdiccion leida', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
       await guardarCampoEn(tx, id, 'condcompra', '60')
-      await guardarCampoEn(tx, id, 'perciibb', '13.248,69')
-      await guardarCampoEn(tx, id, 'codpercibb', '60')
+      await guardarCampoEn(tx, id, 'imppercep1', '13.248,69')
+      await guardarCampoEn(tx, id, 'percep1', 'Tucumán')
 
       const r = await validarListoParaRegistrarEn(tx, id)
       expect(r.percepcionIibb.estado).toBe('ok')
-      expect(r.percepcionIibb.mensaje).toBe('Percepción IIBB: 60 — PERCEPCION IIBB TUC.')
+      // El operador escribe/lee la jurisdiccion; el codigo lo resuelve la
+      // app. El mensaje tiene que mostrar los dos para que se pueda cotejar.
+      expect(r.percepcionIibb.mensaje).toBe('Percepciones IIBB: Tucumán → 60.')
     })
   })
 
@@ -288,8 +333,8 @@ describe('validarListoParaRegistrarEn', () => {
       await guardarCampoEn(tx, id, 'ptovta', '0011')
       await guardarCampoEn(tx, id, 'nro', '63576')
       await guardarCampoEn(tx, id, 'condcompra', '60')
-      await guardarCampoEn(tx, id, 'perciibb', '13.248,69')
-      await guardarCampoEn(tx, id, 'codpercibb', '60')
+      await guardarCampoEn(tx, id, 'imppercep1', '13.248,69')
+      await guardarCampoEn(tx, id, 'percep1', 'Tucumán')
       await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
 
       const r = await validarListoParaRegistrarEn(tx, id)

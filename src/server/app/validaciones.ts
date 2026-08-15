@@ -12,12 +12,18 @@ import {
   validarCae,
   validarFormatoNComp,
   validarCondCompra,
-  validarPercepcionIibb,
+  validarPercepciones,
+  validarVarios,
   validarTipoFactura,
+  validarAlicuotas,
   type ResultadoValidacion,
 } from '@/lib/validaciones'
 import { buscarConceptoProveedor } from '@/server/tango/conceptos'
-import { listarCodigosImpuesto } from '@/server/tango/impuestos'
+import { esCuitPropio } from './empresa'
+import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impuestos'
+import { resolverAlicuotas } from '@/lib/alicuotas'
+import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
+import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -25,7 +31,13 @@ export type Validaciones = {
   proveedor: ResultadoValidacion
   duplicado: ResultadoValidacion
   totales: ResultadoValidacion
-  cae: ResultadoValidacion
+  /**
+   * `null` cuando el tipo de comprobante no analiza el CAE. Sin el dato no
+   * hay nada que validar, y un item permanente en amarillo diciendo "CAE
+   * con formato invalido" en cada factura de conceptos entrena al operador
+   * a ignorar el panel entero.
+   */
+  cae: ResultadoValidacion | null
   candidatosProveedor: Proveedor[]
   bloqueante: boolean
 }
@@ -56,7 +68,22 @@ export async function validarComprobanteEn(
   // hubiera elegido: `validarProveedor` volveria a contar los mismos 2+
   // matches del CUIT en vez de mirar la eleccion ya hecha.
   const codProveeElegido = valores.codprovee?.trim() || null
-  const proveedor = codProveeElegido ? validarProveedor(1) : validarProveedor(candidatosProveedor.length)
+  let proveedor = codProveeElegido ? validarProveedor(1) : validarProveedor(candidatosProveedor.length)
+
+  // Segunda barrera contra confundir emisor con receptor. La primera es el
+  // prompt (ver quienEsElProveedor); esta agarra el caso en que el modelo
+  // igual lo lea mal. Va despues de resolver el proveedor para que pise el
+  // mensaje: un CUIT propio bien podria matchear un proveedor de CPA01 --
+  // la empresa puede estar cargada como proveedora de si misma -- y
+  // entonces esto se veria como "Proveedor resuelto." sin serlo.
+  if (esCuitPropio(valores.cuit)) {
+    proveedor = {
+      estado: 'error',
+      mensaje:
+        'El CUIT leído es el de la propia empresa: la IA tomó los datos del cliente ' +
+        'en vez de los del proveedor. Corregí razón social y CUIT con los del emisor.',
+    }
+  }
 
   // Codigo de proveedor a usar para el chequeo de duplicados: el elegido a
   // mano si existe, si no el unico candidato por CUIT (si hay exactamente
@@ -111,7 +138,10 @@ export async function validarComprobanteEn(
     ? { estado: 'advertencia', mensaje: duplicadoNoVerificado }
     : validarDuplicado(hayDuplicado, referenciaDuplicado)
   const totales = validarTotales(valores)
-  const cae = validarCae(valores.cae, valores.vtocae, new Date())
+  const tipoFactura = tipoFacturaODefault(valores.tipoFactura)
+  const cae = analizaCampo(tipoFactura, 'cae')
+    ? validarCae(valores.cae, valores.vtocae, new Date())
+    : null
 
   return {
     proveedor,
@@ -133,6 +163,8 @@ export type ResultadoListoParaRegistrar = {
   formatoComp: ResultadoValidacion
   tipoFactura: ResultadoValidacion
   concepto: ResultadoValidacion
+  alicuotas: ResultadoValidacion
+  varios: ResultadoValidacion
   bloqueante: boolean
 }
 
@@ -152,21 +184,8 @@ export async function validarListoParaRegistrarEn(
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
 
   const condCompra = validarCondCompra(valores.condcompra)
-  let percepcionIibb = validarPercepcionIibb(valores.perciibb, valores.codpercibb)
-  // Con codigo elegido, el mensaje generico "Codigo elegido." no le dice al
-  // operador cual alicuota de Tango se va a grabar de verdad -- se busca la
-  // descripcion real (misma idea que el mensaje de "concepto" mas abajo).
-  const codIibb = (valores.codpercibb ?? '').trim()
-  if (percepcionIibb.estado === 'ok' && codIibb) {
-    const codigos = await listarCodigosImpuesto()
-    const encontrado = codigos.find((c) => String(c.codigo) === codIibb)
-    if (encontrado) {
-      percepcionIibb = {
-        estado: 'ok',
-        mensaje: `Percepción IIBB: ${encontrado.codigo} — ${encontrado.descripcion}.`,
-      }
-    }
-  }
+  const percepcionIibb = validarPercepciones(resolverPercepciones(valores))
+  const varios = validarVarios(resolverVarios(valores, await listarCodigosImpuesto()))
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)
 
@@ -181,11 +200,32 @@ export async function validarListoParaRegistrarEn(
       : { estado: 'error', mensaje: 'Este proveedor no tiene un concepto configurado en Tango.' }
   }
 
-  const bloqueante = [condCompra, percepcionIibb, formatoComp, tipoFactura, concepto].some(
-    (v) => v.estado === 'error',
-  )
+  // Resuelve cada par porcivaN/impivaN contra CPA14 con la misma funcion
+  // que usa el armado real de la cabecera, asi el operador ve en la
+  // revision a que alicuota de Tango va cada linea -- y si alguna no
+  // existe, se entera antes de apretar "Registrar en Tango" y no despues.
+  const alicuotas = validarAlicuotas(resolverAlicuotas(valores, await listarAlicuotasIva()))
 
-  return { condCompra, percepcionIibb, formatoComp, tipoFactura, concepto, bloqueante }
+  const bloqueante = [
+    condCompra,
+    percepcionIibb,
+    varios,
+    formatoComp,
+    tipoFactura,
+    concepto,
+    alicuotas,
+  ].some((v) => v.estado === 'error')
+
+  return {
+    condCompra,
+    percepcionIibb,
+    varios,
+    formatoComp,
+    tipoFactura,
+    concepto,
+    alicuotas,
+    bloqueante,
+  }
 }
 
 export async function validarListoParaRegistrar(

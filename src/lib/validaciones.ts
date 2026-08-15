@@ -1,4 +1,6 @@
 import { totalImputado, parsearImporte } from './formato'
+import { formatPorcentaje, type LineaAlicuota } from './alicuotas'
+import type { LineaPercepcion, LineaVarios } from './percepciones'
 
 export type ResultadoValidacion = {
   estado: 'ok' | 'advertencia' | 'error'
@@ -120,6 +122,50 @@ export function validarCondCompra(condcompra: string | null | undefined): Result
   return { estado: 'ok', mensaje: 'Condición de compra elegida.' }
 }
 
+/**
+ * Muestra, ya en la revisión, a qué alícuota de Tango va a ir cada par
+ * porcivaN/impivaN -- antes se resolvía recién al apretar "Registrar en
+ * Tango", así que un porcentaje que Tango no tiene se descubría en el
+ * peor momento y sin señal previa en la pantalla.
+ */
+export function validarAlicuotas(lineas: LineaAlicuota[]): ResultadoValidacion {
+  if (lineas.length === 0) {
+    return { estado: 'ok', mensaje: 'No aplica.' }
+  }
+
+  const sinCodigo = lineas.filter((l) => l.estado === 'sin-codigo')
+  if (sinCodigo.length > 0) {
+    const detalle = sinCodigo
+      .map((l) => `${formatPorcentaje(l.porcentaje)} (alícuota ${l.slot})`)
+      .join(', ')
+    return {
+      estado: 'error',
+      mensaje: `Tango no tiene una alícuota de IVA para ${detalle}. Corregí el porcentaje.`,
+    }
+  }
+
+  const omitidas = lineas.filter((l) => l.estado === 'omitida')
+  const registran = lineas.filter((l) => l.estado === 'registra')
+
+  const partes = registran.map(
+    (l) => `${formatPorcentaje(l.porcentaje)} → ${l.alicuota!.descripcion} (cód. ${l.alicuota!.codigo})`,
+  )
+
+  // Una alícuota 0% con importe no se registra, pero su importe sí cuenta
+  // en el total imputado: si no se avisara, el operador vería un total que
+  // cierra y un comprobante que en Tango entra por menos.
+  if (omitidas.length > 0) {
+    const cuales = omitidas.map((l) => `alícuota ${l.slot}`).join(', ')
+    const aviso = `La ${cuales} es 0% y no se registra.`
+    return {
+      estado: 'advertencia',
+      mensaje: partes.length > 0 ? `${aviso} Se registra: ${partes.join('; ')}.` : aviso,
+    }
+  }
+
+  return { estado: 'ok', mensaje: `IVA: ${partes.join('; ')}.` }
+}
+
 export function validarTipoFactura(tipoFactura: string | null | undefined): ResultadoValidacion {
   const v = (tipoFactura ?? '').trim()
   if (!v) {
@@ -138,22 +184,44 @@ export function validarTipoFactura(tipoFactura: string | null | undefined): Resu
 }
 
 /**
- * La percepción de IVA del 3% ya no pasa por acá: se resuelve siempre al
- * código 15 (ver mapearAlicuotaIva en server/tango/comprobantes.ts), sin
- * elección del operador. Queda solo la percepción de IIBB, que sí necesita
- * el código de jurisdicción.
+ * La percepción de IVA del 3% no pasa por acá: va en los slots de IVA,
+ * resuelta siempre al código 15 (ver resolverCodigoIva). Acá quedan las
+ * líneas de Ingresos Brutos, que se identifican por jurisdicción.
  */
-export function validarPercepcionIibb(
-  importe: string | null | undefined,
-  codigo: string | null | undefined,
-): ResultadoValidacion {
-  const imp = (importe ?? '').trim()
-  if (!imp) {
-    return { estado: 'ok', mensaje: 'No aplica.' }
+export function validarPercepciones(lineas: LineaPercepcion[]): ResultadoValidacion {
+  if (lineas.length === 0) return { estado: 'ok', mensaje: 'No aplica.' }
+
+  // La jurisdiccion la escribe la IA leyendo el comprobante, y el prompt es
+  // una instruccion, no una garantia. Una que no se reconoce no puede
+  // llegar a CPA18: ahi se grabaria con un codigo vacio.
+  const sinCodigo = lineas.filter((l) => l.estado === 'sin-codigo')
+  if (sinCodigo.length > 0) {
+    const detalle = sinCodigo
+      .map((l) => (l.texto ? `"${l.texto}" (percepción ${l.slot})` : `percepción ${l.slot}`))
+      .join(', ')
+    return {
+      estado: 'error',
+      mensaje: `No se reconoce la jurisdicción de ${detalle}. Corregila para poder registrar.`,
+    }
   }
-  const cod = (codigo ?? '').trim()
-  if (!cod) {
-    return { estado: 'error', mensaje: 'Elegí el código de la percepción de IIBB antes de registrar.' }
-  }
-  return { estado: 'ok', mensaje: 'Código elegido.' }
+
+  const partes = lineas.map((l) => `${l.codigo!.jurisdiccion} → ${l.codigo!.codigo}`)
+  return { estado: 'ok', mensaje: `Percepciones IIBB: ${partes.join('; ')}.` }
 }
+
+export function validarVarios(lineas: LineaVarios[]): ResultadoValidacion {
+  if (lineas.length === 0) return { estado: 'ok', mensaje: 'No aplica.' }
+
+  const sinCodigo = lineas.filter((l) => l.estado === 'sin-codigo')
+  if (sinCodigo.length > 0) {
+    const detalle = sinCodigo.map((l) => `impuesto vario ${l.slot}`).join(', ')
+    return {
+      estado: 'error',
+      mensaje: `Elegí el código de Tango de ${detalle} antes de registrar.`,
+    }
+  }
+
+  const partes = lineas.map((l) => `${l.codigo} — ${l.descripcion}`)
+  return { estado: 'ok', mensaje: `Impuestos varios: ${partes.join('; ')}.` }
+}
+

@@ -1,9 +1,24 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import { GRUPOS, camposDelGrupo, type GrupoCampo, type DefCampo } from '@/lib/campos'
+import {
+  GRUPOS,
+  camposDelGrupo,
+  OCULTOS_EN_GRILLA,
+  type GrupoCampo,
+  type DefCampo,
+} from '@/lib/campos'
 import { guardarCampo } from '@/server/app/acciones'
 import { totalImputado, formatMoneda } from '@/lib/formato'
+import { TIPOS_FACTURA, analizaCampo, spanDe, tipoFacturaODefault } from '@/lib/tipoFactura'
+import type { AlicuotaTango } from '@/lib/alicuotas'
+import { codigosVarios } from '@/lib/percepciones'
+import {
+  CeldaAlicuotaTango,
+  CeldaPercepcionTango,
+  CeldaVariosTango,
+  CeldaConcepto,
+} from './alicuota-tango'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
 import type { CodigoImpuesto } from '@/server/tango/impuestos'
 import { Campo } from './campo'
@@ -37,38 +52,67 @@ function contarSlotsAlicuota(iniciales: Record<string, ValorInicial>): number {
 }
 
 const RE_SLOT_ALICUOTA = /^(?:porciva|impiva)([1-5])$/
+/** Las celdas que disparan la resolución contra Tango, una por familia. */
+const RE_PORC_ALICUOTA = /^porciva([1-5])$/
+const RE_PERCEP = /^percep([1-4])$/
+const RE_VARIOS = /^varios[12]$/
 
 type Opcion = { valor: string; label: string }
 
 function opcionesPara(
   clave: string,
   condicionesCompra: CondicionCompra[],
-  codigosIibb: CodigoImpuesto[],
+  codigosImpuesto: CodigoImpuesto[],
 ): Opcion[] | undefined {
   if (clave === 'condcompra') {
     return condicionesCompra.map((c) => ({ valor: String(c.codigo), label: c.descripcion }))
   }
-  if (clave === 'codpercibb') {
-    return codigosIibb.map((c) => ({ valor: String(c.codigo), label: c.descripcion }))
+  if (/^varios[12]$/.test(clave)) {
+    // Todo lo de CPA14 que no es alicuota de IVA ni percepcion de IIBB:
+    // impuesto interno, ganancias, retenciones municipales y demas.
+    return codigosVarios(codigosImpuesto).map((c) => ({
+      valor: String(c.codigo),
+      label: c.descripcion,
+    }))
   }
   if (clave === 'tipoFactura') {
-    return [
-      { valor: 'conceptos', label: 'Por conceptos' },
-      { valor: 'articulos', label: 'Por artículos' },
-      // Todavia no tiene logica de registro propia -- validarTipoFactura
-      // bloquea el registro si se elige esta opcion. Se agrega igual al
-      // selector porque el operador tiene que poder clasificar el
-      // comprobante aunque el registro para este tipo llegue despues.
-      { valor: 'tarjeta', label: 'Liquidación de tarjeta' },
-    ]
+    // Mismo catalogo que el modal de importacion: el operador ya lo eligio
+    // ahi, esto le deja reclasificar el comprobante si se equivoco. La
+    // liquidacion de tarjeta figura aunque todavia no tenga logica de
+    // registro propia -- validarTipoFactura bloquea el registro, pero
+    // clasificar tiene que poder clasificarse igual.
+    return TIPOS_FACTURA.map((t) => ({ valor: t.clave, label: t.label }))
   }
   return undefined
 }
 
-function camposVisibles(grupo: GrupoCampo, slots: number): DefCampo[] {
+function camposVisibles(
+  grupo: GrupoCampo,
+  slots: number,
+  valores: Record<string, string>,
+): DefCampo[] {
+  const tipo = tipoFacturaODefault(valores.tipoFactura)
+
+  // Los campos que la IA no analiza en este tipo tampoco se muestran: son
+  // ocho casilleros que quedarian siempre vacios en la pantalla donde el
+  // operador pasa el dia. La excepcion es que ya tengan valor -- un
+  // comprobante leido con un prompt anterior, o un dato cargado a mano --
+  // porque esconder un dato que existe es peor que mostrar uno de mas.
+  // Y el ancho puede cambiar con el tipo: sacar campos de un grupo
+  // descuadra la grilla de 6 columnas, asi que los que quedan se
+  // reacomodan para volver a llenar filas enteras. Ver spanDe.
   const todos = camposDelGrupo(grupo)
+    .filter((def) => analizaCampo(tipo, def.clave) || (valores[def.clave] ?? '').trim() !== '')
+    .map((def) => {
+      const span = spanDe(tipo, def.clave, def.span)
+      return span === def.span ? def : { ...def, span }
+    })
+
   if (grupo !== 'importes') return todos
   return todos.filter((def) => {
+    // Los codigos corregidos a mano los pinta la celda del medio de su
+    // propia fila, no este bucle -- ver OCULTOS_EN_GRILLA en campos.ts.
+    if (OCULTOS_EN_GRILLA.test(def.clave)) return false
     const m = RE_SLOT_ALICUOTA.exec(def.clave)
     return !m || Number(m[1]) <= slots
   })
@@ -80,7 +124,9 @@ export function Formulario({
   onEnfocar,
   soloLectura = false,
   condicionesCompra,
-  codigosIibb,
+  codigosImpuesto,
+  alicuotasIva,
+  concepto,
 }: {
   comprobanteId: number
   iniciales: Record<string, ValorInicial>
@@ -95,7 +141,14 @@ export function Formulario({
   // Poblado real de Tango para los campos `tipo: 'select'` del catálogo.
   // Ver Campo -- el resto de los campos los ignora.
   condicionesCompra: CondicionCompra[]
-  codigosIibb: CodigoImpuesto[]
+  codigosImpuesto: CodigoImpuesto[]
+  // Las alícuotas de IVA de CPA14, para resolver en vivo a cuál va cada
+  // porcentaje leído del PDF (ver CeldaAlicuotaTango).
+  alicuotasIva: AlicuotaTango[]
+  // El concepto de Tango del proveedor ya resuelto. Se resuelve en el
+  // servidor porque depende de codprovee, que cambia con router.refresh
+  // cuando el operador elige otro proveedor.
+  concepto: { codConcepto: string; descripcion: string } | null
 }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(iniciales).map(([k, v]) => [k, v.valor])),
@@ -103,6 +156,17 @@ export function Formulario({
   const [slots, setSlots] = useState(() => contarSlotsAlicuota(iniciales))
 
   const imputado = useMemo(() => formatMoneda(totalImputado(valores)), [valores])
+
+  const limpiarCorreccion = useCallback(
+    (clave: string) => {
+      setValores((prev) => {
+        if (!prev[clave]) return prev
+        void guardarCampo(comprobanteId, clave, '')
+        return { ...prev, [clave]: '' }
+      })
+    },
+    [comprobanteId],
+  )
 
   const cambiar = useCallback(
     (clave: string, v: string) => {
@@ -117,9 +181,18 @@ export function Formulario({
         setSlots((prev) => Math.max(prev, siguiente))
       }
 
+      // Si cambio el dato del que se deriva el codigo, la correccion manual
+      // que hubiera quedado ya no corresponde a este dato: se limpia para
+      // que vuelva a mandar lo que resuelve el sistema. Un codigo viejo
+      // pegado a un porcentaje nuevo es el error mas silencioso de los dos.
+      const iva = RE_PORC_ALICUOTA.exec(clave)
+      if (iva) limpiarCorreccion(`codiva${iva[1]}`)
+      const perc = RE_PERCEP.exec(clave)
+      if (perc) limpiarCorreccion(`codpercep${perc[1]}`)
+
       void guardarCampo(comprobanteId, clave, v)
     },
-    [comprobanteId],
+    [comprobanteId, limpiarCorreccion],
   )
 
   return (
@@ -129,36 +202,103 @@ export function Formulario({
           <section key={g.clave} className={styles.tarjeta}>
             <h3 className={styles.tituloGrupo}>{g.titulo}</h3>
             <div className={styles.grilla}>
-              {camposVisibles(g.clave, slots).map((def) =>
+              {camposVisibles(g.clave, slots, valores).flatMap((def) => {
                 // "Total imputado" no es un input: se recalcula en vivo a
                 // partir de los demas campos del grupo. Un <input readOnly>
                 // generico no serviria: Campo guarda su valor en estado
                 // local para el autosave y ese estado no se resincroniza
                 // con la prop despues del primer render, asi que nunca
                 // reflejaria los cambios en neto/impivaN mientras se edita.
-                def.clave === 'imputado' ? (
-                  <div
-                    key={def.clave}
-                    className={styles.campo}
-                    style={{ gridColumn: `span ${def.span}` }}
-                  >
-                    <span className={styles.label}>{def.label}</span>
-                    <div className={styles.valorCalculado}>{imputado}</div>
-                  </div>
-                ) : (
+                if (def.clave === 'imputado') {
+                  return [
+                    <div
+                      key={def.clave}
+                      className={styles.campo}
+                      style={{ gridColumn: `span ${def.span}` }}
+                    >
+                      <span className={styles.label}>{def.label}</span>
+                      <div className={styles.valorCalculado}>{imputado}</div>
+                    </div>,
+                  ]
+                }
+
+                const campo = (
                   <Campo
                     key={def.clave}
                     def={def}
                     valor={valores[def.clave] ?? ''}
                     confianza={iniciales[def.clave]?.confianza ?? null}
                     bloqueado={soloLectura}
-                    opciones={opcionesPara(def.clave, condicionesCompra, codigosIibb)}
+                    opciones={opcionesPara(def.clave, condicionesCompra, codigosImpuesto)}
                     onCambio={(v) => cambiar(def.clave, v)}
                     onFoco={onEnfocar}
                     onDesenfoque={() => onEnfocar(null)}
                   />
-                ),
-              )}
+                )
+
+                // Las tres familias de linea del grupo "Importes" se
+                // muestran igual: tres celdas de span 2, con la del medio
+                // diciendo a que codigo de Tango resuelve la de la
+                // izquierda. Esa celda la arma el formulario porque es
+                // derivada y no se guarda -- ver el comentario del grupo
+                // en src/lib/campos.ts. Lo que cambia entre familias es
+                // que identifica cada una: porcentaje, jurisdiccion o
+                // codigo elegido a mano.
+                if (def.clave === 'codprovee') {
+                  return [
+                    campo,
+                    <CeldaConcepto
+                      key="concepto"
+                      concepto={concepto}
+                      hayProveedor={(valores.codprovee ?? '').trim() !== ''}
+                    />,
+                  ]
+                }
+
+                const slotIva = RE_PORC_ALICUOTA.exec(def.clave)
+                if (slotIva) {
+                  const correccion = `codiva${slotIva[1]}`
+                  return [
+                    campo,
+                    <CeldaAlicuotaTango
+                      key={`tango-${def.clave}`}
+                      porcentaje={valores[def.clave] ?? ''}
+                      correccion={valores[correccion] ?? ''}
+                      alicuotas={alicuotasIva}
+                      bloqueado={soloLectura}
+                      onCambio={(v) => cambiar(correccion, v)}
+                    />,
+                  ]
+                }
+
+                const slotPercep = RE_PERCEP.exec(def.clave)
+                if (slotPercep) {
+                  const correccion = `codpercep${slotPercep[1]}`
+                  return [
+                    campo,
+                    <CeldaPercepcionTango
+                      key={`tango-${def.clave}`}
+                      jurisdiccion={valores[def.clave] ?? ''}
+                      correccion={valores[correccion] ?? ''}
+                      bloqueado={soloLectura}
+                      onCambio={(v) => cambiar(correccion, v)}
+                    />,
+                  ]
+                }
+
+                if (RE_VARIOS.test(def.clave)) {
+                  return [
+                    campo,
+                    <CeldaVariosTango
+                      key={`tango-${def.clave}`}
+                      codigo={valores[def.clave] ?? ''}
+                      codigos={codigosImpuesto}
+                    />,
+                  ]
+                }
+
+                return [campo]
+              })}
             </div>
           </section>
         ))}

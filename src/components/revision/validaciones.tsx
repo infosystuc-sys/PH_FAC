@@ -46,7 +46,9 @@ export function PanelValidaciones({
         />
         <Item estado={validaciones.duplicado.estado} mensaje={validaciones.duplicado.mensaje} />
         <Item estado={validaciones.totales.estado} mensaje={validaciones.totales.mensaje} />
-        <Item estado={validaciones.cae.estado} mensaje={validaciones.cae.mensaje} />
+        {validaciones.cae && (
+          <Item estado={validaciones.cae.estado} mensaje={validaciones.cae.mensaje} />
+        )}
       </div>
     </section>
   )
