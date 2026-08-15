@@ -171,6 +171,8 @@ export type Encabezado = {
   extraccionMs: number | null
   extraccionModelo: string | null
   errorMensaje: string | null
+  /** El asiento que dejo en Tango, si llego a registrarse. */
+  tangoNComp: string | null
 }
 
 /**
@@ -188,7 +190,7 @@ export async function obtenerEncabezadoEn(e: Ejecutor, id: number): Promise<Enca
     .query<Record<string, unknown>>(`
       SELECT ID, ARCHIVO_NOMBRE, ESTADO, TIPO, PUNTO_VENTA, NUMERO,
              RAZON_SOCIAL, CUIT, CONFIANZA_PROMEDIO, EXTRACCION_MS,
-             EXTRACCION_MODELO, ERROR_MENSAJE
+             EXTRACCION_MODELO, ERROR_MENSAJE, TANGO_N_COMP
       FROM PHF_COMPROBANTE WHERE ID = @id
     `)
 
@@ -210,6 +212,7 @@ export async function obtenerEncabezadoEn(e: Ejecutor, id: number): Promise<Enca
     extraccionMs: row.EXTRACCION_MS === null || row.EXTRACCION_MS === undefined ? null : Number(row.EXTRACCION_MS),
     extraccionModelo: row.EXTRACCION_MODELO ? String(row.EXTRACCION_MODELO) : null,
     errorMensaje: row.ERROR_MENSAJE ? String(row.ERROR_MENSAJE) : null,
+    tangoNComp: row.TANGO_N_COMP ? String(row.TANGO_N_COMP) : null,
   }
 }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
-import { guardarPdf, leerPdf, directorioStorage } from '@/server/app/archivos'
+import { guardarPdf, leerPdf, borrarPdf, directorioStorage } from '@/server/app/archivos'
 
 const creados: string[] = []
 
@@ -72,5 +72,28 @@ describe('leerPdf', () => {
     await expect(leerPdf(rutaFuera)).rejects.toThrow(
       'Ruta de archivo fuera del directorio de comprobantes.'
     )
+  })
+})
+
+describe('borrarPdf', () => {
+  it('borra el archivo del disco', async () => {
+    const { ruta } = await guardarPdf('para-borrar.pdf', Buffer.from('%PDF-1.4 x'))
+    await borrarPdf(ruta)
+    await expect(leerPdf(ruta)).rejects.toThrow()
+  })
+
+  it('no falla si el archivo ya no esta', async () => {
+    // Borrar el comprobante de la base es lo que importa. Que ademas falte
+    // el PDF no puede hacer fallar la operacion entera y dejar al operador
+    // resolviendo a mano algo que ya esta resuelto.
+    const { ruta } = await guardarPdf('doble-borrado.pdf', Buffer.from('%PDF-1.4 x'))
+    await borrarPdf(ruta)
+    await expect(borrarPdf(ruta)).resolves.toBeUndefined()
+  })
+
+  it('rechaza una ruta fuera del directorio de comprobantes', async () => {
+    // Un archivo faltante se tolera; una ruta que no deberiamos estar
+    // borrando, no.
+    await expect(borrarPdf('C:/Windows/System32/drivers/etc/hosts')).rejects.toThrow(/fuera del/i)
   })
 })

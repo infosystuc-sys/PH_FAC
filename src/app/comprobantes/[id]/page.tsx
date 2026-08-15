@@ -114,6 +114,7 @@ export default async function RevisionPage({
         bloqueante={validaciones?.bloqueante ?? false}
         sinConexion={!conexion.ok}
         bloqueanteRegistro={listoParaRegistrar?.bloqueante ?? false}
+        tangoNComp={encabezado.tangoNComp}
         anteriorHref={anteriorHref}
         siguienteHref={siguienteHref}
       />

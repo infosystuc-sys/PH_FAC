@@ -99,3 +99,24 @@
   border: 1px solid var(--borde);
   color: #4a4e56;
 }
+
+/* Destructivo pero no primario: el peso visual lo tiene "Confirmar datos".
+   Se pinta de rojo recien al pasar por encima, para que no compita con el
+   panel de validaciones -- que usa el mismo rojo para lo que el operador
+   SI tiene que resolver. */
+.eliminar {
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 7px;
+  font-size: 13px;
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  color: var(--texto-3);
+  cursor: pointer;
+}
+
+.eliminar:hover {
+  border-color: var(--error-borde);
+  background: var(--error-fondo);
+  color: var(--error);
+}

@@ -8,6 +8,7 @@ import type { Estado } from '@/lib/estados'
 import { BadgeEstado } from '@/components/badge-estado'
 import { useToast } from '@/components/toast/toast-provider'
 import { ModalObservacion } from './modal-observacion'
+import { ModalEliminar } from '@/components/modal-eliminar'
 import { useAtajos } from './atajos'
 import styles from './barra-acciones.module.css'
 
@@ -86,6 +87,7 @@ export function BarraAcciones({
   bloqueante,
   sinConexion,
   bloqueanteRegistro,
+  tangoNComp,
   anteriorHref,
   siguienteHref,
 }: {
@@ -96,10 +98,13 @@ export function BarraAcciones({
   bloqueante: boolean
   sinConexion: boolean
   bloqueanteRegistro: boolean
+  /** El asiento en Tango, para advertir al eliminar uno ya registrado. */
+  tangoNComp: string | null
   anteriorHref: string | null
   siguienteHref: string | null
 }) {
   const [modalAbierto, setModalAbierto] = useState(false)
+  const [modalEliminar, setModalEliminar] = useState(false)
   const [pendiente, arrancar] = useTransition()
   const router = useRouter()
   const toast = useToast()
@@ -159,6 +164,14 @@ export function BarraAcciones({
       <div className={styles.derecha}>
         <button
           type="button"
+          className={styles.eliminar}
+          title="Eliminar el comprobante de la app"
+          onClick={() => setModalEliminar(true)}
+        >
+          Eliminar
+        </button>
+        <button
+          type="button"
           className={styles.observacion}
           disabled={!puedeObservar}
           title={puedeObservar ? undefined : 'No disponible en este estado'}
@@ -177,6 +190,18 @@ export function BarraAcciones({
       </div>
 
       <ModalObservacion id={id} abierto={modalAbierto} onCerrar={() => setModalAbierto(false)} />
+      <ModalEliminar
+        id={id}
+        abierto={modalEliminar}
+        comprobante={comprobante}
+        proveedor={proveedor}
+        estado={estado}
+        tangoNComp={tangoNComp}
+        onCerrar={() => setModalEliminar(false)}
+        // El comprobante ya no existe: quedarse en su pantalla mostraria un
+        // 404 al primer refresh.
+        alTerminar={() => router.push('/comprobantes')}
+      />
     </div>
   )
 }

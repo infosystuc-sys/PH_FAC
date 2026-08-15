@@ -13,8 +13,9 @@ import {
   registrarComprobante as registrarComprobanteAccion,
   asignarRemitoEn,
 } from '@/server/app/acciones'
+import { eliminarComprobanteEn } from '@/server/app/acciones'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
-import { obtenerDetalleEn } from '@/server/app/detalle'
+import { obtenerDetalleEn, guardarCampoEn, auditarEn } from '@/server/app/detalle'
 import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
 
 const creados: string[] = []
@@ -49,8 +50,27 @@ describe('importarComprobanteEn', () => {
         .query('SELECT ARCHIVO_RUTA FROM PHF_COMPROBANTE WHERE ID = @id')
       creados.push(String(r.recordset[0].ARCHIVO_RUTA))
 
+      // La entrada deja asentado el tipo elegido al importar, que es lo
+      // que decide con que prompt lo lee la IA: si despues el comprobante
+      // sale mal leido, el historial dice si se importo con el tipo que
+      // correspondia.
       const d = await obtenerDetalleEn(tx, id)
-      expect(d.auditoria[0].texto).toBe('PDF importado desde carga manual')
+      expect(d.auditoria[0].texto).toBe(
+        'PDF importado desde carga manual — Factura de conceptos',
+      )
+    })
+  })
+
+  it('asienta en la auditoria el tipo elegido cuando no es el default', async () => {
+    await conRollback(async (tx) => {
+      const id = await importarComprobanteEn(tx, 'resumen.pdf', PDF, 'tarjeta')
+      const r = await tx.request().input('id', sql.Int, id)
+        .query('SELECT ARCHIVO_RUTA, TIPO_FACTURA FROM PHF_COMPROBANTE WHERE ID = @id')
+      creados.push(String(r.recordset[0].ARCHIVO_RUTA))
+
+      expect(r.recordset[0].TIPO_FACTURA).toBe('tarjeta')
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.auditoria[0].texto).toContain('Liquidación de tarjeta')
     })
   })
 
@@ -104,6 +124,29 @@ describe('importarComprobantes', () => {
 
     const despues = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
     expect(despues.recordset[0].n).toBe(antes.recordset[0].n)
+  })
+
+  it('rechaza el lote sin importar nada si no vino el tipo de comprobante', async () => {
+    // El tipo decide con que prompt lee la IA todo el lote. Caer a un
+    // default en silencio dejaria un lote entero mal leido sin senal.
+    const pool = await getPool()
+    const antes = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
+
+    const fd = new FormData()
+    fd.append('archivos', new File([PDF], 'chico.pdf', { type: 'application/pdf' }))
+
+    await expect(importarComprobantes(fd)).rejects.toThrow(/tipo de comprobante/i)
+
+    const despues = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
+    expect(despues.recordset[0].n).toBe(antes.recordset[0].n)
+  })
+
+  it('rechaza un tipo que no esta en el catalogo', async () => {
+    const fd = new FormData()
+    fd.append('tipoFactura', 'inventado')
+    fd.append('archivos', new File([PDF], 'chico.pdf', { type: 'application/pdf' }))
+
+    await expect(importarComprobantes(fd)).rejects.toThrow(/tipo de comprobante/i)
   })
 })
 
@@ -231,6 +274,74 @@ describe('asignarRemitoEn', () => {
         .query(`SELECT REMITO_NCOMP_IN_S, REMITO_N_RENGL_S FROM PHF_RENGLON WHERE ID=@id`)
       expect(r.recordset[0].REMITO_NCOMP_IN_S).toBeNull()
       expect(r.recordset[0].REMITO_N_RENGL_S).toBeNull()
+    })
+  })
+})
+
+describe('eliminarComprobanteEn', () => {
+  it('borra el comprobante y todo lo que cuelga de el', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'cuit', '30-71042636-9')
+      await insertarRenglonPrueba(tx, id, {
+        codigo: 'SRV', descripcion: 'Servicio', cantidad: '1',
+        precioUnitario: '100.00', importe: '100.00',
+      })
+      await auditarEn(tx, id, 'algo que paso')
+
+      const r = await eliminarComprobanteEn(tx, id)
+      expect(r.id).toBe(id)
+      expect(r.estado).toBe('leido')
+
+      // Las FK son ON DELETE CASCADE (ver scripts/migrate.ts): la cabecera
+      // se lleva campos, renglones y auditoria. Si alguien alguna vez
+      // recrea las tablas sin el cascade, esto lo agarra.
+      for (const tabla of ['PHF_CAMPO', 'PHF_RENGLON', 'PHF_AUDITORIA']) {
+        const q = await tx
+          .request()
+          .input('id', sql.Int, id)
+          .query(`SELECT COUNT(*) AS n FROM ${tabla} WHERE COMPROBANTE_ID = @id`)
+        expect(q.recordset[0].n, `quedaron filas en ${tabla}`).toBe(0)
+      }
+
+      const cab = await tx
+        .request()
+        .input('id', sql.Int, id)
+        .query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(cab.recordset[0].n).toBe(0)
+    })
+  })
+
+  it('devuelve el asiento de Tango de un comprobante ya registrado', async () => {
+    // Es lo que la pantalla necesita para advertir que el asiento queda.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await tx
+        .request()
+        .input('id', sql.Int, id)
+        .query(`
+          UPDATE PHF_COMPROBANTE
+          SET ESTADO = 'registrado', TANGO_N_COMP = '0003-00018742'
+          WHERE ID = @id
+        `)
+
+      const r = await eliminarComprobanteEn(tx, id)
+      expect(r.estado).toBe('registrado')
+      expect(r.tangoNComp).toBe('0003-00018742')
+    })
+  })
+
+  it('lanza si el comprobante no existe, y no dice que lo borro', async () => {
+    await conRollback(async (tx) => {
+      await expect(eliminarComprobanteEn(tx, 999_999_999)).rejects.toThrow(/no existe/i)
+    })
+  })
+
+  it('eliminar dos veces el mismo comprobante falla la segunda', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await eliminarComprobanteEn(tx, id)
+      await expect(eliminarComprobanteEn(tx, id)).rejects.toThrow(/no existe/i)
     })
   })
 })

@@ -1,0 +1,18 @@
+.eliminar {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--texto-4);
+  cursor: pointer;
+  padding: 0;
+}
+
+.eliminar:hover {
+  background: var(--error-fondo);
+  color: var(--error);
+}

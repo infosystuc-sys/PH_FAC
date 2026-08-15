@@ -4,7 +4,7 @@ import sql from 'mssql'
 import { revalidatePath } from 'next/cache'
 import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
-import { guardarPdf } from './archivos'
+import { borrarPdf, guardarPdf } from './archivos'
 import { auditarEn, guardarCampoEn } from './detalle'
 import { despertarWorker } from './cola'
 import { usuarioActual } from '@/lib/usuario'
@@ -294,6 +294,78 @@ export async function marcarObservacion(id: number, motivo: string, nota: string
 
   revalidatePath('/comprobantes')
   revalidatePath(`/comprobantes/${id}`)
+}
+
+/**
+ * Datos que necesita la pantalla para preguntar antes de eliminar: sin el
+ * estado no se puede advertir que el comprobante ya está en Tango.
+ */
+export type ComprobanteEliminado = {
+  id: number
+  estado: string
+  /** El asiento que queda en Tango, si llegó a registrarse. */
+  tangoNComp: string | null
+}
+
+/**
+ * Elimina un comprobante de la app. Definitivo: las FK de PHF_CAMPO,
+ * PHF_RENGLON y PHF_AUDITORIA son ON DELETE CASCADE, así que la fila de
+ * PHF_COMPROBANTE se lleva todo lo suyo, y después se borra el PDF del
+ * disco.
+ *
+ * NO borra nada de Tango. Un comprobante ya registrado dejó su asiento en
+ * CPA04 y en las tablas que cuelgan de ella, y eso queda tal cual: dar de
+ * baja un comprobante de compras es una operación contable que se hace en
+ * Tango, con su circuito y sus controles, no desde acá. Por eso la pantalla
+ * advierte antes de eliminar uno registrado -- lo que desaparece es el
+ * registro de trabajo de la app, no el asiento.
+ *
+ * El efecto práctico de eliminarlo es que deja de contar como duplicado
+ * interno, así que el mismo PDF se puede volver a importar. Si además
+ * estaba registrado, el chequeo de duplicados contra CPA04 lo va a seguir
+ * encontrando -- y está bien que lo haga.
+ */
+export async function eliminarComprobanteEn(
+  e: Ejecutor,
+  id: number,
+): Promise<ComprobanteEliminado & { archivoRuta: string }> {
+  // El DELETE devuelve la fila borrada en vez de leerla antes: una sola ida
+  // a la base, y el OUTPUT solo trae algo si realmente borró.
+  const r = await e
+    .request()
+    .input('id', sql.Int, id)
+    .query(`
+      DELETE FROM PHF_COMPROBANTE
+      OUTPUT DELETED.ID, DELETED.ESTADO, DELETED.ARCHIVO_RUTA, DELETED.TANGO_N_COMP
+      WHERE ID = @id
+    `)
+
+  if (r.recordset.length === 0) {
+    throw new Error('El comprobante no existe o ya fue eliminado.')
+  }
+
+  const fila = r.recordset[0]
+  return {
+    id: Number(fila.ID),
+    estado: String(fila.ESTADO),
+    tangoNComp: fila.TANGO_N_COMP === null ? null : String(fila.TANGO_N_COMP),
+    archivoRuta: String(fila.ARCHIVO_RUTA),
+  }
+}
+
+export async function eliminarComprobante(id: number): Promise<ComprobanteEliminado> {
+  const eliminado = await conTransaccion((tx) => eliminarComprobanteEn(tx, id))
+
+  // Después de commitear, no adentro de la transacción: borrar un archivo
+  // no se deshace con un rollback, así que si la transacción fallara después
+  // quedaría el comprobante en la base apuntando a un PDF que ya no está. Al
+  // revés -- un archivo huérfano si esto falla -- es recuperable.
+  await borrarPdf(eliminado.archivoRuta)
+
+  revalidatePath('/comprobantes')
+  revalidatePath(`/comprobantes/${id}`)
+
+  return { id: eliminado.id, estado: eliminado.estado, tangoNComp: eliminado.tangoNComp }
 }
 
 export async function asignarRemitoEn(

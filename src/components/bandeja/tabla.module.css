@@ -12,7 +12,7 @@
 .header,
 .fila {
   display: grid;
-  grid-template-columns: 170px 92px 148px 100px minmax(200px, 1fr) 132px 132px 96px 44px;
+  grid-template-columns: 170px 92px 148px 100px minmax(200px, 1fr) 132px 132px 96px 36px 44px;
   align-items: center;
   padding: 0 16px;
 }
@@ -29,11 +29,35 @@
 }
 
 .fila {
+  position: relative;
   height: 50px;
   border-bottom: 1px solid var(--borde-sutil);
   cursor: pointer;
-  text-decoration: none;
   color: inherit;
+}
+
+/* La fila entera sigue siendo clickeable, pero por una capa y no por un
+   <a> que envuelva todo: adentro hay un boton (eliminar) y un boton
+   dentro de un <a> no es HTML valido. La capa va por encima de las celdas
+   -- que son solo texto -- y la celda de acciones por encima de ella. */
+.enlace {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* Oculto pero no clickeable: con `opacity: 0` quedaria un blanco invisible
+   al lado de lo que el operador clickea todo el dia para abrir. */
+.accion {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  visibility: hidden;
+}
+
+.fila:hover .accion {
+  visibility: visible;
 }
 
 .fila:hover {

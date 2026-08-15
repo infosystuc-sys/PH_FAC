@@ -1,0 +1,116 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  /* En la bandeja el modal se monta adentro de la celda de acciones, que
+     esta en `visibility: hidden` hasta que el mouse pasa por la fila. Sin
+     esto el modal heredaria ese hidden y desapareceria apenas el mouse
+     sale de la fila para ir hacia el. `position: fixed` saca del flujo,
+     no de la herencia de visibility. */
+  visibility: visible;
+  background: rgba(23, 25, 29, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.caja {
+  width: 520px;
+  background: var(--superficie);
+  border-radius: 12px;
+  padding: 24px;
+  animation: riseIn 0.18s ease-out;
+}
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.titulo {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.subtitulo {
+  font-size: 13px;
+  color: var(--texto-3);
+  margin: 0 0 16px;
+}
+
+/* Los datos del comprobante que se va a borrar: el operador tiene que
+   poder confirmar que es el que quiere y no el de al lado. */
+.identidad {
+  border: 1px solid var(--borde);
+  border-radius: 7px;
+  padding: 11px 13px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.comprobante {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.proveedor {
+  color: var(--texto-3);
+}
+
+/* Solo aparece si el comprobante ya se registro en Tango. */
+.advertencia {
+  border: 1px solid var(--error-borde);
+  background: var(--error-fondo);
+  border-radius: 7px;
+  padding: 11px 13px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--error);
+}
+
+.advertenciaTitulo {
+  font-weight: 600;
+  margin: 0 0 3px;
+}
+
+.advertencia p {
+  margin: 0;
+}
+
+.asiento {
+  font-family: var(--mono);
+}
+
+.acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.acciones button {
+  height: 36px;
+  padding: 0 15px;
+  border-radius: 7px;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+}
+
+.cancelar {
+  background: var(--fondo-app);
+  border: 1px solid var(--borde) !important;
+  color: #4a4e56;
+}
+
+.eliminar {
+  background: var(--error);
+  color: #fff;
+}
+
+.eliminar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

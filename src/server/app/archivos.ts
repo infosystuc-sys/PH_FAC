@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 
@@ -50,13 +50,37 @@ export async function guardarPdf(
   return { ruta, hash: createHash('sha256').update(datos).digest('hex') }
 }
 
-export async function leerPdf(ruta: string): Promise<Buffer> {
+/**
+ * Corta cualquier ruta que no viva adentro del directorio de comprobantes.
+ * Defensa en profundidad: las rutas salen de la base, pero si alguna vez
+ * llegara una manipulada, esto la para antes de tocar el disco.
+ */
+function rutaAdentroDelStorage(ruta: string): string {
   const resuelta = path.resolve(ruta)
   const dir = directorioStorage()
-  // Defensa en profundidad: la ruta sale de la base, pero si alguna vez
-  // llegara manipulada, esto la corta antes de leer.
   if (resuelta !== dir && !resuelta.startsWith(dir + path.sep)) {
     throw new Error('Ruta de archivo fuera del directorio de comprobantes.')
   }
-  return readFile(resuelta)
+  return resuelta
+}
+
+export async function leerPdf(ruta: string): Promise<Buffer> {
+  return readFile(rutaAdentroDelStorage(ruta))
+}
+
+/**
+ * Borra el PDF de un comprobante eliminado. No lanza si el archivo ya no
+ * está: el borrado del comprobante en la base es lo que importa, y dejar
+ * que un archivo faltante haga fallar la operación entera obligaría al
+ * operador a resolver a mano un problema que ya está resuelto. Sí lanza si
+ * la ruta apunta fuera del storage -- eso no es un archivo faltante, es una
+ * ruta que no deberíamos estar borrando.
+ */
+export async function borrarPdf(ruta: string): Promise<void> {
+  const resuelta = rutaAdentroDelStorage(ruta)
+  try {
+    await unlink(resuelta)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err
+  }
 }
