@@ -7,3 +7,11 @@ storage/
 tsconfig.tsbuildinfo
 .claude/settings.local.json
 .playwright-mcp/
+
+# Comprobantes de prueba y backups de la base que quedan en la raiz al
+# trabajar. Son datos reales de proveedores: no van al repo.
+/COMPROBANTES/
+/*.pdf
+/*.PDF
+/*.bak
+/*.rar
