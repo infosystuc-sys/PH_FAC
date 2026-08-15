@@ -1,9 +1,10 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { importarComprobantes } from '@/server/app/acciones'
 import { useToast } from '@/components/toast/toast-provider'
+import { TIPOS_FACTURA, TIPO_FACTURA_DEFAULT, type TipoFactura } from '@/lib/tipoFactura'
 import styles from './importar.module.css'
 
 export function BotonImportar() {
@@ -20,9 +21,9 @@ export function BotonImportar() {
 
 function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
   const [archivos, setArchivos] = useState<File[]>([])
+  const [tipo, setTipo] = useState<TipoFactura>(TIPO_FACTURA_DEFAULT)
   const [error, setError] = useState<string | null>(null)
   const [pendiente, arrancar] = useTransition()
-  const input = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const toast = useToast()
 
@@ -36,6 +37,7 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
   function importar() {
     if (archivos.length === 0) return
     const fd = new FormData()
+    fd.append('tipoFactura', tipo)
     for (const a of archivos) fd.append('archivos', a)
 
     arrancar(async () => {
@@ -61,30 +63,59 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
           </button>
         </div>
 
-        <div
+        <div className={styles.tipos}>
+          <span className={styles.tiposTitulo}>Tipo de comprobante</span>
+          <p className={styles.tiposAclaracion}>
+            Define cómo lee la IA el lote entero. Si mezclás tipos, importalos por separado.
+          </p>
+          {TIPOS_FACTURA.map((t) => (
+            <button
+              key={t.clave}
+              type="button"
+              className={`${styles.tipo} ${tipo === t.clave ? styles.tipoElegido : ''}`}
+              onClick={() => setTipo(t.clave)}
+              disabled={pendiente}
+              aria-pressed={tipo === t.clave}
+            >
+              <span className={styles.tipoLabel}>{t.label}</span>
+              <span className={styles.tipoAyuda}>{t.ayuda}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* El input va ANTES del label y solo oculto a la vista, no con
+            `hidden`. Dos motivos: `hidden` lo saca del orden de
+            tabulación, y abrir el selector de archivos con un
+            `input.click()` por JavaScript depende de que el navegador
+            acepte esa activación programática -- que es justamente lo que
+            fallaba. Con `htmlFor` la vinculación es nativa: el click en el
+            label abre el diálogo sin que intervenga JavaScript. Estando
+            primero, además, el `+` del CSS puede dibujarle el foco al
+            label cuando el input recibe el foco por teclado. */}
+        <input
+          id="importar-archivos"
+          className={styles.inputArchivo}
+          type="file"
+          accept="application/pdf"
+          multiple
+          onChange={(e) => agregar(e.target.files)}
+        />
+
+        <label
+          htmlFor="importar-archivos"
           className={styles.dropzone}
-          onClick={() => input.current?.click()}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault()
             agregar(e.dataTransfer.files)
           }}
         >
-          <div className={styles.icono}>⇪</div>
-          <div className={styles.dzTitulo}>Arrastrá los PDF acá</div>
-          <div className={styles.dzDetalle}>
+          <span className={styles.icono}>⇪</span>
+          <span className={styles.dzTitulo}>Arrastrá los PDF acá</span>
+          <span className={styles.dzDetalle}>
             o hacé clic para elegirlos · hasta 50 archivos · PDF, máx. 10 MB c/u
-          </div>
-        </div>
-
-        <input
-          ref={input}
-          type="file"
-          accept="application/pdf"
-          multiple
-          hidden
-          onChange={(e) => agregar(e.target.files)}
-        />
+          </span>
+        </label>
 
         {archivos.length > 0 && (
           <div className={styles.lista}>

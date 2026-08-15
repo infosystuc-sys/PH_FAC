@@ -9,6 +9,12 @@ import { auditarEn, guardarCampoEn } from './detalle'
 import { despertarWorker } from './cola'
 import { usuarioActual } from '@/lib/usuario'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
+import {
+  TIPOS_FACTURA,
+  TIPO_FACTURA_DEFAULT,
+  esTipoFactura,
+  type TipoFactura,
+} from '@/lib/tipoFactura'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
 import { registrarComprobante as registrarComprobanteTango } from '@/server/tango/comprobantes'
@@ -22,6 +28,7 @@ export async function importarComprobanteEn(
   e: Ejecutor,
   nombre: string,
   datos: Buffer,
+  tipoFactura: TipoFactura = TIPO_FACTURA_DEFAULT,
 ): Promise<number> {
   const { ruta, hash } = await guardarPdf(nombre, datos)
 
@@ -30,16 +37,18 @@ export async function importarComprobanteEn(
     .input('nombre', sql.NVarChar(260), nombre.slice(0, 260))
     .input('ruta', sql.NVarChar(500), ruta)
     .input('hash', sql.Char(64), hash)
+    .input('tipoFactura', sql.VarChar(20), tipoFactura)
     .input('usuario', sql.NVarChar(60), usuarioActual())
     .query(`
       INSERT INTO PHF_COMPROBANTE
-        (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, USUARIO_ALTA)
+        (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, TIPO_FACTURA, USUARIO_ALTA)
       OUTPUT INSERTED.ID
-      VALUES (@nombre, @ruta, @hash, 'procesando', @usuario)
+      VALUES (@nombre, @ruta, @hash, 'procesando', @tipoFactura, @usuario)
     `)
 
   const id = Number(r.recordset[0].ID)
-  await auditarEn(e, id, 'PDF importado desde carga manual')
+  const etiqueta = TIPOS_FACTURA.find((t) => t.clave === tipoFactura)?.label ?? tipoFactura
+  await auditarEn(e, id, `PDF importado desde carga manual — ${etiqueta}`)
   return id
 }
 
@@ -49,6 +58,7 @@ export async function importarComprobantes(fd: FormData): Promise<{ importados: 
   if (archivos.length > MAX_ARCHIVOS) {
     throw new Error(`No se pueden importar más de ${MAX_ARCHIVOS} archivos por vez.`)
   }
+
 
   // Se valida todo el lote antes de tocar disco o base. Si se validara
   // adentro del loop de importación, un archivo invalido a mitad de lote
@@ -65,10 +75,23 @@ export async function importarComprobantes(fd: FormData): Promise<{ importados: 
     }
   }
 
+  // Después de validar los archivos y antes de escribir nada: el tipo
+  // decide con qué prompt lee la IA el lote entero, así que no se cae al
+  // default en silencio -- un lote de resúmenes de tarjeta leído como
+  // facturas de conceptos sale mal completo y el operador no tendría cómo
+  // notarlo salvo revisando uno por uno. Va segundo porque un archivo
+  // inválido es el error que el operador realmente encuentra (el tipo sale
+  // de un selector que siempre trae valor), y decirle "elegí el tipo"
+  // cuando lo que falla es un PDF lo manda a buscar donde no está.
+  const tipoFactura = fd.get('tipoFactura')
+  if (typeof tipoFactura !== 'string' || !esTipoFactura(tipoFactura)) {
+    throw new Error('Elegí el tipo de comprobante antes de importar.')
+  }
+
   let importados = 0
   for (const archivo of archivos) {
     const datos = Buffer.from(await archivo.arrayBuffer())
-    await conTransaccion((tx) => importarComprobanteEn(tx, archivo.name, datos))
+    await conTransaccion((tx) => importarComprobanteEn(tx, archivo.name, datos, tipoFactura))
     importados += 1
   }
 
@@ -90,6 +113,22 @@ export async function guardarCampo(id: number, clave: string, valor: string): Pr
       UPDATE PHF_COMPROBANTE SET FECHA_MODIF = SYSDATETIME(), USUARIO_MODIF = @u
       WHERE ID = @id AND ESTADO <> 'registrado'
     `)
+
+  // El tipo de factura vive en dos lados a propósito: el campo es lo que
+  // ve y edita el operador, la columna es lo que lee la cola para elegir
+  // el prompt. Si el operador reclasifica el comprobante y después lo
+  // reprocesa, el reproceso tiene que leerlo con el prompt del tipo nuevo
+  // -- sin este UPDATE volvería a usar el que se eligió al importar.
+  if (clave === 'tipoFactura' && esTipoFactura(valor)) {
+    await pool
+      .request()
+      .input('id', sql.Int, id)
+      .input('tipo', sql.VarChar(20), valor)
+      .query(`
+        UPDATE PHF_COMPROBANTE SET TIPO_FACTURA = @tipo
+        WHERE ID = @id AND ESTADO <> 'registrado'
+      `)
+  }
 }
 
 export async function confirmarComprobante(id: number): Promise<void> {

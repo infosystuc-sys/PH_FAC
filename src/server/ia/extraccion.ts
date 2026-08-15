@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { CAMPOS_IA, schemaExtraccion } from '@/lib/campos'
+import { camposIaPara, schemaExtraccion } from '@/lib/campos'
 import { CLAVES_RENGLON, type RenglonExtraido } from '@/lib/renglones'
-import { PROMPT_EXTRACCION } from './prompt'
+import { ANALIZA_RENGLONES, type TipoFactura } from '@/lib/tipoFactura'
+import { PROMPTS_EXTRACCION } from './prompt'
 
 export type CampoExtraido = { valor: string | null; confianza: number }
 
@@ -50,8 +51,9 @@ function confianza(v: unknown): number {
  * `confianzas` entero no se lanza: un valor sin confianza sigue siendo un
  * valor útil, así que esas confianzas quedan en 0.
  */
-export function parsearRespuesta(texto_: string): Extraccion {
+export function parsearRespuesta(texto_: string, tipo: TipoFactura): Extraccion {
   const crudo = JSON.parse(texto_) as Record<string, unknown>
+  const esperados = camposIaPara(tipo)
 
   const valores_ = crudo.valores
   if (valores_ === null || typeof valores_ !== 'object') {
@@ -66,7 +68,7 @@ export function parsearRespuesta(texto_: string): Extraccion {
       : {}
 
   const campos: Record<string, CampoExtraido> = {}
-  for (const def of CAMPOS_IA) {
+  for (const def of esperados) {
     const valor = texto(dicValores[def.clave])
     campos[def.clave] = {
       valor,
@@ -75,8 +77,25 @@ export function parsearRespuesta(texto_: string): Extraccion {
     }
   }
 
+  // Hoy ningun tipo analiza renglones (ver ANALIZA_RENGLONES): de los
+  // comprobantes solo se leen subtotales, totales e impuestos. El schema ni
+  // siquiera los pide, pero si por lo que fuera vinieran igual se descartan
+  // aca, para que un error del modelo no meta en PHF_RENGLON un detalle que
+  // no se imputa.
+  const renglones = ANALIZA_RENGLONES[tipo] ? parsearRenglones(crudo.renglones) : []
+
+  return { campos, renglones }
+}
+
+/**
+ * Los renglones de la respuesta cruda. Va aparte de `parsearRespuesta`
+ * porque ningun tipo los pide hoy: si estuviera en linea seria una rama
+ * inalcanzable, y esto deja el parseo probado para cuando se vuelva a
+ * activar `ANALIZA_RENGLONES` en algun tipo.
+ */
+export function parsearRenglones(crudo: unknown): RenglonExtraido[] {
   const renglones: RenglonExtraido[] = []
-  for (const r of Array.isArray(crudo.renglones) ? crudo.renglones : []) {
+  for (const r of Array.isArray(crudo) ? crudo : []) {
     if (r === null || typeof r !== 'object') continue
     const o = r as Record<string, unknown>
     const fila = Object.fromEntries(
@@ -86,16 +105,23 @@ export function parsearRespuesta(texto_: string): Extraccion {
     if (CLAVES_RENGLON.every((k) => fila[k] === null)) continue
     renglones.push(fila)
   }
-
-  return { campos, renglones }
+  return renglones
 }
 
 /**
  * Manda el PDF a Claude y devuelve los campos con su confianza. No lanza:
  * toda falla vuelve como `{ ok: false }` para que la cola decida si
  * reintenta o marca el comprobante en error.
+ *
+ * `tipo` es el que el operador eligió al importar y decide con qué prompt
+ * se lee el comprobante: una factura de servicios, una de mercadería y un
+ * resumen de tarjeta no se interpretan igual (sobre todo en qué hacer con
+ * los renglones y dónde buscar las percepciones de Ingresos Brutos).
  */
-export async function extraerDePdf(pdf: Buffer): Promise<ResultadoExtraccion> {
+export async function extraerDePdf(
+  pdf: Buffer,
+  tipo: TipoFactura,
+): Promise<ResultadoExtraccion> {
   const arranque = Date.now()
   try {
     const r = await getCliente().messages.create({
@@ -105,12 +131,12 @@ export async function extraerDePdf(pdf: Buffer): Promise<ResultadoExtraccion> {
       thinking: { type: 'adaptive' },
       output_config: {
         effort: 'medium',
-        format: { type: 'json_schema', schema: schemaExtraccion() },
+        format: { type: 'json_schema', schema: schemaExtraccion(tipo) },
       },
       system: [
         {
           type: 'text',
-          text: PROMPT_EXTRACCION,
+          text: PROMPTS_EXTRACCION[tipo],
           cache_control: { type: 'ephemeral' },
         },
       ],
@@ -144,7 +170,7 @@ export async function extraerDePdf(pdf: Buffer): Promise<ResultadoExtraccion> {
 
     return {
       ok: true,
-      extraccion: parsearRespuesta(bloque.text),
+      extraccion: parsearRespuesta(bloque.text, tipo),
       ms: Date.now() - arranque,
       modelo: MODELO,
       // Base para medir el costo real por comprobante (RETOMAR.md): sin

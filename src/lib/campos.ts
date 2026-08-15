@@ -1,4 +1,5 @@
 import { CLAVES_RENGLON } from './renglones'
+import { ANALIZA_RENGLONES, analizaCampo, type TipoFactura } from './tipoFactura'
 
 export type GrupoCampo = 'comprobante' | 'proveedor' | 'importes' | 'imputacion'
 /**
@@ -48,47 +49,97 @@ export const CAMPOS: DefCampo[] = [
   c('condiva',     'Condición IVA',         'proveedor',   2, 'texto',   false),
   c('condpago',    'Condición de pago',     'proveedor',   2, 'texto',   false),
   c('vencimiento', 'Vencimiento',           'proveedor',   2, 'fecha',   true),
+  // El proveedor de Tango va en esta seccion y no en "Imputacion": es la
+  // respuesta a "quien nos vendio", igual que la razon social y el CUIT de
+  // arriba, solo que resuelta contra CPA01 en vez de leida del PDF. La
+  // celda de al lado -- el concepto asociado a ese proveedor -- la pinta el
+  // formulario: sale de Tango, no se guarda en PHF_CAMPO.
+  { clave: 'codprovee', label: 'Cód. proveedor Tango', grupo: 'proveedor', span: 3,
+    tipo: 'texto', mono: true, extraePorIA: false, soloLectura: true },
 
-  // Importes — 54 = 9 filas de 6. Rehecho el 2026-08-05: Tango no guarda el
-  // neto por base, guarda un neto gravado total y hasta cinco tripletas de
-  // codigo/porcentaje/importe de IVA (CPA04). Los pares porcivaN/impivaN
-  // van intercalados a proposito -- cada par ocupa una fila completa de la
-  // grilla (2 + 4 = 6) -- y mezclan alicuotas con percepciones de la
-  // familia IVA, que es como Tango las guarda de verdad. Ver design doc
-  // 2026-08-05, seccion 3 y 11. La percepcion de IVA del 3% se resuelve
-  // siempre al codigo 15 (decision del usuario, 2026-08-10): no hay
-  // ambiguedad que elegir, asi que no hay campo de seleccion para eso.
-  // codpercibb (percepcion de IIBB) si necesita eleccion -- la sugiere la
-  // IA leyendo la jurisdiccion del comprobante (ver prompt.ts), y el
-  // operador la puede corregir contra las opciones reales de Tango.
+  // Importes. Rehecho el 2026-08-05: Tango no guarda el neto por base,
+  // guarda un neto gravado total y hasta cinco tripletas de
+  // codigo/porcentaje/importe de IVA (CPA04). Ver design doc 2026-08-05,
+  // seccion 3 y 11.
+  //
+  // Las tres familias de lineas se muestran igual -- tres celdas de span 2
+  // por fila -- pero se identifican distinto y terminan en tablas distintas:
+  //
+  //   IVA        porcivaN  -> el PORCENTAJE identifica la alicuota de CPA14.
+  //                          Va a los slots COD_IVA de la cabecera (CPA04).
+  //                          La percepcion de IVA del 3% entra aca, resuelta
+  //                          siempre al codigo 15 (decision del usuario).
+  //   Percepcion percepN   -> la JURISDICCION identifica el codigo. El
+  //                          porcentaje NO sirve: el 60 (Tucuman) y el 61
+  //                          (Salta) son ambos 2,5%. Va a CPA18.
+  //   Varios     variosN   -> el operador elige el codigo de una lista de 10
+  //                          (impuesto interno, ganancias, municipales...).
+  //                          Tambien va a CPA18.
+  //
+  // La celda del medio de cada fila -- a que codigo de Tango resuelve -- la
+  // renderiza el formulario, no este bucle. En IVA y percepcion es una lista
+  // desplegable que arranca mostrando lo que resolvio el sistema y deja al
+  // operador corregirlo si la IA leyo mal; esa correccion se guarda en
+  // codivaN/codpercepN. Esos campos estan en el catalogo (tienen que ser
+  // claves validas de PHF_CAMPO) pero NO los pinta el bucle: los pinta la
+  // celda del medio. Ver OCULTOS_EN_GRILLA mas abajo.
   c('neto',        'Neto gravado',          'importes',    3, 'decimal', true),
   c('exento',      'No gravado / exento',   'importes',    3, 'decimal', true),
   c('porciva1',    'Alícuota 1',            'importes',    2, 'porcentaje', true),
-  c('impiva1',     'Importe 1',             'importes',    4, 'decimal', true),
+  c('impiva1',     'Importe 1',             'importes',    2, 'decimal', true),
   c('porciva2',    'Alícuota 2',            'importes',    2, 'porcentaje', true),
-  c('impiva2',     'Importe 2',             'importes',    4, 'decimal', true),
+  c('impiva2',     'Importe 2',             'importes',    2, 'decimal', true),
   c('porciva3',    'Alícuota 3',            'importes',    2, 'porcentaje', true),
-  c('impiva3',     'Importe 3',             'importes',    4, 'decimal', true),
+  c('impiva3',     'Importe 3',             'importes',    2, 'decimal', true),
   c('porciva4',    'Alícuota 4',            'importes',    2, 'porcentaje', true),
-  c('impiva4',     'Importe 4',             'importes',    4, 'decimal', true),
+  c('impiva4',     'Importe 4',             'importes',    2, 'decimal', true),
   c('porciva5',    'Alícuota 5',            'importes',    2, 'porcentaje', true),
-  c('impiva5',     'Importe 5',             'importes',    4, 'decimal', true),
-  c('perciibb',    'Percepción IIBB',       'importes',    3, 'decimal', true),
-  c('codpercibb',  'Código percepción IIBB', 'importes',   6, 'select', false),
-  c('impint',      'Impuesto interno',      'importes',    3, 'decimal', true),
+  c('impiva5',     'Importe 5',             'importes',    2, 'decimal', true),
+  c('percep1',     'Percepción 1',          'importes',    2, 'texto',   false),
+  c('imppercep1',  'Importe percep. 1',     'importes',    2, 'decimal', true),
+  c('percep2',     'Percepción 2',          'importes',    2, 'texto',   false),
+  c('imppercep2',  'Importe percep. 2',     'importes',    2, 'decimal', true),
+  c('percep3',     'Percepción 3',          'importes',    2, 'texto',   false),
+  c('imppercep3',  'Importe percep. 3',     'importes',    2, 'decimal', true),
+  c('percep4',     'Percepción 4',          'importes',    2, 'texto',   false),
+  c('imppercep4',  'Importe percep. 4',     'importes',    2, 'decimal', true),
+  c('varios1',     'Impuestos varios 1',    'importes',    2, 'select',  false),
+  c('impvarios1',  'Importe varios 1',      'importes',    2, 'decimal', true),
+  c('varios2',     'Impuestos varios 2',    'importes',    2, 'select',  false),
+  c('impvarios2',  'Importe varios 2',      'importes',    2, 'decimal', true),
   c('total',       'Total del comprobante', 'importes',    3, 'decimal', true),
+
+  // Correccion manual del codigo de Tango, una por fila de IVA y de
+  // percepcion. Vacio = vale lo que resolvio el sistema; con valor = el
+  // operador lo corrigio y ese gana. Se limpia solo cuando se edita la
+  // columna de la izquierda (el porcentaje o la jurisdiccion), para que no
+  // quede un codigo viejo pegado a un dato que ya cambio.
+  o('codiva1'),    o('codiva2'),    o('codiva3'),    o('codiva4'),    o('codiva5'),
+  o('codpercep1'), o('codpercep2'), o('codpercep3'), o('codpercep4'),
   { clave: 'imputado', label: 'Total imputado', grupo: 'importes', span: 3,
     tipo: 'decimal', mono: true, extraePorIA: false, soloLectura: true },
 
   // Imputación en Tango — 6 = 1 fila. Ninguno lo extrae la IA:
   // `codprovee` se resuelve del CUIT, `condcompra` lo elige el operador.
-  { clave: 'codprovee', label: 'Cód. proveedor Tango', grupo: 'imputacion', span: 3,
-    tipo: 'texto', mono: true, extraePorIA: false, soloLectura: true },
   { clave: 'condcompra', label: 'Condición de compra', grupo: 'imputacion', span: 3,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
-  { clave: 'tipoFactura', label: 'Tipo de factura', grupo: 'imputacion', span: 6,
+  { clave: 'tipoFactura', label: 'Tipo de factura', grupo: 'imputacion', span: 3,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
 ]
+
+/** Correccion manual del codigo de Tango de una fila. No la extrae la IA. */
+function o(clave: string): DefCampo {
+  return {
+    clave,
+    label: 'En Tango',
+    grupo: 'importes',
+    span: 2,
+    tipo: 'select',
+    mono: false,
+    extraePorIA: false,
+    soloLectura: false,
+  }
+}
 
 function c(
   clave: string,
@@ -102,6 +153,25 @@ function c(
 }
 
 export const CAMPOS_IA: DefCampo[] = CAMPOS.filter((x) => x.extraePorIA)
+
+/**
+ * Los campos que la IA analiza en un comprobante de este tipo. No todos
+ * los tipos piden lo mismo: una factura de conceptos no tiene CAE que
+ * cotejar ni renglones que cargar, así que pedirlos sería gastar schema y
+ * atención del modelo en datos que después nadie usa. La lista de
+ * excepciones vive en tipoFactura.ts, al lado de la definición del tipo.
+ */
+export function camposIaPara(tipo: TipoFactura): DefCampo[] {
+  return CAMPOS_IA.filter((x) => analizaCampo(tipo, x.clave))
+}
+
+/**
+ * Los que el bucle del formulario NO pinta: los pinta la celda del medio de
+ * su propia fila, que necesita la resolucion en vivo para saber que mostrar
+ * cuando el operador todavia no corrigio nada. Ocupan lugar en la grilla
+ * igual -- son esa celda -- asi que sus spans si cuentan para el ancho.
+ */
+export const OCULTOS_EN_GRILLA = /^(?:codiva[1-5]|codpercep[1-4])$/
 
 const POR_CLAVE = new Map(CAMPOS.map((x) => [x.clave, x]))
 
@@ -158,20 +228,28 @@ function objeto(props: Record<string, unknown>) {
  * La semántica no cambia: misma clave, mismo campo, misma convención de
  * cadena vacía para "no figura" -- solo se aplana la anidación.
  */
-export function schemaExtraccion(): Record<string, unknown> {
+export function schemaExtraccion(tipo: TipoFactura): Record<string, unknown> {
   const valores: Record<string, unknown> = {}
   const confianzas: Record<string, unknown> = {}
-  for (const x of CAMPOS_IA) {
+  for (const x of camposIaPara(tipo)) {
     valores[x.clave] = VALOR
     confianzas[x.clave] = { type: 'number' }
   }
 
-  const renglon: Record<string, unknown> = {}
-  for (const k of CLAVES_RENGLON) renglon[k] = VALOR
-
-  return objeto({
+  const props: Record<string, unknown> = {
     valores: objeto(valores),
     confianzas: objeto(confianzas),
-    renglones: { type: 'array', items: objeto(renglon) },
-  })
+  }
+
+  // En conceptos el array de renglones no está en el schema, no viene
+  // vacío: el comprobante se imputa por concepto contra la cabecera. Es
+  // una garantía más fuerte que pedírselo por prompt, y además le saca al
+  // schema el único objeto de tamaño no acotado que tenía.
+  if (ANALIZA_RENGLONES[tipo]) {
+    const renglon: Record<string, unknown> = {}
+    for (const k of CLAVES_RENGLON) renglon[k] = VALOR
+    props.renglones = { type: 'array', items: objeto(renglon) }
+  }
+
+  return objeto(props)
 }

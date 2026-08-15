@@ -4,17 +4,21 @@ import { conTransaccion } from '../db/tx'
 import { extraerDePdf, type Extraccion } from '../ia/extraccion'
 import { buscarProveedoresPorCuit } from '../tango/proveedores'
 import { normalizarCuit, parsearImporteONulo } from '@/lib/formato'
+import { tipoFacturaODefault, type TipoFactura } from '@/lib/tipoFactura'
 import { guardarExtraccionEn, guardarCampoEn, auditarEn } from './detalle'
 import { leerPdf } from './archivos'
 
 export const MAX_INTENTOS = 3
 export const MINUTOS_REPESCA = 10
 export const CONCURRENCIA = 3
+
+/** "CONTADO 1 DIA". Todas las facturas de conceptos arrancan con esta. */
+export const COND_COMPRA_CONCEPTOS = '2'
 const INTERVALO_MS = 2 * 60 * 1000
 
 type Ejecutor = { request(): sql.Request }
 
-export type Pendiente = { id: number; ruta: string }
+export type Pendiente = { id: number; ruta: string; tipoFactura: TipoFactura }
 
 /**
  * Los comprobantes que hay que extraer: los recien encolados y los que
@@ -42,7 +46,7 @@ export async function tomarPendientesEn(e: Ejecutor, limite: number): Promise<Pe
     .input('min', sql.Int, MINUTOS_REPESCA)
     .query<Record<string, unknown>>(`
       WITH candidatos AS (
-        SELECT TOP (@lim) ID, ARCHIVO_RUTA, FECHA_MODIF
+        SELECT TOP (@lim) ID, ARCHIVO_RUTA, TIPO_FACTURA, FECHA_MODIF
         FROM PHF_COMPROBANTE WITH (UPDLOCK, ROWLOCK, READPAST)
         WHERE ESTADO = 'procesando'
           AND INTENTOS < @max
@@ -51,10 +55,18 @@ export async function tomarPendientesEn(e: Ejecutor, limite: number): Promise<Pe
       )
       UPDATE candidatos
       SET FECHA_MODIF = SYSDATETIME()
-      OUTPUT INSERTED.ID, INSERTED.ARCHIVO_RUTA
+      OUTPUT INSERTED.ID, INSERTED.ARCHIVO_RUTA, INSERTED.TIPO_FACTURA
     `)
 
-  return r.recordset.map((x) => ({ id: Number(x.ID), ruta: String(x.ARCHIVO_RUTA) }))
+  return r.recordset.map((x) => ({
+    id: Number(x.ID),
+    ruta: String(x.ARCHIVO_RUTA),
+    // Los comprobantes importados antes de que existiera la columna la
+    // tienen en NULL. Caen al default en vez de fallar: son facturas de
+    // conceptos en su enorme mayoria, y colgar la cola por un dato viejo
+    // seria peor que leerlas con el prompt mas comun.
+    tipoFactura: tipoFacturaODefault(x.TIPO_FACTURA as string | null),
+  }))
 }
 
 export async function marcarLeidoEn(
@@ -192,10 +204,10 @@ export async function resolverProveedorEn(
 }
 
 /** Extrae un comprobante y deja el resultado en la base. No lanza. */
-export async function procesarUno({ id, ruta }: Pendiente): Promise<void> {
+export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise<void> {
   try {
     const pdf = await leerPdf(ruta)
-    const r = await extraerDePdf(pdf)
+    const r = await extraerDePdf(pdf, tipoFactura)
 
     if (!r.ok) {
       await conTransaccion((tx) => marcarFalloEn(tx, id, r.error))
@@ -204,6 +216,25 @@ export async function procesarUno({ id, ruta }: Pendiente): Promise<void> {
 
     await conTransaccion(async (tx) => {
       const prom = await guardarExtraccionEn(tx, id, r.extraccion)
+      // Despues de guardarExtraccionEn y no antes: esa funcion borra todos
+      // los PHF_CAMPO del comprobante para reescribirlos, asi que el campo
+      // tiene que volver a escribirse aca o el formulario abriria con el
+      // tipo vacio pese a que el operador ya lo eligio al importar. No es
+      // una correccion del operador -- la eligio el, pero por otra via --,
+      // asi que no contamina CORREGIDO_POR_USUARIO.
+      await guardarCampoEn(tx, id, 'tipoFactura', tipoFactura, { corregidoPorUsuario: false })
+
+      // Las facturas de conceptos van todas con la condicion de compra 2
+      // ("CONTADO 1 DIA") -- decision del usuario. Se escribe, no se
+      // preselecciona nada mas en la pantalla: validarCondCompra mira el
+      // valor guardado, asi que un default que viviera solo en el
+      // formulario dejaria el registro bloqueado igual. El operador la
+      // cambia desde la lista si a este comprobante le toca otra.
+      if (tipoFactura === 'conceptos') {
+        await guardarCampoEn(tx, id, 'condcompra', COND_COMPRA_CONCEPTOS, {
+          corregidoPorUsuario: false,
+        })
+      }
       await desnormalizarBandejaEn(tx, id, r.extraccion)
       await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
       const conValor = Object.values(r.extraccion.campos).filter((c) => c.valor !== null).length

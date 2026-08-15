@@ -26,8 +26,10 @@
     "impiva4":     "",
     "porciva5":    "",
     "impiva5":     "",
-    "perciibb":    "13.248,69",
-    "impint":      "",
+    "percep1":     "Tucumán",
+    "imppercep1":  "13.248,69",
+    "varios1":     "",
+    "impvarios1":  "",
     "total":       "690.983,02"
   },
   "confianzas": {
@@ -57,8 +59,10 @@
     "impiva4":     0,
     "porciva5":    0,
     "impiva5":     0,
-    "perciibb":    0.9,
-    "impint":      0,
+    "percep1":     0.9,
+    "imppercep1":  0.9,
+    "varios1":     0,
+    "impvarios1":  0,
     "total":       0.99
   },
   "renglones": [

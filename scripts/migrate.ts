@@ -38,6 +38,7 @@ const DEFINICIONES: Definicion[] = [
         ARCHIVO_RUTA        NVARCHAR(500)  NOT NULL,
         ARCHIVO_HASH        CHAR(64)       NOT NULL,
         ESTADO              VARCHAR(20)    NOT NULL,
+        TIPO_FACTURA        VARCHAR(20)    NULL,
         MOTIVO_OBSERVACION  NVARCHAR(60)   NULL,
         NOTA_OBSERVACION    NVARCHAR(1000) NULL,
         TIPO                VARCHAR(10)    NULL,
@@ -79,6 +80,12 @@ const DEFINICIONES: Definicion[] = [
       { nombre: 'ERROR_MENSAJE', ddl: 'ERROR_MENSAJE NVARCHAR(1000) NULL' },
       { nombre: 'EXTRACCION_MS', ddl: 'EXTRACCION_MS INT NULL' },
       { nombre: 'EXTRACCION_MODELO', ddl: 'EXTRACCION_MODELO VARCHAR(40) NULL' },
+      // El tipo que el operador elige al importar. Vive en la cabecera y no
+      // en PHF_CAMPO porque la cola lo necesita ANTES de extraer, para
+      // elegir el prompt -- y porque guardarExtraccionEn borra los campos
+      // del comprobante antes de reescribirlos, asi que un PHF_CAMPO
+      // escrito en la importacion no sobreviviria a su propia extraccion.
+      { nombre: 'TIPO_FACTURA', ddl: 'TIPO_FACTURA VARCHAR(20) NULL' },
     ],
   },
   {
