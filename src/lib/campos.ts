@@ -42,6 +42,12 @@ export const CAMPOS: DefCampo[] = [
   c('moneda',      'Moneda',                'comprobante', 2, 'texto',   false),
   c('cotizacion',  'Cotización',            'comprobante', 2, 'decimal', true),
   c('ordencompra', 'Orden de compra',       'comprobante', 2, 'texto',   true),
+  // Solo en facturas de articulos: es el numero con el que se va contra
+  // STA14 a traer los renglones del remito. Dos porque es comun que una
+  // factura consolide dos remitos de la misma semana. Mono: el operador lo
+  // coteja digito por digito contra el PDF.
+  c('remito1',     'Remito 1',              'comprobante', 3, 'texto',   true),
+  c('remito2',     'Remito 2',              'comprobante', 3, 'texto',   true),
 
   // Proveedor — 12 = 2 filas de 6
   c('razon',       'Razón social',          'proveedor',   3, 'texto',   false),

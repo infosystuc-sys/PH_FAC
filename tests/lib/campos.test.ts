@@ -61,13 +61,13 @@ describe('catalogo de campos', () => {
   )
 
   it.each(TIPOS_FACTURA.map((t) => t.clave))(
-    '%s no analiza los ocho campos que no se imputan',
+    '%s no analiza los campos que no se imputan en ese tipo',
     (tipo) => {
       const claves = camposIaPara(tipo).map((c) => c.clave)
       for (const excluido of CAMPOS_NO_ANALIZADOS[tipo]) {
         expect(claves, `${tipo} no deberia analizar ${excluido}`).not.toContain(excluido)
       }
-      expect(claves).toHaveLength(39 - CAMPOS_NO_ANALIZADOS[tipo].length)
+      expect(claves).toHaveLength(41 - CAMPOS_NO_ANALIZADOS[tipo].length)
 
       // Todos siguen en el catalogo: la IA no los lee, pero el operador
       // puede tener uno cargado a mano de antes y el formulario tiene que
@@ -78,15 +78,18 @@ describe('catalogo de campos', () => {
     },
   )
 
-  it('la IA extrae 39 campos', () => {
+  it('el catalogo tiene 41 campos que la IA puede llegar a extraer', () => {
     // El numero exacto es un tripwire, no una formalidad: la API ya rechazo
     // este schema dos veces por tamaño -- una por superar las 16 uniones de
     // tipos, otra por "compiled grammar is too large" con 29 campos
-    // anidados. La forma aplanada aguanto 29; ahora son 39. Si este test
-    // salta al agregar campos, hay que verificar contra la API real antes
-    // de dar por hecho que el schema sigue entrando. Conceptos pide 31 --
-    // ver camposIaPara -- asi que el peor caso son los otros dos tipos.
-    expect(CAMPOS_IA.length).toBe(39)
+    // anidados.
+    //
+    // Ningun tipo pide los 41: cada uno saca los suyos (ver
+    // CAMPOS_NO_ANALIZADOS). Hoy articulos pide 33 y los otros dos 31,
+    // contra un techo medido de 35 sin el array de renglones. Si este test
+    // salta al agregar campos, corre scripts/verificar-schema.ts antes de
+    // dar por hecho que el schema sigue entrando.
+    expect(CAMPOS_IA.length).toBe(41)
   })
 
   it('los campos calculados y de imputacion no los extrae la IA', () => {

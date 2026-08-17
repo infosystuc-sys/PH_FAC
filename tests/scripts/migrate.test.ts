@@ -73,6 +73,8 @@ describe('migracion del esquema propio', () => {
 describe('migracion: ejercitando el CREATE de verdad', () => {
   const prefijosUsados: string[] = []
 
+  // Timeout propio: es el que borra lo que crearon los tests, y con los 10s
+  // por defecto se cortaba dejando tablas atras.
   afterAll(async () => {
     try {
       const pool = await getPool()
@@ -102,7 +104,7 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
       // si no, vitest puede colgarse en vez de reportar el fallo limpio.
       await cerrarPool()
     }
-  })
+  }, 120_000)
 
   function prefijoUnico(): string {
     const p = `PHF_test${Date.now()}_${Math.floor(Math.random() * 1e6)}_`
@@ -266,5 +268,9 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
       await limpiarPrefijo(pool, pA)
       await limpiarPrefijo(pool, pB)
     }
-  })
+    // Tres migraciones completas mas DDL sobre una base de 3.100 tablas. Con
+    // el timeout de 20s del proyecto se cortaba a mitad de camino, y como el
+    // corte se lleva tambien el `finally` y el afterAll, cada corrida fallida
+    // dejaba tablas PHF_test* sin borrar en la base.
+  }, 180_000)
 })

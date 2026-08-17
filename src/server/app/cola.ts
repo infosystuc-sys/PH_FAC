@@ -3,8 +3,11 @@ import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
 import { extraerDePdf, type Extraccion } from '../ia/extraccion'
 import { buscarProveedoresPorCuit } from '../tango/proveedores'
+import { buscarConceptoProveedor } from '../tango/conceptos'
+import { buscarRemitoPorNumero } from '../tango/remitos'
 import { normalizarCuit, parsearImporteONulo } from '@/lib/formato'
-import { tipoFacturaODefault, type TipoFactura } from '@/lib/tipoFactura'
+import { tipoFacturaODefault, CLAVES_REMITO, type TipoFactura } from '@/lib/tipoFactura'
+import { MOTIVO_SIN_CONCEPTO, MOTIVO_REMITO_SIN_SALDO } from '@/lib/observacion'
 import { guardarExtraccionEn, guardarCampoEn, auditarEn } from './detalle'
 import { leerPdf } from './archivos'
 
@@ -179,11 +182,11 @@ export async function resolverProveedorEn(
   e: Ejecutor,
   id: number,
   cuit: string | null,
-): Promise<void> {
-  if (!cuit || !normalizarCuit(cuit)) return
+): Promise<string | null> {
+  if (!cuit || !normalizarCuit(cuit)) return null
 
   const candidatos = await buscarProveedoresPorCuit(cuit)
-  if (candidatos.length !== 1) return
+  if (candidatos.length !== 1) return null
   const proveedor = candidatos[0]
 
   // No es una correccion del operador: lo resolvio el sistema por el CUIT.
@@ -201,6 +204,213 @@ export async function resolverProveedorEn(
     `)
 
   await auditarEn(e, id, `Proveedor resuelto por CUIT: ${proveedor.codProvee} — ${proveedor.razonSocial}`)
+  return proveedor.codProvee
+}
+
+/**
+ * Manda a observacion la factura de conceptos cuyo proveedor no tiene un
+ * concepto asociado en Tango.
+ *
+ * El concepto es contra que cuenta se imputa el comprobante: sin el no hay
+ * registro posible, y no es algo que el operador pueda resolver desde esta
+ * app -- se carga en la ficha del proveedor, en Tango. Dejarlo en
+ * "pendiente de revision" lo manda a revisar un comprobante que no va a
+ * poder confirmar, y recien se entera al final. En observacion sale de la
+ * fila de trabajo y queda con el motivo escrito.
+ *
+ * Corre despues de `marcarLeidoEn` a proposito: esa funcion pone el estado
+ * en 'leido', asi que hacerlo antes lo pisaria.
+ *
+ * Devuelve si lo observo, para el log de la tanda.
+ */
+export async function observarSinConceptoEn(
+  e: Ejecutor,
+  id: number,
+  tipoFactura: TipoFactura,
+  codProvee: string | null,
+): Promise<boolean> {
+  // Solo las facturas de conceptos: una de articulos se imputa por renglon,
+  // y una liquidacion de tarjeta va al concepto fijo de comisiones, que no
+  // depende de la ficha del proveedor y por lo tanto nunca falta por esta
+  // via. Mismo criterio que validarListoParaRegistrar.
+  if (tipoFactura !== 'conceptos') return false
+
+  // Sin proveedor resuelto no se puede saber si tiene concepto. Ese caso ya
+  // lo marca la validacion de proveedor, y mandarlo a observacion por algo
+  // que todavia no se pudo evaluar seria culpar al proveedor equivocado.
+  if (!codProvee) return false
+
+  const concepto = await buscarConceptoProveedor(codProvee)
+  if (concepto) return false
+
+  const nota =
+    `El proveedor ${codProvee} no tiene un concepto asociado en Tango, así que ` +
+    `no hay contra qué cuenta imputar el comprobante. Cargalo en la ficha del ` +
+    `proveedor y volvé a revisarlo.`
+
+  await e
+    .request()
+    .input('id', sql.Int, id)
+    .input('motivo', sql.NVarChar(60), MOTIVO_SIN_CONCEPTO)
+    .input('nota', sql.NVarChar(1000), nota)
+    .query(`
+      UPDATE PHF_COMPROBANTE
+      SET ESTADO = 'observacion',
+          MOTIVO_OBSERVACION = @motivo,
+          NOTA_OBSERVACION = @nota,
+          FECHA_MODIF = SYSDATETIME()
+      WHERE ID = @id
+    `)
+
+  await auditarEn(e, id, `En observación: ${MOTIVO_SIN_CONCEPTO} (${codProvee})`)
+  return true
+}
+
+/** Lo que la carga de renglones desde el remito dejo, para el log y los tests. */
+export type CargaRemitos = {
+  /** Renglones escritos en PHF_RENGLON. */
+  renglones: number
+  /** Numeros que Tango tiene sin mercaderia pendiente. */
+  sinSaldo: string[]
+  /** Numeros que no existen para ese proveedor. */
+  noEncontrados: string[]
+}
+
+/**
+ * Trae de Tango los renglones de los remitos que la IA leyo en la factura y
+ * los deja como renglones del comprobante, ya asociados a su renglon de
+ * remito.
+ *
+ * La mercaderia no sale del PDF: sale de STA14/STA20, que es lo que dice
+ * que entro de verdad al deposito. La IA solo aporta el NUMERO -- un dato
+ * corto y facil de verificar contra el papel -- y el detalle lo pone Tango.
+ * Transcribir veinte renglones de un PDF era pedirle al modelo que copie
+ * lo que el ERP ya sabe, con el riesgo de que copie mal.
+ *
+ * Solo carga los renglones con saldo pendiente: los ya facturados de un
+ * remito que sigue abierto no se proponen, o se facturaria dos veces la
+ * misma mercaderia.
+ */
+export async function cargarRenglonesDeRemitosEn(
+  e: Ejecutor,
+  id: number,
+  tipoFactura: TipoFactura,
+  codProvee: string | null,
+  valores: Record<string, string | null>,
+): Promise<CargaRemitos> {
+  const vacio: CargaRemitos = { renglones: 0, sinSaldo: [], noEncontrados: [] }
+  if (tipoFactura !== 'articulos' || !codProvee) return vacio
+
+  const numeros = CLAVES_REMITO.map((k) => (valores[k] ?? '').trim()).filter((n) => n !== '')
+  if (numeros.length === 0) return vacio
+
+  const salida: CargaRemitos = { renglones: 0, sinSaldo: [], noEncontrados: [] }
+  let orden = 0
+
+  for (const numero of numeros) {
+    const r = await buscarRemitoPorNumero(codProvee, numero)
+
+    if (r.estado === 'sin-saldo') {
+      salida.sinSaldo.push(numero)
+      continue
+    }
+    if (r.estado === 'no-existe') {
+      salida.noEncontrados.push(numero)
+      continue
+    }
+
+    for (const renglon of r.remito.renglones) {
+      orden += 1
+      await e
+        .request()
+        .input('id', sql.Int, id)
+        .input('orden', sql.Int, orden)
+        .input('codigo', sql.NVarChar(60), renglon.codArticulo)
+        .input('desc', sql.NVarChar(500), renglon.descripcion)
+        // La cantidad propuesta es la PENDIENTE, no la del remito: si la
+        // mitad ya se facturo, proponer el total duplicaria esa mitad.
+        .input('cant', sql.Decimal(19, 4), renglon.cantidadPendiente)
+        // El remito dice QUE entro y CUANTO, no a que precio: PRECIO esta
+        // en 0 en los 15.059 renglones de RP y PRECIO_REM en 3.927 de
+        // ellos. Cuando no hay precio va NULL y no 0 -- un 0 se lee como
+        // "sale cero", y lo que pasa es que el dato no esta y el operador
+        // tiene que sacarlo de la factura.
+        .input('pu', sql.Decimal(19, 4), renglon.precio || null)
+        .input(
+          'imp',
+          sql.Decimal(19, 4),
+          renglon.precio ? renglon.cantidadPendiente * renglon.precio : null,
+        )
+        .input('ncompInS', sql.VarChar(20), r.remito.numeroInterno)
+        .input('nRenglS', sql.Int, renglon.nRenglon)
+        .query(`
+          INSERT INTO PHF_RENGLON
+            (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
+             CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA,
+             REMITO_NCOMP_IN_S, REMITO_N_RENGL_S)
+          VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS)
+        `)
+      salida.renglones += 1
+    }
+
+    await auditarEn(
+      e,
+      id,
+      `Renglones propuestos desde el remito ${r.remito.numero} — ${r.remito.renglones.length} artículo(s)`,
+    )
+  }
+
+  return salida
+}
+
+/**
+ * Manda a observacion la factura de articulos cuyos remitos no se pudieron
+ * usar. Son dos problemas distintos y el mensaje lo dice:
+ *
+ *   sin saldo   el remito existe pero ya esta facturado. Suele ser el
+ *               proveedor facturando dos veces la misma mercaderia, y no
+ *               es algo que se resuelva corrigiendo un campo.
+ *   no existe   el numero no aparece para ese proveedor. Casi siempre es
+ *               un numero mal leido o un remito que todavia no se cargo.
+ */
+export async function observarRemitosEn(
+  e: Ejecutor,
+  id: number,
+  carga: CargaRemitos,
+): Promise<boolean> {
+  const problemas: string[] = []
+  if (carga.sinSaldo.length > 0) {
+    problemas.push(
+      `${carga.sinSaldo.join(', ')} ya está facturado por completo en Tango: no queda ` +
+        `mercadería pendiente para asociar.`,
+    )
+  }
+  if (carga.noEncontrados.length > 0) {
+    problemas.push(
+      `${carga.noEncontrados.join(', ')} no aparece entre los remitos de este proveedor. ` +
+        `Puede estar mal leído, o el remito todavía no se cargó en Tango.`,
+    )
+  }
+  if (problemas.length === 0) return false
+
+  const nota = `Remito ${problemas.join(' Remito ')}`
+
+  await e
+    .request()
+    .input('id', sql.Int, id)
+    .input('motivo', sql.NVarChar(60), MOTIVO_REMITO_SIN_SALDO)
+    .input('nota', sql.NVarChar(1000), nota.slice(0, 1000))
+    .query(`
+      UPDATE PHF_COMPROBANTE
+      SET ESTADO = 'observacion',
+          MOTIVO_OBSERVACION = @motivo,
+          NOTA_OBSERVACION = @nota,
+          FECHA_MODIF = SYSDATETIME()
+      WHERE ID = @id
+    `)
+
+  await auditarEn(e, id, `En observación: ${MOTIVO_REMITO_SIN_SALDO}`)
+  return true
 }
 
 /** Extrae un comprobante y deja el resultado en la base. No lanza. */
@@ -224,21 +434,32 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // asi que no contamina CORREGIDO_POR_USUARIO.
       await guardarCampoEn(tx, id, 'tipoFactura', tipoFactura, { corregidoPorUsuario: false })
 
-      // Las facturas de conceptos van todas con la condicion de compra 2
-      // ("CONTADO 1 DIA") -- decision del usuario. Se escribe, no se
-      // preselecciona nada mas en la pantalla: validarCondCompra mira el
-      // valor guardado, asi que un default que viviera solo en el
-      // formulario dejaria el registro bloqueado igual. El operador la
-      // cambia desde la lista si a este comprobante le toca otra.
-      if (tipoFactura === 'conceptos') {
+      // Las facturas de conceptos y las liquidaciones de tarjeta van todas
+      // con la condicion de compra 2 ("CONTADO 1 DIA") -- decision del
+      // usuario. Se escribe, no se preselecciona nada mas en la pantalla:
+      // validarCondCompra mira el valor guardado, asi que un default que
+      // viviera solo en el formulario dejaria el registro bloqueado igual.
+      // El operador la cambia desde la lista si a este comprobante le toca
+      // otra.
+      if (tipoFactura === 'conceptos' || tipoFactura === 'tarjeta') {
         await guardarCampoEn(tx, id, 'condcompra', COND_COMPRA_CONCEPTOS, {
           corregidoPorUsuario: false,
         })
       }
       await desnormalizarBandejaEn(tx, id, r.extraccion)
-      await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
+      const codProvee = await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
       const conValor = Object.values(r.extraccion.campos).filter((c) => c.valor !== null).length
       await marcarLeidoEn(tx, id, prom, r.ms, r.modelo, conValor)
+      await observarSinConceptoEn(tx, id, tipoFactura, codProvee)
+
+      // Los renglones de una factura de articulos salen del remito, no del
+      // PDF. Va despues de resolver el proveedor porque el remito se busca
+      // acotado a el.
+      const valores = Object.fromEntries(
+        Object.entries(r.extraccion.campos).map(([k, v]) => [k, v.valor]),
+      )
+      const carga = await cargarRenglonesDeRemitosEn(tx, id, tipoFactura, codProvee, valores)
+      await observarRemitosEn(tx, id, carga)
     })
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : String(err)

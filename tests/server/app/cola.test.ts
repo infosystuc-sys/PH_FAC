@@ -8,9 +8,13 @@ import {
   marcarLeidoEn,
   marcarFalloEn,
   resolverProveedorEn,
+  observarSinConceptoEn,
+  cargarRenglonesDeRemitosEn,
+  observarRemitosEn,
   desnormalizarBandejaEn,
   MAX_INTENTOS,
 } from '@/server/app/cola'
+import { MOTIVO_SIN_CONCEPTO, MOTIVO_REMITO_SIN_SALDO } from '@/lib/observacion'
 import { obtenerDetalleEn } from '@/server/app/detalle'
 import { getPool } from '@/server/db/pool'
 
@@ -256,10 +260,35 @@ describe('resolverProveedorEn', () => {
     })
   })
 
-  it('no rompe cuando la IA no leyo el CUIT', async () => {
+  it('devuelve null cuando la IA no leyo el CUIT, sin romper', async () => {
+    // El null no es solo "no paso nada": observarSinConceptoEn lo usa para
+    // saber que todavia no hay proveedor contra el cual buscar concepto.
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
-      await expect(resolverProveedorEn(tx, id, null)).resolves.toBeUndefined()
+      await expect(resolverProveedorEn(tx, id, null)).resolves.toBeNull()
+    })
+  })
+
+  it('devuelve el codigo que resolvio, para encadenar con el concepto', async () => {
+    const pool = await getPool()
+    const p = await pool.request().query(`
+      SELECT TOP 1 cuit, MIN(cod) AS cod
+      FROM (
+        SELECT LTRIM(RTRIM(COD_PROVEE)) AS cod,
+               REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '') AS cuit
+        FROM CPA01
+        WHERE LEN(REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '')) = 11
+      ) x
+      GROUP BY cuit
+      HAVING COUNT(*) = 1
+      ORDER BY cuit
+    `)
+    const real = p.recordset[0]
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      const cod = await resolverProveedorEn(tx, id, String(real.cuit))
+      expect(cod).toBe(String(real.cod))
     })
   })
 })
@@ -294,6 +323,249 @@ describe('marcarFalloEn', () => {
       await marcarFalloEn(tx, id, 'PDF ilegible')
       const d = await obtenerDetalleEn(tx, id)
       expect(d.auditoria.some((a) => a.texto.includes('PDF ilegible'))).toBe(true)
+    })
+  })
+})
+
+describe('observarSinConceptoEn', () => {
+  /** Un COD_PROVEE de CPA01 que no figura en CPA_CONCEPTOS_PROVEEDOR. */
+  async function proveedorSinConcepto(): Promise<string | null> {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(p.COD_PROVEE)) AS cod
+      FROM CPA01 p
+      WHERE NOT EXISTS (
+        SELECT 1 FROM CPA_CONCEPTOS_PROVEEDOR c WHERE c.COD_PROVEE = p.COD_PROVEE)
+      ORDER BY p.COD_PROVEE
+    `)
+    return r.recordset.length > 0 ? String(r.recordset[0].cod) : null
+  }
+
+  /** Uno que si lo tiene, para el caso contrario. */
+  async function proveedorConConcepto(): Promise<string | null> {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(COD_PROVEE)) AS cod
+      FROM CPA_CONCEPTOS_PROVEEDOR ORDER BY COD_PROVEE
+    `)
+    return r.recordset.length > 0 ? String(r.recordset[0].cod) : null
+  }
+
+  it('manda a observacion la factura de conceptos sin concepto, con el motivo escrito', async () => {
+    const cod = await proveedorSinConcepto()
+    if (!cod) return // la base no tiene ninguno: nada que verificar
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+
+      const observado = await observarSinConceptoEn(tx, id, 'conceptos', cod)
+      expect(observado).toBe(true)
+
+      const r = await tx.request().input('id', sql.Int, id).query(
+        'SELECT ESTADO, MOTIVO_OBSERVACION, NOTA_OBSERVACION FROM PHF_COMPROBANTE WHERE ID = @id',
+      )
+      const fila = r.recordset[0]
+      expect(fila.ESTADO).toBe('observacion')
+      expect(fila.MOTIVO_OBSERVACION).toBe(MOTIVO_SIN_CONCEPTO)
+      // La nota tiene que nombrar al proveedor y decir que se hace: es lo
+      // unico que el operador va a leer para saber por que se freno.
+      expect(String(fila.NOTA_OBSERVACION)).toContain(cod)
+      expect(String(fila.NOTA_OBSERVACION)).toMatch(/ficha del proveedor/i)
+    })
+  })
+
+  it('no toca el comprobante si el proveedor si tiene concepto', async () => {
+    const cod = await proveedorConConcepto()
+    if (!cod) return
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      expect(await observarSinConceptoEn(tx, id, 'conceptos', cod)).toBe(false)
+
+      const r = await tx.request().input('id', sql.Int, id)
+        .query('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(r.recordset[0].ESTADO).toBe('leido')
+    })
+  })
+
+  it('no aplica a articulos ni a tarjeta: esos no se imputan por concepto', async () => {
+    const cod = await proveedorSinConcepto()
+    if (!cod) return
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      expect(await observarSinConceptoEn(tx, id, 'articulos', cod)).toBe(false)
+      expect(await observarSinConceptoEn(tx, id, 'tarjeta', cod)).toBe(false)
+    })
+  })
+
+  it('no observa cuando el proveedor no se pudo resolver', async () => {
+    // Sin codigo de proveedor no se sabe si tiene concepto. Ese caso ya lo
+    // marca la validacion de proveedor; observarlo aca seria culpar al
+    // proveedor equivocado.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      expect(await observarSinConceptoEn(tx, id, 'conceptos', null)).toBe(false)
+    })
+  })
+})
+
+describe('cargarRenglonesDeRemitosEn', () => {
+  /** Un remito con saldo: se descubre, porque los pendientes se van facturando. */
+  async function remitoPendiente() {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(h.N_COMP)) AS nComp, LTRIM(RTRIM(h.COD_PRO_CL)) AS prov,
+             LTRIM(RTRIM(h.NCOMP_IN_S)) AS interno, COUNT(*) AS renglones
+      FROM STA14 h
+      JOIN STA20 r ON r.TCOMP_IN_S = h.TCOMP_IN_S AND r.NCOMP_IN_S = h.NCOMP_IN_S
+      WHERE h.TCOMP_IN_S = 'RP' AND h.ESTADO_MOV = 'P' AND r.CANT_PEND > 0
+      GROUP BY h.N_COMP, h.COD_PRO_CL, h.NCOMP_IN_S
+      ORDER BY COUNT(*) DESC, h.NCOMP_IN_S DESC
+    `)
+    return r.recordset.length ? r.recordset[0] : null
+  }
+
+  it('trae los renglones del remito y los deja asociados a su renglon de origen', async () => {
+    const rem = await remitoPendiente()
+    if (!rem) return
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const carga = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', String(rem.prov), {
+        remito1: String(rem.nComp),
+        remito2: null,
+      })
+
+      expect(carga.renglones).toBe(Number(rem.renglones))
+      expect(carga.sinSaldo).toEqual([])
+      expect(carga.noEncontrados).toEqual([])
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones).toHaveLength(Number(rem.renglones))
+      for (const r of d.renglones) {
+        // Ya vienen asociados: el operador no tiene que elegir el remito
+        // renglon por renglon, que era el trabajo que esto le saca.
+        expect(r.remitoNcompInS).toBe(String(rem.interno))
+        expect(r.remitoNRenglS).not.toBeNull()
+        expect(r.codigo).toBeTruthy()
+      }
+    })
+  })
+
+  it('no carga nada si el tipo no es articulos', async () => {
+    const rem = await remitoPendiente()
+    if (!rem) return
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      for (const tipo of ['conceptos', 'tarjeta'] as const) {
+        const carga = await cargarRenglonesDeRemitosEn(tx, id, tipo, String(rem.prov), {
+          remito1: String(rem.nComp),
+          remito2: null,
+        })
+        expect(carga.renglones).toBe(0)
+      }
+      expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(0)
+    })
+  })
+
+  it('no carga nada sin proveedor resuelto ni sin numero de remito', async () => {
+    const rem = await remitoPendiente()
+    if (!rem) return
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const sinProv = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', null, {
+        remito1: String(rem.nComp),
+      })
+      expect(sinProv.renglones).toBe(0)
+
+      const sinNumero = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', String(rem.prov), {
+        remito1: '',
+        remito2: null,
+      })
+      expect(sinNumero.renglones).toBe(0)
+    })
+  })
+
+  it('reporta el remito ya facturado como sin saldo, sin cargar renglones', async () => {
+    const pool = await getPool()
+    const f = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(N_COMP)) AS nComp, LTRIM(RTRIM(COD_PRO_CL)) AS prov
+      FROM STA14 WHERE TCOMP_IN_S = 'RP' AND ESTADO_MOV = 'F' ORDER BY NCOMP_IN_S DESC
+    `)
+    if (f.recordset.length === 0) return
+    const x = f.recordset[0]
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const carga = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', String(x.prov), {
+        remito1: String(x.nComp),
+      })
+
+      // Cargarlos igual facturaria dos veces la misma mercaderia.
+      expect(carga.renglones).toBe(0)
+      expect(carga.sinSaldo).toEqual([String(x.nComp)])
+      expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(0)
+    })
+  })
+
+  it('reporta como no encontrado un numero que no existe para ese proveedor', async () => {
+    const rem = await remitoPendiente()
+    if (!rem) return
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const carga = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', String(rem.prov), {
+        remito1: '99999-99999999',
+      })
+      expect(carga.noEncontrados).toEqual(['99999-99999999'])
+      expect(carga.renglones).toBe(0)
+    })
+  })
+})
+
+describe('observarRemitosEn', () => {
+  it('manda a observacion y distingue el sin saldo del inexistente', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const observado = await observarRemitosEn(tx, id, {
+        renglones: 0,
+        sinSaldo: ['0001-00000001'],
+        noEncontrados: ['0002-00000002'],
+      })
+      expect(observado).toBe(true)
+
+      const r = await tx.request().input('id', sql.Int, id).query(
+        'SELECT ESTADO, MOTIVO_OBSERVACION, NOTA_OBSERVACION FROM PHF_COMPROBANTE WHERE ID = @id',
+      )
+      const fila = r.recordset[0]
+      expect(fila.ESTADO).toBe('observacion')
+      expect(fila.MOTIVO_OBSERVACION).toBe(MOTIVO_REMITO_SIN_SALDO)
+      // Los dos problemas piden acciones distintas, asi que la nota tiene
+      // que nombrarlos por separado y no meterlos en una sola frase.
+      const nota = String(fila.NOTA_OBSERVACION)
+      expect(nota).toContain('0001-00000001')
+      expect(nota).toMatch(/ya está facturado/i)
+      expect(nota).toContain('0002-00000002')
+      expect(nota).toMatch(/no aparece/i)
+    })
+  })
+
+  it('no toca el comprobante cuando los remitos se cargaron bien', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const observado = await observarRemitosEn(tx, id, {
+        renglones: 5,
+        sinSaldo: [],
+        noEncontrados: [],
+      })
+      expect(observado).toBe(false)
+
+      const r = await tx.request().input('id', sql.Int, id)
+        .query('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(r.recordset[0].ESTADO).toBe('leido')
     })
   })
 })

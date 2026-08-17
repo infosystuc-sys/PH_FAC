@@ -37,7 +37,7 @@ export const TIPOS_FACTURA: DefTipoFactura[] = [
     label: 'Liquidación de tarjeta',
     ayuda:
       'Resúmenes de VISA, Mastercard, Naranja, American Express y bancos. ' +
-      'El registro en Tango todavía no está implementado.',
+      'Se imputa al concepto de comisiones de tarjeta, sin detalle de cupones.',
   },
 ]
 
@@ -94,27 +94,32 @@ const NO_ANALIZADOS_COMUNES = [
 ] as const
 
 /**
- * Hoy los tres tipos excluyen lo mismo, pero va indexado por tipo igual:
- * lo que se le pide al modelo ya diverge por tipo en el prompt, y el día
- * que un tipo necesite un campo de vuelta la diferencia se declara acá en
- * vez de repartirse por el código.
+ * Los números de remito solo se piden en facturas de artículos: son la
+ * llave para traer de STA14/STA20 la mercadería que se está facturando. Un
+ * servicio o una liquidación de tarjeta no vienen contra remito.
  */
+const REMITOS = ['remito1', 'remito2'] as const
+
 export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
-  conceptos: NO_ANALIZADOS_COMUNES,
+  conceptos: [...NO_ANALIZADOS_COMUNES, ...REMITOS],
   articulos: NO_ANALIZADOS_COMUNES,
-  tarjeta: NO_ANALIZADOS_COMUNES,
+  tarjeta: [...NO_ANALIZADOS_COMUNES, ...REMITOS],
 }
+
+/** Las claves de remito que la IA lee, en orden. */
+export const CLAVES_REMITO: readonly string[] = REMITOS
 
 /**
  * Si el tipo pide el array de renglones en el schema. Ninguno lo pide: de
  * los comprobantes solo se leen subtotales, totales e impuestos.
  *
  * En conceptos y en tarjeta el detalle nunca se cargó en Tango -- se
- * imputa por concepto contra la cabecera. En artículos sí se cargaba, y
- * sacarlo tiene un costo concreto: el cruce contra remitos pendientes
- * necesita renglones para tener qué cruzar, así que queda inerte (el
- * panel no se muestra si no hay renglones, no queda una UI vacía). Fue
- * una decisión explícita, no una consecuencia del límite de tamaño.
+ * imputa por concepto contra la cabecera. En artículos el detalle sí se
+ * carga, pero no sale del PDF: sale del remito. La IA lee el NÚMERO de
+ * remito (ver CAMPOS_NO_ANALIZADOS) y los renglones se traen de
+ * STA14/STA20, que es la fuente de verdad de qué mercadería entró. Leerlos
+ * del PDF era pedirle al modelo que transcriba lo que Tango ya sabe, con
+ * el riesgo de que transcriba mal.
  *
  * Sacarlo del schema es más fuerte que pedirle al modelo que devuelva el
  * array vacío: ya no puede devolver otra cosa. Volver a activarlo en un

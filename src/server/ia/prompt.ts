@@ -1,6 +1,7 @@
 import { camposIaPara } from '@/lib/campos'
 import { JURISDICCIONES_IIBB } from '@/lib/percepcionIibb'
 import { TIPOS_FACTURA, analizaCampo, type TipoFactura } from '@/lib/tipoFactura'
+import { COD_VARIOS_SIRTAC } from '@/lib/percepciones'
 
 /**
  * Numera las reglas al armar el prompt en vez de tener el número escrito a
@@ -137,19 +138,41 @@ percepciones del pie: son los únicos datos que se imputan.`,
   articulos: `Este comprobante es una FACTURA DE ARTÍCULOS: una compra de mercadería
 con detalle de renglones.
 No se te pide ese detalle. Por más que el comprobante enumere veinte
-artículos con su código, cantidad y precio unitario, de este comprobante
-solo se leen los subtotales, el total y los impuestos. No vas a encontrar
-campos de renglón en la lista de abajo.
-Poné la atención en el neto gravado, las alícuotas de IVA y las
+artículos con su código, cantidad y precio unitario, no hay campos de
+renglón en la lista de abajo. La mercadería se saca del remito, que es lo
+que dice qué entró de verdad al depósito.
+Lo que sí tenés que buscar es el NÚMERO DE REMITO. Suele estar en la
+cabecera o al pie, con etiquetas como "Remito", "Rem.", "Remito Nº",
+"Según remito" o "Comprobantes asociados". Devolvelo tal como está impreso
+-- "0001-00029869", "R 0001-00029869", lo que figure -- en remito1. Si la
+factura menciona un segundo remito, ese va en remito2. Si menciona más de
+dos, poné los dos primeros: el operador agrega el resto.
+No confundas el remito con la orden de compra ni con el número de la
+factura misma. Si no encontrás ningún remito, dejá remito1 y remito2
+vacíos: es un dato que el operador puede cargar, y uno inventado manda a
+buscar mercadería que no existe.
+Poné la atención en eso, en el neto gravado, las alícuotas de IVA y las
 percepciones del pie.`,
 
   tarjeta: `Este comprobante es una LIQUIDACIÓN DE TARJETA o un resumen bancario
 (VISA, Mastercard, Naranja, American Express, o un banco).
 No se te pide el detalle de cupones, cuotas ni consumos: no se carga en
-Tango y no vas a encontrar campos de renglón en la lista de abajo.
+Tango y no vas a encontrar campos de renglón en la lista de abajo. Todo el
+comprobante se imputa a un solo concepto -- comisiones de tarjeta -- así
+que lo único que importa son los datos de cabecera, el subtotal y los
+impuestos.
+El neto gravado es el subtotal de comisiones y cargos que cobra la
+tarjeta, no el bruto de las ventas ni el importe que se acredita. Si el
+resumen muestra las dos cosas, el que va es el de lo que nos cobran.
 Estos comprobantes traen casi siempre retenciones y percepciones de
 Ingresos Brutos en el pie, y a veces varias juntas. Leelas con
-atención y fijate si alguna menciona SIRCREB.`,
+atención: van en los pares percepN/imppercepN como en cualquier otro
+comprobante, con la jurisdicción tal como figure. La app se encarga de
+imputarlas; vos solo transcribí lo que dice.
+Prestá atención a dos siglas que aparecen casi solo acá:
+- SIRCREB: ponelo como jurisdicción en percepN, tal cual.
+- SIRTAC: NO va en percepN. Va en los pares variosN/impvariosN, con
+  variosN = ${COD_VARIOS_SIRTAC} e impvariosN el importe de esa línea.`,
 }
 
 function armar(tipo: TipoFactura): string {
@@ -192,4 +215,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v3'
+export const VERSION_PROMPT = 'v6'

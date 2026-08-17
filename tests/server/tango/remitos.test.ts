@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { buscarRemitosPendientes } from '@/server/tango/remitos'
+import {
+  buscarRemitosPendientes,
+  buscarRemitoPorNumero,
+  normalizarNumeroRemito,
+} from '@/server/tango/remitos'
 import { getPool, cerrarPool } from '@/server/db/pool'
 
 // Un proveedor que hoy tiene remitos pendientes. Se descubre en vez de
@@ -118,5 +122,108 @@ describe('buscarRemitosPendientes', () => {
     `)
     const facturados = new Set(r.recordset.map((x) => String(x.num)))
     expect(devuelto.filter((x) => facturados.has(x.numeroInterno))).toEqual([])
+  })
+})
+
+describe('normalizarNumeroRemito', () => {
+  // Tango guarda el numero como R + punto de venta (5) + numero (8) en
+  // CHAR(14). El proveedor lo imprime como se le ocurre, asi que se trabaja
+  // solo con los digitos y se rearma esa forma.
+  it('arma la forma de Tango desde lo que puede venir impreso', () => {
+    for (const impreso of [
+      '0001-00029869',
+      'R 0001-00029869',
+      '00001-00029869',
+      'Remito 0001 00029869',
+      '000100029869',
+    ]) {
+      expect(normalizarNumeroRemito(impreso), impreso).toBe('R0000100029869')
+    }
+  })
+
+  it('rellena el punto de venta con ceros a la izquierda', () => {
+    expect(normalizarNumeroRemito('1-29869')).toBe('R0000100029869')
+  })
+
+  it('devuelve null cuando no hay digitos suficientes', () => {
+    // Mejor no buscar que buscar cualquier cosa: un numero a medias
+    // matchearia el remito de otra compra.
+    expect(normalizarNumeroRemito('')).toBeNull()
+    expect(normalizarNumeroRemito(null)).toBeNull()
+    expect(normalizarNumeroRemito('sin numero')).toBeNull()
+    expect(normalizarNumeroRemito('1234567')).toBeNull()
+  })
+
+  it('devuelve null si el punto de venta no entra en 5 digitos', () => {
+    expect(normalizarNumeroRemito('1234567-00029869')).toBeNull()
+  })
+})
+
+describe('buscarRemitoPorNumero', () => {
+  /** Un remito con saldo, descubierto y no hardcodeado (se van facturando). */
+  async function unoPendiente() {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(h.N_COMP)) AS nComp, LTRIM(RTRIM(h.COD_PRO_CL)) AS prov,
+             LTRIM(RTRIM(h.NCOMP_IN_S)) AS interno
+      FROM STA14 h
+      JOIN STA20 r ON r.TCOMP_IN_S = h.TCOMP_IN_S AND r.NCOMP_IN_S = h.NCOMP_IN_S
+      WHERE h.TCOMP_IN_S = 'RP' AND h.ESTADO_MOV = 'P' AND r.CANT_PEND > 0
+      GROUP BY h.N_COMP, h.COD_PRO_CL, h.NCOMP_IN_S
+      ORDER BY h.NCOMP_IN_S DESC
+    `)
+    return r.recordset.length ? r.recordset[0] : null
+  }
+
+  it('encuentra el remito por su numero impreso y trae los renglones pendientes', async () => {
+    const p = await unoPendiente()
+    if (!p) return
+
+    // Se le pasa como lo imprimiria un proveedor, con guion y sin la R.
+    const impreso = `${String(p.nComp).slice(1, 6)}-${String(p.nComp).slice(6)}`
+    const r = await buscarRemitoPorNumero(String(p.prov), impreso)
+
+    expect(r.estado).toBe('encontrado')
+    if (r.estado !== 'encontrado') return
+    expect(r.remito.numeroInterno).toBe(String(p.interno))
+    expect(r.remito.renglones.length).toBeGreaterThan(0)
+    for (const x of r.remito.renglones) expect(x.cantidadPendiente).toBeGreaterThan(0)
+  })
+
+  it('distingue el remito ya facturado del que no existe', async () => {
+    const pool = await getPool()
+    const f = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(N_COMP)) AS nComp, LTRIM(RTRIM(COD_PRO_CL)) AS prov
+      FROM STA14 WHERE TCOMP_IN_S = 'RP' AND ESTADO_MOV = 'F' ORDER BY NCOMP_IN_S DESC
+    `)
+    if (f.recordset.length > 0) {
+      const x = f.recordset[0]
+      const r = await buscarRemitoPorNumero(String(x.prov), String(x.nComp))
+      // Existe pero sin saldo: proponer sus articulos duplicaria una compra.
+      expect(r.estado).toBe('sin-saldo')
+    }
+
+    const p = await unoPendiente()
+    if (p) {
+      const inventado = await buscarRemitoPorNumero(String(p.prov), '99999-99999999')
+      expect(inventado.estado).toBe('no-existe')
+    }
+  })
+
+  it('no cruza remitos entre proveedores distintos', async () => {
+    // El punto de venta es del proveedor, no nuestro: el mismo numero
+    // impreso puede repetirse entre proveedores.
+    const p = await unoPendiente()
+    if (!p) return
+
+    const pool = await getPool()
+    const otro = await pool.request().input('prov', String(p.prov)).query(`
+      SELECT TOP 1 LTRIM(RTRIM(COD_PROVEE)) AS cod FROM CPA01
+      WHERE LTRIM(RTRIM(COD_PROVEE)) <> @prov ORDER BY COD_PROVEE
+    `)
+    if (otro.recordset.length === 0) return
+
+    const r = await buscarRemitoPorNumero(String(otro.recordset[0].cod), String(p.nComp))
+    expect(r.estado).not.toBe('encontrado')
   })
 })
