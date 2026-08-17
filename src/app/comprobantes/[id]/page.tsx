@@ -5,7 +5,7 @@ import { validarComprobante, validarListoParaRegistrar } from '@/server/app/vali
 import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
 import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impuestos'
 import { buscarRemitosPendientes } from '@/server/tango/remitos'
-import { buscarConceptoProveedor } from '@/server/tango/conceptos'
+import { conceptoDelComprobante } from '@/server/tango/conceptos'
 import { probarConexion } from '@/server/db/pool'
 import { leerFiltro } from '@/lib/estados'
 import { Pantalla } from '@/components/revision/pantalla'
@@ -99,10 +99,13 @@ export default async function RevisionPage({
       ? await buscarRemitosPendientes(codProveeCampo)
       : []
 
-  // El concepto sale de la ficha del proveedor en Tango, asi que se
-  // resuelve aca: depende de codprovee, y cuando el operador elige otro
-  // proveedor `elegirProveedor` hace revalidatePath y esto se recalcula.
-  const concepto = codProveeCampo ? await buscarConceptoProveedor(codProveeCampo) : null
+  // En conceptos sale de la ficha del proveedor y en tarjeta es el fijo de
+  // comisiones; en articulos no hay. Se resuelve aca porque depende de
+  // codprovee, y cuando el operador elige otro proveedor `elegirProveedor`
+  // hace revalidatePath y esto se recalcula.
+  const concepto = mostrarRevision
+    ? await conceptoDelComprobante(tipoFacturaValor, codProveeCampo)
+    : null
 
   return (
     <div className={styles.pantalla}>
@@ -154,6 +157,10 @@ export default async function RevisionPage({
           alicuotasIva={alicuotasIva}
           concepto={concepto}
           remitosPendientes={remitosPendientes}
+          motivoObservacion={
+            encabezado.estado === 'observacion' ? encabezado.motivoObservacion : null
+          }
+          notaObservacion={encabezado.estado === 'observacion' ? encabezado.notaObservacion : null}
           // `registrado` es terminal e inmutable (mismo criterio que ya
           // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El
           // backend ya bloquea la escritura en guardarCampoEn con un no-op

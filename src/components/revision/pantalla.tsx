@@ -4,6 +4,7 @@ import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Formulario, type ValorInicial } from './formulario'
 import { AvisoIA } from './aviso-ia'
+import { PanelObservacion } from './panel-observacion'
 import { PanelValidaciones } from './validaciones'
 import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
@@ -64,6 +65,8 @@ export function Pantalla({
   alicuotasIva,
   concepto,
   remitosPendientes,
+  motivoObservacion,
+  notaObservacion,
   soloLectura = false,
 }: {
   comprobanteId: number
@@ -83,6 +86,10 @@ export function Pantalla({
   alicuotasIva: AlicuotaTango[]
   concepto: { codConcepto: string; descripcion: string } | null
   remitosPendientes: RemitoPendiente[]
+  // Por que esta en observacion. Va arriba de todo porque explica el
+  // estado del comprobante entero, no un campo.
+  motivoObservacion: string | null
+  notaObservacion: string | null
   // Comprobante `registrado`: terminal e inmutable. Se pasa a Formulario
   // para que los inputs queden de solo lectura (ver comentario ahí); el
   // backend ya bloquea la escritura de todos modos, esto es solo UI.
@@ -94,6 +101,7 @@ export function Pantalla({
     <div className={styles.cuerpo}>
       <Visor id={comprobanteId} nombre={nombreArchivo} resaltar={enfocado} />
       <div className={styles.derecha}>
+        <PanelObservacion motivo={motivoObservacion} nota={notaObservacion} />
         <AvisoIA
           id={comprobanteId}
           campos={campos}

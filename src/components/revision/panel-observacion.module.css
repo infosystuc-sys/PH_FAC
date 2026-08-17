@@ -1,0 +1,45 @@
+/* Mismo ancho y margen que AvisoIA, para que los bordes de las tarjetas
+   del panel derecho sigan alineados entre si. */
+.banda {
+  max-width: 760px;
+  margin: 20px 24px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--alerta-fondo);
+  border: 1px solid var(--alerta-borde);
+  border-radius: 9px;
+  padding: 12px 15px;
+}
+
+.icono {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--alerta);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.texto {
+  min-width: 0;
+}
+
+.motivo {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--alerta);
+  line-height: 26px;
+}
+
+.nota {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--texto-2);
+}
