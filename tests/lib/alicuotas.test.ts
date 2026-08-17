@@ -154,3 +154,41 @@ describe('validarAlicuotas', () => {
     expect(conDecimal.mensaje).toContain('2,5%')
   })
 })
+
+describe('lineas con importe en cero', () => {
+  it('no genera linea para una alicuota con importe 0, aunque tenga porcentaje', () => {
+    // Caso real (MAKRO, factura A 00004894): el comprobante imprime
+    // "PERC IVA RG 2408  1,50%  0,00". La tasa figura pero no se cobro
+    // nada. Esa linea no se graba, y por lo tanto no es un problema a
+    // resolver: antes salia en rojo como "Sin codigo en Tango".
+    const lineas = resolverAlicuotas(
+      {
+        porciva1: '21,00',
+        impiva1: '34.442,97',
+        porciva2: '3,00',
+        impiva2: '4.920,42',
+        porciva3: '1,50',
+        impiva3: '0,00',
+      },
+      CPA14,
+    )
+
+    expect(lineas.map((l) => l.slot)).toEqual([1, 2])
+    expect(lineas.some((l) => l.estado === 'sin-codigo')).toBe(false)
+  })
+
+  it('tampoco la genera si el porcentaje no existe en Tango', () => {
+    // Sin importe no importa que el porcentaje sea irreconocible: no hay
+    // nada que resolver.
+    const lineas = resolverAlicuotas({ porciva1: '7,25', impiva1: '0,00' }, CPA14)
+    expect(lineas).toEqual([])
+  })
+
+  it('la correccion manual no revive una linea sin importe', () => {
+    const lineas = resolverAlicuotas(
+      { porciva1: '1,50', impiva1: '0,00', codiva1: '15' },
+      CPA14,
+    )
+    expect(lineas).toEqual([])
+  })
+})

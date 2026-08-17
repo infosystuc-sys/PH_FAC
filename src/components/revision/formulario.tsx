@@ -263,6 +263,7 @@ export function Formulario({
                     <CeldaAlicuotaTango
                       key={`tango-${def.clave}`}
                       porcentaje={valores[def.clave] ?? ''}
+                      importe={valores[`impiva${slotIva[1]}`] ?? ''}
                       correccion={valores[correccion] ?? ''}
                       alicuotas={alicuotasIva}
                       bloqueado={soloLectura}
@@ -279,6 +280,7 @@ export function Formulario({
                     <CeldaPercepcionTango
                       key={`tango-${def.clave}`}
                       jurisdiccion={valores[def.clave] ?? ''}
+                      importe={valores[`imppercep${slotPercep[1]}`] ?? ''}
                       correccion={valores[correccion] ?? ''}
                       tipoFactura={valores.tipoFactura ?? ''}
                       bloqueado={soloLectura}

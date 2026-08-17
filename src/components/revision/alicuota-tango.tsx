@@ -75,15 +75,29 @@ function CeldaLista({
   )
 }
 
-/** Alícuota de IVA: la resuelve el PORCENTAJE, y el operador puede corregirla. */
+/**
+ * Alícuota de IVA: la resuelve el PORCENTAJE, y el operador puede
+ * corregirla.
+ *
+ * `importe` no se usa para resolver nada -- se usa para NO resolver. Esta
+ * celda tiene que mostrar lo que se va a registrar, y `resolverAlicuotas`
+ * descarta las líneas sin importe, así que una línea en cero no puede
+ * mostrar un código ni marcarse en rojo. Pasa de verdad: hay comprobantes
+ * que imprimen la tasa de una percepción con importe 0,00 (por ejemplo
+ * "PERC IVA RG 2408 1,50% ... 0,00"), y esa línea salía en rojo como "Sin
+ * código en Tango" pidiendo que el operador resolviera algo que no se iba
+ * a grabar.
+ */
 export function CeldaAlicuotaTango({
   porcentaje,
+  importe,
   correccion,
   alicuotas,
   bloqueado,
   onCambio,
 }: {
   porcentaje: string
+  importe: string
   correccion: string
   alicuotas: AlicuotaTango[]
   bloqueado: boolean
@@ -93,6 +107,23 @@ export function CeldaAlicuotaTango({
     valor: String(a.codigo),
     label: etiqueta(a.codigo, a.descripcion),
   }))
+
+  const sinImporte = importe.trim() === '' || parsearImporte(importe) <= 0
+
+  // Antes que todo lo demas, incluida la correccion manual: sin importe no
+  // hay linea que grabar, y mostrar un codigo ahi seria mentir.
+  if (sinImporte) {
+    return (
+      <CeldaLista
+        opciones={opciones}
+        valor=""
+        placeholder="—"
+        tono="vacio"
+        bloqueado={bloqueado}
+        onCambio={onCambio}
+      />
+    )
+  }
 
   if (correccion) {
     return (
@@ -144,12 +175,14 @@ export function CeldaAlicuotaTango({
  */
 export function CeldaPercepcionTango({
   jurisdiccion,
+  importe,
   correccion,
   tipoFactura,
   bloqueado,
   onCambio,
 }: {
   jurisdiccion: string
+  importe: string
   correccion: string
   /** En tarjeta el IIBB va al 64 aunque la jurisdiccion diga otra cosa. */
   tipoFactura: string
@@ -161,7 +194,10 @@ export function CeldaPercepcionTango({
     label: etiqueta(j.codigo, j.jurisdiccion),
   }))
 
-  const vacio = jurisdiccion.trim() === '' && !correccion
+  // Mismo criterio que en IVA: sin importe no hay nada que registrar (ver
+  // resolverPercepciones, que tambien descarta esas lineas).
+  const sinImporte = importe.trim() === '' || parsearImporte(importe) <= 0
+  const vacio = sinImporte || (jurisdiccion.trim() === '' && !correccion)
   // El slot vacio no muestra codigo. Hace falta decirlo explicito desde que
   // en tarjeta la resolucion tiene un fallback al 64: sin esto, las cuatro
   // filas de percepcion arrancarian mostrando "64 · Bancarias" aunque no
