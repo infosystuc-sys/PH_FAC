@@ -245,19 +245,37 @@ export function CeldaVariosTango({
 }
 
 /**
- * El concepto de Tango asociado al proveedor. No es un campo: sale de la
- * ficha del proveedor en el ERP, no del PDF ni de una eleccion. Se muestra
- * porque es lo que se va a imputar en una factura de conceptos, y porque
- * un proveedor sin concepto configurado bloquea el registro -- mejor verlo
- * mientras se revisa que descubrirlo al final.
+ * El concepto de Tango contra el que se imputa el comprobante. No es un
+ * campo: no sale del PDF ni de una eleccion del operador. En una factura de
+ * conceptos sale de la ficha del proveedor, y en una liquidacion de tarjeta
+ * es el fijo de comisiones -- ver conceptoDelComprobante.
+ *
+ * En una factura de articulos no hay concepto: se imputa renglon por
+ * renglon contra el remito, asi que no hay ficha que consultar. Antes esa
+ * celda mostraba en rojo "El proveedor no tiene concepto en Tango", que era
+ * falso dos veces: no falta nada y no hace falta buscarlo.
  */
 export function CeldaConcepto({
   concepto,
   hayProveedor,
+  tipoFactura,
 }: {
   concepto: { codConcepto: string; descripcion: string } | null
   hayProveedor: boolean
+  tipoFactura: string
 }) {
+  // Los articulos no llevan concepto: es informativo, no un faltante.
+  if (tipoFactura === 'articulos') {
+    return (
+      <div className={styles.campo} style={{ gridColumn: 'span 3' }}>
+        <span className={styles.label}>Concepto en Tango</span>
+        <div className={`${styles.derivado} ${clasePorTono('vacio')}`}>
+          No aplica para facturas de artículos
+        </div>
+      </div>
+    )
+  }
+
   const texto = concepto
     ? etiqueta(concepto.codConcepto, concepto.descripcion)
     : hayProveedor

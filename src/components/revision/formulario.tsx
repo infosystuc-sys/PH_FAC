@@ -251,6 +251,7 @@ export function Formulario({
                       key="concepto"
                       concepto={concepto}
                       hayProveedor={(valores.codprovee ?? '').trim() !== ''}
+                      tipoFactura={valores.tipoFactura ?? ''}
                     />,
                   ]
                 }
