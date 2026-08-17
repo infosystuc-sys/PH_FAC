@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { resolverPercepciones, resolverVarios, codigosVarios } from '@/lib/percepciones'
+import {
+  resolverPercepciones,
+  resolverVarios,
+  codigosVarios,
+  COD_VARIOS_SIRTAC,
+} from '@/lib/percepciones'
 import { validarPercepciones, validarVarios } from '@/lib/validaciones'
 
 // Los codigos no-IVA reales de CPA14, verificados contra la base.
@@ -156,5 +161,60 @@ describe('validarVarios', () => {
   it('bloquea si hay importe sin codigo elegido', () => {
     const r = validarVarios(resolverVarios({ impvarios1: '1.234,00' }, CPA14_NO_IVA))
     expect(r.estado).toBe('error')
+  })
+})
+
+describe('resolverPercepciones en resumen de tarjeta', () => {
+  it('lleva toda linea de IIBB al 64, sin importar la jurisdiccion', () => {
+    // La retencion la practica la tarjeta o el banco: aunque el resumen
+    // diga "Tucuman", la cuenta contra la que va es RET IIBB BANCARIOS.
+    for (const juris of ['Tucumán', 'Salta', 'CABA', 'Bancarias', 'Córdoba']) {
+      const l = resolverPercepciones(
+        { percep1: juris, imppercep1: '1.000,00' },
+        'tarjeta',
+      )
+      expect(l[0].codigo?.codigo, juris).toBe('64')
+      expect(l[0].estado).toBe('registra')
+    }
+  })
+
+  it('deja el SIRCREB en su propio codigo 66', () => {
+    const l = resolverPercepciones({ percep1: 'SIRCREB', imppercep1: '500,00' }, 'tarjeta')
+    expect(l[0].codigo?.codigo).toBe('66')
+  })
+
+  it('no cambia nada en conceptos ni en articulos', () => {
+    for (const tipo of ['conceptos', 'articulos'] as const) {
+      const l = resolverPercepciones({ percep1: 'Tucumán', imppercep1: '1.000,00' }, tipo)
+      expect(l[0].codigo?.codigo, tipo).toBe('60')
+    }
+  })
+
+  it('la correccion manual sigue ganando sobre la regla del tipo', () => {
+    // Si el operador eligio un codigo a mano, es porque sabe algo que la
+    // regla no: no se lo pisa.
+    const l = resolverPercepciones(
+      { percep1: 'Tucumán', imppercep1: '1.000,00', codpercep1: '62' },
+      'tarjeta',
+    )
+    expect(l[0].codigo?.codigo).toBe('62')
+  })
+
+  it('toma el tipo de los propios valores si no se lo pasan aparte', () => {
+    const l = resolverPercepciones({
+      tipoFactura: 'tarjeta',
+      percep1: 'Salta',
+      imppercep1: '300,00',
+    })
+    expect(l[0].codigo?.codigo).toBe('64')
+  })
+})
+
+describe('COD_VARIOS_SIRTAC', () => {
+  it('es el 56 y no el 67, a proposito', () => {
+    // En CPA14 el 56 es "RETENCION MUNICIPAL" y el 67 "RET SIRTAC". El 56
+    // esta elegido deliberadamente (usuario, 2026-08-17). Este test existe
+    // para que cambiarlo sea una decision y no un descuido.
+    expect(COD_VARIOS_SIRTAC).toBe('56')
   })
 })

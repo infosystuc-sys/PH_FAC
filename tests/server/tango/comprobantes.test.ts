@@ -6,6 +6,7 @@ import { conRollback } from '@/server/db/tx'
 import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
 import { buscarFacturaEnCpa04, mapearAlicuotaIva, registrarComprobanteEn } from '@/server/tango/comprobantes'
+import { COD_CONCEPTO_TARJETA } from '@/server/tango/conceptos'
 
 afterAll(async () => {
   await cerrarPool()
@@ -280,18 +281,48 @@ describe('registrarComprobanteEn con tipoFactura=conceptos', () => {
   }, 30000)
 })
 
-describe('registrarComprobanteEn con tipoFactura=tarjeta', () => {
-  it('bloquea el registro antes de cualquier lectura/escritura (todavia no implementado)', async () => {
+describe('registrarComprobanteEn con liquidacion de tarjeta', () => {
+  it('imputa el comprobante entero al concepto fijo de comisiones en CPA47', async () => {
     await conRollback(async (tx) => {
+      const prov = await tx.request().query(`
+        SELECT TOP 1 COD_PROVEE, N_CUIT FROM CPA01
+        WHERE N_CUIT IS NOT NULL AND LEN(REPLACE(REPLACE(N_CUIT,'-',''),' ','')) = 11
+        ORDER BY COD_PROVEE`)
+      const codProvee = String(prov.recordset[0].COD_PROVEE).trim()
+      const cuit = String(prov.recordset[0].N_CUIT)
+
+      const condicion = await tx.request()
+        .query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
+      const condCompra = String(condicion.recordset[0].COD_CONDIC)
+
       const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
       await guardarCampoEn(tx, id, 'tipoFactura', 'tarjeta')
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0088')
+      await guardarCampoEn(tx, id, 'nro', '00054321')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+      await guardarCampoEn(tx, id, 'cuit', cuit)
+      await guardarCampoEn(tx, id, 'codprovee', codProvee)
+      await guardarCampoEn(tx, id, 'condcompra', condCompra)
+      await guardarCampoEn(tx, id, 'neto', '10.000,00')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '2.100,00')
+      await guardarCampoEn(tx, id, 'total', '12.100,00')
 
-      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/todavía no está implementado/i)
+      const registro = await registrarComprobanteEn(tx, id)
 
-      const comp = await tx.request().input('id', sql.Int, id)
-        .query(`SELECT ESTADO, TANGO_NCOMP_IN_C FROM PHF_COMPROBANTE WHERE ID=@id`)
-      expect(comp.recordset[0].ESTADO).toBe('confirmado')
-      expect(comp.recordset[0].TANGO_NCOMP_IN_C).toBeNull()
+      // El renglon de concepto es lo que distingue esta ruta: la liquidacion
+      // no tiene detalle de cupones, se imputa entera contra una cuenta.
+      const cpa47 = await tx.request()
+        .input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT * FROM CPA47 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+
+      expect(cpa47.recordset).toHaveLength(1)
+      // Fijo, no el de la ficha del proveedor: el proveedor de una
+      // liquidacion es la tarjeta o el banco, y lo que se imputa es la
+      // comision sin importar quien la cobre.
+      expect(String(cpa47.recordset[0].COD_CONCEP).trim()).toBe(COD_CONCEPTO_TARJETA)
+      expect(Number(cpa47.recordset[0].IMPORTE_GRAVADO)).toBe(10000)
     })
-  }, 15000)
+  }, 120_000)
 })

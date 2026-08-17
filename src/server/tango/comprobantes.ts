@@ -9,7 +9,7 @@ import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
 import { listarCondicionesCompra } from './condicionesCompra'
 import { usuarioActual } from '@/lib/usuario'
 import { listarAlicuotasIva, listarCodigosImpuesto } from './impuestos'
-import { buscarConceptoProveedor, type ConceptoProveedor } from './conceptos'
+import { conceptoDelComprobante, COD_CONCEPTO_TARJETA } from './conceptos'
 
 export type ComprobanteCpa04 = {
   nComp: string
@@ -118,13 +118,6 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const valores: Record<string, string | null | undefined> = {}
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
 
-  // 'tarjeta' (liquidacion de tarjeta) todavia no tiene logica de registro
-  // propia -- se bloquea antes de cualquier lectura/escritura, mismo
-  // criterio que el resto de los chequeos tempranos de esta funcion.
-  if (valores.tipoFactura === 'tarjeta') {
-    throw new Error('El registro de liquidaciones de tarjeta todavía no está implementado.')
-  }
-
   const codProvee = (valores.codprovee ?? '').trim()
   const proveedorRow = await tx.request().input('cod', sql.VarChar(6), codProvee).query(`
     SELECT LTRIM(RTRIM(ISNULL(NOM_PROVEE,''))) AS razon, LTRIM(RTRIM(ISNULL(N_CUIT,''))) AS cuit,
@@ -158,12 +151,17 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // criterio que armarAlicuotas() mas abajo. El INSERT a CPA47 en si va
   // despues (seccion 6b): necesita ncompInC, que recien se conoce en el
   // paso "2. Numero interno".
-  let concepto: ConceptoProveedor | null = null
-  if (valores.tipoFactura === 'conceptos') {
-    concepto = await buscarConceptoProveedor(codProvee)
-    if (!concepto) {
-      throw new Error(`El proveedor ${codProvee} no tiene un concepto configurado en Tango.`)
-    }
+  // En conceptos sale de la ficha del proveedor; en tarjeta es el fijo de
+  // comisiones (406), porque lo que se imputa es la comision sin importar
+  // que tarjeta o banco la cobre. Las de articulos no llevan concepto: se
+  // imputan por renglon.
+  const concepto = await conceptoDelComprobante(valores.tipoFactura, codProvee)
+  if (!concepto && (valores.tipoFactura === 'conceptos' || valores.tipoFactura === 'tarjeta')) {
+    throw new Error(
+      valores.tipoFactura === 'tarjeta'
+        ? `El concepto ${COD_CONCEPTO_TARJETA} de comisiones de tarjeta no existe en Tango.`
+        : `El proveedor ${codProvee} no tiene un concepto configurado en Tango.`,
+    )
   }
 
   const fechaEmision = parsearFechaArg((valores.fecha ?? '').trim()) ?? new Date()
@@ -342,7 +340,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // 4. CPA18 + CTA06 (percepciones de IIBB e impuestos varios). Una fila
   // por slot con importe, resueltas con las mismas funciones que usa el
   // panel de la revision: si el panel dijo "listo", esto no puede fallar.
-  const lineasPercep = resolverPercepciones(valores)
+  const lineasPercep = resolverPercepciones(valores, valores.tipoFactura)
   const percepSinCodigo = lineasPercep.find((l) => l.estado === 'sin-codigo')
   if (percepSinCodigo) {
     throw new Error(
@@ -416,7 +414,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         VALUES (@codProvee, '', 'PEN', @fechaVto, @importeVto, @nComp, @tComp, 'PEN', @importeVto, '')`)
   }
 
-  // 6b. CPA47 (renglon de concepto), solo si tipoFactura='conceptos'. Un
+  // 6b. CPA47 (renglon de concepto), en conceptos y en tarjeta. Un
   // solo renglon por comprobante -- confirmado contra la base real: 13.030
   // de 13.062 facturas de conceptos (99,75%) tienen exactamente un renglon
   // en CPA47. La ruta "por articulos" (bloque 7, mas abajo) sigue corriendo

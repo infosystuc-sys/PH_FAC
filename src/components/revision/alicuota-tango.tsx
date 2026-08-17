@@ -1,7 +1,7 @@
 'use client'
 
 import { resolverCodigoIva, type AlicuotaTango } from '@/lib/alicuotas'
-import { JURISDICCIONES_IIBB, resolverPercepcionIibb } from '@/lib/percepcionIibb'
+import { JURISDICCIONES_IIBB, resolverIibbPorTipo } from '@/lib/percepcionIibb'
 import { parsearImporte } from '@/lib/formato'
 import styles from './formulario.module.css'
 
@@ -145,11 +145,14 @@ export function CeldaAlicuotaTango({
 export function CeldaPercepcionTango({
   jurisdiccion,
   correccion,
+  tipoFactura,
   bloqueado,
   onCambio,
 }: {
   jurisdiccion: string
   correccion: string
+  /** En tarjeta el IIBB va al 64 aunque la jurisdiccion diga otra cosa. */
+  tipoFactura: string
   bloqueado: boolean
   onCambio: (v: string) => void
 }) {
@@ -158,8 +161,14 @@ export function CeldaPercepcionTango({
     label: etiqueta(j.codigo, j.jurisdiccion),
   }))
 
-  const elegido = correccion || resolverPercepcionIibb(jurisdiccion)?.codigo || ''
   const vacio = jurisdiccion.trim() === '' && !correccion
+  // El slot vacio no muestra codigo. Hace falta decirlo explicito desde que
+  // en tarjeta la resolucion tiene un fallback al 64: sin esto, las cuatro
+  // filas de percepcion arrancarian mostrando "64 · Bancarias" aunque no
+  // haya ninguna linea, que se lee como si hubiera algo para registrar.
+  const elegido = vacio
+    ? ''
+    : correccion || resolverIibbPorTipo(jurisdiccion, tipoFactura)?.codigo || ''
 
   return (
     <CeldaLista

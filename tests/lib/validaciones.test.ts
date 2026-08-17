@@ -1,3 +1,4 @@
+import { TIPOS_FACTURA } from '@/lib/tipoFactura'
 import { describe, it, expect } from 'vitest'
 import {
   letraComprobante,
@@ -147,10 +148,13 @@ describe('validarTipoFactura', () => {
     expect(validarTipoFactura(null).estado).toBe('error')
     expect(validarTipoFactura(undefined).estado).toBe('error')
   })
-  it('error si es "tarjeta": todavia no tiene logica de registro', () => {
-    const r = validarTipoFactura('tarjeta')
-    expect(r.estado).toBe('error')
-    expect(r.mensaje).toMatch(/todavía no está implementado/i)
+  it('acepta los tres tipos del catalogo', () => {
+    // 'tarjeta' estuvo bloqueado mientras no tenia logica de registro. Ya
+    // la tiene: se imputa al concepto fijo de comisiones (ver
+    // COD_CONCEPTO_TARJETA), asi que el bloqueo se saco.
+    for (const t of TIPOS_FACTURA) {
+      expect(validarTipoFactura(t.clave).estado, t.clave).toBe('ok')
+    }
   })
 })
 

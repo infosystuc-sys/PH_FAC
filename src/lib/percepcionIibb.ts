@@ -97,3 +97,39 @@ export function resolverPercepcionIibb(texto: string | null | undefined): Codigo
 
   return JURISDICCIONES_IIBB.find((j) => j.alias.some((a) => t.includes(a))) ?? null
 }
+
+/**
+ * En un resumen de tarjeta, toda linea de Ingresos Brutos se imputa al 64
+ * (RET IIBB BANCARIOS), sin importar la jurisdiccion que diga: la
+ * retencion la practica la tarjeta o el banco, y esa es la cuenta contra
+ * la que se lleva. Decision de registracion del usuario (2026-08-17).
+ *
+ * La excepcion es SIRCREB, que conserva su codigo 66. Tiene regimen y
+ * cuenta propios, y meterlo en el 64 perderia esa distincion.
+ */
+const COD_IIBB_TARJETA = '64'
+const COD_IIBB_SIRCREB = '66'
+
+/**
+ * El codigo de IIBB que corresponde a una linea segun el tipo de
+ * comprobante.
+ *
+ * En conceptos y articulos manda la jurisdiccion leida (ver
+ * `resolverPercepcionIibb`). En tarjeta manda la regla de arriba, y por eso
+ * no alcanza con la resolucion por texto: una linea que diga "Tucuman" en
+ * un resumen de tarjeta va al 64 igual, no al 60.
+ */
+export function resolverIibbPorTipo(
+  texto: string,
+  tipoFactura: string | null | undefined,
+): CodigoIibb | null {
+  const porTexto = resolverPercepcionIibb(texto)
+  if (tipoFactura !== 'tarjeta') return porTexto
+
+  // SIRCREB se reconoce por el texto y se queda con el suyo.
+  if (porTexto?.codigo === COD_IIBB_SIRCREB) return porTexto
+
+  // El resto va al 64 aunque la jurisdiccion no se haya reconocido: en un
+  // resumen de tarjeta, que la linea sea de Ingresos Brutos alcanza.
+  return JURISDICCIONES_IIBB.find((j) => j.codigo === COD_IIBB_TARJETA) ?? null
+}

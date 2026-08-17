@@ -171,15 +171,6 @@ export function validarTipoFactura(tipoFactura: string | null | undefined): Resu
   if (!v) {
     return { estado: 'error', mensaje: 'Elegí el tipo de factura antes de registrar.' }
   }
-  // 'tarjeta' (liquidacion de tarjeta) esta en el catalogo del selector para
-  // que el operador pueda clasificar el comprobante, pero todavia no tiene
-  // logica de registro propia -- decision del usuario, 2026-08-11.
-  if (v === 'tarjeta') {
-    return {
-      estado: 'error',
-      mensaje: 'El registro de liquidaciones de tarjeta todavía no está implementado.',
-    }
-  }
   return { estado: 'ok', mensaje: 'Tipo de factura elegido.' }
 }
 

@@ -18,7 +18,7 @@ import {
   validarAlicuotas,
   type ResultadoValidacion,
 } from '@/lib/validaciones'
-import { buscarConceptoProveedor } from '@/server/tango/conceptos'
+import { conceptoDelComprobante, COD_CONCEPTO_TARJETA } from '@/server/tango/conceptos'
 import { esCuitPropio } from './empresa'
 import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impuestos'
 import { resolverAlicuotas } from '@/lib/alicuotas'
@@ -184,20 +184,27 @@ export async function validarListoParaRegistrarEn(
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
 
   const condCompra = validarCondCompra(valores.condcompra)
-  const percepcionIibb = validarPercepciones(resolverPercepciones(valores))
+  const percepcionIibb = validarPercepciones(resolverPercepciones(valores, valores.tipoFactura))
   const varios = validarVarios(resolverVarios(valores, await listarCodigosImpuesto()))
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)
 
-  // El concepto solo aplica si se eligio "por conceptos" -- 'ok'/"No
-  // aplica." en vez de forzar un chequeo que no corresponde.
+  // El concepto aplica en conceptos (sale de la ficha del proveedor) y en
+  // tarjeta (es el fijo de comisiones). Las de articulos se imputan por
+  // renglon: ahi no hay concepto y el item dice "No aplica".
   let concepto: ResultadoValidacion = { estado: 'ok', mensaje: 'No aplica.' }
-  if (valores.tipoFactura === 'conceptos') {
+  if (valores.tipoFactura === 'conceptos' || valores.tipoFactura === 'tarjeta') {
     const codProvee = (valores.codprovee ?? '').trim()
-    const encontrado = codProvee ? await buscarConceptoProveedor(codProvee) : null
+    const encontrado = await conceptoDelComprobante(valores.tipoFactura, codProvee || null)
     concepto = encontrado
       ? { estado: 'ok', mensaje: `Concepto: ${encontrado.codConcepto} — ${encontrado.descripcion}.` }
-      : { estado: 'error', mensaje: 'Este proveedor no tiene un concepto configurado en Tango.' }
+      : {
+          estado: 'error',
+          mensaje:
+            valores.tipoFactura === 'tarjeta'
+              ? `El concepto ${COD_CONCEPTO_TARJETA} de comisiones de tarjeta no existe en Tango.`
+              : 'Este proveedor no tiene un concepto configurado en Tango.',
+        }
   }
 
   // Resuelve cada par porcivaN/impivaN contra CPA14 con la misma funcion

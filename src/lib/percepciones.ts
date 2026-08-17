@@ -1,8 +1,24 @@
 import { parsearImporte } from './formato'
-import { JURISDICCIONES_IIBB, resolverPercepcionIibb, type CodigoIibb } from './percepcionIibb'
+import {
+  JURISDICCIONES_IIBB,
+  resolverIibbPorTipo,
+  type CodigoIibb,
+} from './percepcionIibb'
 
 export const MAX_SLOTS_PERCEPCION = 4
 export const MAX_SLOTS_VARIOS = 2
+
+/**
+ * El codigo de "Impuestos varios" al que va el SIRTAC de un resumen de
+ * tarjeta.
+ *
+ * OJO: en CPA14 el 56 es "RETENCION MUNICIPAL" y existe un 67 que se llama
+ * "RET SIRTAC". El 56 esta puesto a proposito -- decision de registracion
+ * del usuario, confirmada el 2026-08-17 despues de mostrarle las dos
+ * opciones. No es un error de tipeo: si alguien lo "corrige" al 67, cambia
+ * la imputacion contable de todos los resumenes de tarjeta.
+ */
+export const COD_VARIOS_SIRTAC = '56'
 
 /** Un código de CPA14 tal como lo devuelve `listarCodigosImpuesto`. */
 export type CodigoTango = { codigo: number; descripcion: string }
@@ -51,6 +67,7 @@ export function codigosVarios<T extends { codigo: number }>(codigosImpuesto: T[]
  */
 export function resolverPercepciones(
   valores: Record<string, string | null | undefined>,
+  tipoFactura?: string | null,
 ): LineaPercepcion[] {
   const lineas: LineaPercepcion[] = []
 
@@ -64,7 +81,7 @@ export function resolverPercepciones(
     const correccion = (valores[`codpercep${slot}`] ?? '').trim()
     const codigo = correccion
       ? (JURISDICCIONES_IIBB.find((j) => j.codigo === correccion) ?? null)
-      : resolverPercepcionIibb(texto)
+      : resolverIibbPorTipo(texto, tipoFactura ?? valores.tipoFactura)
     lineas.push({
       slot,
       texto,

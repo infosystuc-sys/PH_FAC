@@ -280,6 +280,7 @@ export function Formulario({
                       key={`tango-${def.clave}`}
                       jurisdiccion={valores[def.clave] ?? ''}
                       correccion={valores[correccion] ?? ''}
+                      tipoFactura={valores.tipoFactura ?? ''}
                       bloqueado={soloLectura}
                       onCambio={(v) => cambiar(correccion, v)}
                     />,
