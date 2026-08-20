@@ -118,8 +118,6 @@ export function Renglones({
       <h3 className={styles.titulo}>Renglones detectados</h3>
 
       <div className={styles.header}>
-        <span>Cód. factura</span>
-        <span>Cód. Tango</span>
         <span>Descripción</span>
         <span className={styles.derecha}>Remito</span>
         <span className={styles.derecha}>Cant.</span>
@@ -137,19 +135,18 @@ export function Renglones({
 
         return (
           <div key={r.orden} className={styles.fila}>
-            <span className={`${styles.mono} ${styles.codProveedor}`}>
-              {r.codProveedor ?? '—'}
-            </span>
-            <span className={styles.mono}>
-              {codigo ?? '—'}
-              {r.codigoFinal !== null && (
-                <span className={styles.corregido} title="Artículo corregido a mano">
-                  ·
-                </span>
-              )}
-            </span>
             <span className={styles.descripcionCol}>
               <span className={styles.descripcion}>{r.descripcion ?? '—'}</span>
+              <span className={styles.codigos}>
+                Tango {codigo ?? '—'}
+                {r.codigoFinal !== null && (
+                  <span className={styles.corregido} title="Artículo corregido a mano">
+                    ·
+                  </span>
+                )}
+                {' · Factura '}
+                {r.codProveedor ?? '—'}
+              </span>
               {r.remitoNumero ? (
                 <span className={styles.remito}>
                   Remito {r.remitoNumero}
@@ -218,12 +215,11 @@ export function Renglones({
 
       {noFacturados.map(({ remito, rr }) => (
         <div key={`no-${remito.numeroInterno}-${rr.nRenglon}`} className={styles.fila}>
-          <span className={`${styles.mono} ${styles.fantasma}`}>—</span>
-          <span className={`${styles.mono} ${styles.fantasma}`}>{rr.codArticulo}</span>
           <span className={styles.descripcionCol}>
             <span className={`${styles.descripcion} ${styles.fantasma}`}>
               {rr.descripcion ?? 'sin descripción'}
             </span>
+            <span className={`${styles.codigos} ${styles.fantasma}`}>Tango {rr.codArticulo}</span>
             <span className={styles.remito}>
               Remito {remito.numero} · renglón {rr.nRenglon}
             </span>

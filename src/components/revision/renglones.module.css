@@ -26,13 +26,14 @@
 .header,
 .fila {
   display: grid;
-  /* El diseño original (design/README.md) preveía 5 columnas para esta
-     tarjeta: código 70px, descripción 1fr, cantidad 60px, precio 96px,
-     importe 104px. Cód. factura y Remito se sumaron despues para el
-     cotejo contra el remito y no estan alcanzados por esa medida --
-     achicadas a lo justo para que la descripcion, que es lo que el
-     operador necesita leer entero, se quede con el ancho que sobra. */
-  grid-template-columns: 64px 58px 1fr 46px 54px 84px 96px;
+  /* El diseño original (design/README.md) preveía esta tarjeta con 5
+     columnas: código 70px, descripción 1fr, cantidad 60px, precio 96px,
+     importe 104px. Los dos códigos (el nuestro y el del proveedor) viven
+     ahora adentro de la columna de descripción -- ver .codigos -- en vez
+     de tener cada uno su propia columna angosta, que los obligaba a
+     partirse en dos líneas ilegibles. Remito (la cantidad que entregó)
+     es la única columna que este diseño no preveía. */
+  grid-template-columns: 1fr 60px 64px 96px 104px;
   gap: 8px;
   align-items: baseline;
 }
@@ -55,11 +56,6 @@
   text-align: right;
 }
 
-.mono {
-  font-family: var(--mono);
-  text-align: right;
-}
-
 .descripcionCol {
   display: flex;
   flex-direction: column;
@@ -72,6 +68,18 @@
    descripcion entre entera es dejarla pasar a una segunda linea en vez de
    cortarla con puntos suspensivos. */
 .descripcion {
+  overflow-wrap: break-word;
+}
+
+/* Los dos codigos del articulo, pegados a la descripcion en vez de tener
+   columna propia: son un dato secundario para el ojo (la descripcion es
+   lo que se lee primero) pero primario para cotejar contra el papel, asi
+   que van en mono y sin truncar -- cortarlos con puntos suspensivos los
+   inutilizaria para ese cotejo. */
+.codigos {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--texto-3);
   overflow-wrap: break-word;
 }
 
@@ -140,23 +148,13 @@
   color: var(--texto-4);
 }
 
-/* El codigo con el que el proveedor lo llama en SU factura. Atenuado
-   respecto del nuestro: sirve para cotejar contra el papel, pero el que se
-   graba en Tango es el de al lado. Sin truncar -- como .mono -- porque es
-   justamente el dato que el operador coteja contra el papel: cortarlo con
-   puntos suspensivos lo inutilizaría. */
-.codProveedor {
-  color: var(--texto-3);
-  overflow-wrap: break-word;
-}
-
 /* Ultima fila, fuera de la grilla de renglones: solo dos datos, la
-   etiqueta ocupa todo el lugar de las columnas de codigo/descripcion/
-   remito/cantidades para que el importe quede alineado en la misma
-   columna que el resto de la tabla. */
+   etiqueta ocupa todo el lugar de las columnas de descripcion/remito/
+   cantidades para que el importe quede alineado en la misma columna que
+   el resto de la tabla. */
 .filaSubtotal {
   display: grid;
-  grid-template-columns: 1fr 96px;
+  grid-template-columns: 1fr 104px;
   gap: 8px;
   align-items: baseline;
   padding: 10px 0 9px;
