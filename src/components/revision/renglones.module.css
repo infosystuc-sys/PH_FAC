@@ -1,5 +1,10 @@
 .tarjeta {
-  max-width: 760px;
+  /* Con el PDF visible el panel derecho no da para más de 760px igual, así
+     que la variable no cambia nada ahí. Con el PDF oculto (`.sinPdf` en
+     pantalla.module.css) la sube: es la tarjeta con más columnas y la
+     descripción es lo primero que se corta, así que es la que más
+     aprovecha el ancho que deja libre esconder el visor. */
+  max-width: var(--ancho-renglones, 760px);
   margin: 0 24px 16px;
   background: var(--superficie);
   border: 1px solid var(--borde);
@@ -135,4 +140,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Ultima fila, fuera de la grilla de renglones: solo dos datos, la
+   etiqueta ocupa todo el lugar de las columnas de codigo/descripcion/
+   remito/cantidades para que el importe quede alineado en la misma
+   columna que el resto de la tabla. */
+.filaSubtotal {
+  display: grid;
+  grid-template-columns: 1fr 104px;
+  gap: 8px;
+  align-items: baseline;
+  padding: 10px 0 9px;
+  border-top: 1px solid var(--borde-sutil-3);
+}
+
+.subtotalEtiqueta {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--texto-3);
 }

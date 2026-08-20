@@ -181,6 +181,7 @@ export function Pantalla({
           renglones={renglones}
           remitos={remitosPendientes}
           codProvee={codProvee}
+          netoFactura={iniciales.neto?.valor ?? null}
           soloLectura={soloLectura}
         />
         <Historial entradas={auditoria} />

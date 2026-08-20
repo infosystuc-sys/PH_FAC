@@ -18,11 +18,14 @@
   background: var(--fondo-panel);
 }
 
-/* Con el PDF oculto el panel de campos ocupa todo el ancho. Las tarjetas
-   tienen su propio max-width de 760px, asi que no se estiran: lo que gana
-   el operador es ver la grilla de renglones entera sin scroll. */
+/* Con el PDF oculto el panel de campos ocupa todo el ancho. Formulario
+   mantiene su max-width de 760px a proposito (una fila de campos mas ancha
+   no ayuda), pero Renglones lee esta variable para estirar su tarjeta: es
+   la que mas se beneficia del espacio libre, porque la columna de
+   descripcion es la que mas se corta. */
 .sinPdf {
   grid-template-columns: 1fr;
+  --ancho-renglones: 1400px;
 }
 
 /* Pegada arriba del scroll del panel derecho: el boton tiene que seguir

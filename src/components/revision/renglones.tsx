@@ -1,5 +1,5 @@
 import type { RenglonGuardado } from '@/server/app/detalle'
-import { formatMoneda, formatCantidad } from '@/lib/formato'
+import { formatMoneda, formatCantidad, parsearImporte } from '@/lib/formato'
 import { SelectorArticulo } from './selector-articulo'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './renglones.module.css'
@@ -44,6 +44,7 @@ export function Renglones({
   renglones,
   remitos,
   codProvee,
+  netoFactura,
   soloLectura = false,
 }: {
   comprobanteId: number
@@ -52,6 +53,12 @@ export function Renglones({
   remitos: RemitoPendiente[]
   /** El proveedor del comprobante, para buscar y asociar artículos. */
   codProvee: string | null
+  /**
+   * El neto gravado de la cabecera, tal como lo tipeó o corrigió el
+   * operador. Los renglones son importes base -- antes de IVA -- así que
+   * es contra este campo que tienen que cerrar, no contra el total.
+   */
+  netoFactura: string | null
   /** Comprobante registrado: terminal, no se corrige nada. */
   soloLectura?: boolean
 }) {
@@ -92,6 +99,19 @@ export function Renglones({
       .filter((rr) => !yaAsignados.has(`${remito.numeroInterno}-${rr.nRenglon}`))
       .map((rr) => ({ remito, rr })),
   )
+
+  // Suma solo lo que la factura cobra -- las filas fantasma no tienen
+  // importe real, muestran "—". Tiene que cerrar contra el neto gravado de
+  // la cabecera: los renglones son importes base, antes de IVA.
+  const subtotal = renglones.reduce((acc, r) => acc + (num(r.importe) ?? 0), 0)
+  const neto = parsearImporte(netoFactura)
+  // Tolerancia de redondeo: PRECIO_NET se guarda con 4 decimales y el
+  // importe de cada renglon se redondea a 2 al insertar, asi que un
+  // comprobante con muchos renglones acumula un poco de diferencia sin que
+  // haya ningun error real (visto en un caso real: 6 centavos en 13
+  // renglones).
+  const tolerancia = Math.max(0.05, renglones.length * 0.01)
+  const cierraContraNeto = neto > 0 && Math.abs(subtotal - neto) < tolerancia
 
   return (
     <section className={styles.tarjeta}>
@@ -224,6 +244,27 @@ export function Renglones({
           <span className={`${styles.importe} ${styles.fantasma}`}>—</span>
         </div>
       ))}
+
+      <div className={styles.filaSubtotal}>
+        <span className={styles.subtotalEtiqueta}>Subtotal renglones</span>
+        <span
+          className={`${styles.importe} ${neto > 0 ? styles[cierraContraNeto ? 'coincide' : 'difiere'] : ''}`}
+        >
+          {formatMoneda(subtotal)}
+          {neto > 0 && (
+            <span
+              className={styles.marca}
+              title={
+                cierraContraNeto
+                  ? 'Coincide con el neto gravado de la factura'
+                  : `No coincide con el neto gravado (${formatMoneda(neto)})`
+              }
+            >
+              {cierraContraNeto ? '✓' : '✕'}
+            </span>
+          )}
+        </span>
+      </div>
     </section>
   )
 }
