@@ -457,13 +457,14 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       throw new Error(`El renglón ${remitoNRenglS} del remito ${remitoNcompInS} ya no existe.`)
     }
     const sta = staRow.recordset[0]
-    // La cantidad facturada es la que dice la propia factura (el renglon del
-    // comprobante), no un dato del remito -- el spec de esta fase es explicito:
-    // CPA46 copia "código de artículo, depósito y precio" DEL REMITO, la
-    // cantidad no está en esa lista a propósito. Usar CANT_PEND o CANTIDAD del
-    // remito en su lugar facturaría lo que el remito tiene pendiente, no lo que
-    // el documento real dice, y rompería si el remito ya estaba parcialmente
-    // facturado por otro comprobante (se re-facturaría lo ya facturado).
+    // CPA46 son los renglones del COMPROBANTE DE COMPRA -- la factura --, no
+    // del remito. Lo unico que se toma de STA20 al armarlos es el articulo y
+    // el deposito; la cantidad y el precio salen de la factura.
+    //
+    // La cantidad, en particular, nunca sale del remito: usar CANT_PEND o
+    // CANTIDAD facturaria lo que el remito tiene pendiente y no lo que el
+    // documento real dice, y romperia si el remito ya estaba parcialmente
+    // facturado por otro comprobante (se re-facturaria lo ya facturado).
     const cantidad = parsearImporte(renglon.cantidad)
     if (cantidad <= 0) {
       throw new Error(`El renglón no tiene una cantidad válida para facturar contra el remito ${remitoNcompInS}.`)
