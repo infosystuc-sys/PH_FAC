@@ -474,8 +474,36 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     // no ofrecerla: el operador creeria haberla arreglado.
     const codArticu = renglon.codigoFinal?.trim() || String(sta.COD_ARTICU).trim()
     const codDeposi = String(sta.COD_DEPOSI ?? '').trim()
-    const precio = Number(sta.PRECIO_REM)
-    const importeNetoRenglon = Math.round(cantidad * precio * 100) / 100
+
+    // El precio sale de la FACTURA, no del remito (decision del usuario,
+    // 2026-08-20): el remito no es valorizado -- dice que entro y cuanto.
+    // Se cae al del remito solo si la factura no lo trajo, y si no hay
+    // ninguno de los dos se corta: grabar una compra a precio cero deja la
+    // cuenta corriente del proveedor mal y no lo señala nada.
+    const precioFactura = parsearImporte(renglon.precioUnitario)
+    const precioLista = precioFactura > 0 ? precioFactura : Number(sta.PRECIO_REM)
+    if (!(precioLista > 0)) {
+      throw new Error(
+        `El renglón del artículo ${codArticu} no tiene precio unitario: ` +
+          `no figura en la factura ni en el remito ${remitoNcompInS}.`,
+      )
+    }
+
+    // Tango guarda las tres cosas por separado, y asi las usa (verificado
+    // contra 475 renglones reales de CPA46 con descuento):
+    //
+    //   PRECIO_PAN = precio de lista, antes del descuento
+    //   PORCE_DCTO = el porcentaje
+    //   PRECIO_NET = PRECIO_PAN x (1 - dcto/100)
+    //   IMP_NETO_P = CANTIDAD x PRECIO_NET
+    //
+    // Antes se escribia el mismo precio en PRECIO_NET y PRECIO_PAN con
+    // PORCE_DCTO en 0. En una factura real de TOPPER con 7% de
+    // bonificacion eso inflaba el comprobante en $139.341,24 y la suma de
+    // los renglones no cerraba contra el neto gravado de la cabecera.
+    const bonificacion = parsearImporte(renglon.porcBonif)
+    const precioNeto = Math.round(precioLista * (1 - bonificacion / 100) * 10000) / 10000
+    const importeNetoRenglon = Math.round(cantidad * precioNeto * 100) / 100
 
     const nRenglC = renglonesConRemito.indexOf(renglon) + 1
 
@@ -483,7 +511,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
       .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
       .input('codDeposi', sql.VarChar(10), codDeposi).input('cantidad', sql.Decimal(18, 4), cantidad)
-      .input('precioNet', sql.Decimal(18, 4), precio).input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
+      .input('precioNet', sql.Decimal(18, 4), precioNeto)
+      .input('precioPan', sql.Decimal(18, 4), precioLista)
+      .input('bonif', sql.Decimal(9, 4), bonificacion)
+      .input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
       .input('fechaMov', sql.DateTime, fechaEmision).input('idSta11', sql.Int, null)
       .query(`
         INSERT INTO CPA46 (
@@ -494,8 +525,8 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
           IMPORTE_IMPUESTOS_COSTOS, ID_STA11
         ) VALUES (
           @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
-          @precioNet, @precioNet, @impNetoP, @fechaMov, 1, 0,
-          0, '', '', 0, @impNetoP,
+          @precioNet, @precioPan, @impNetoP, @fechaMov, 1, 0,
+          @bonif, '', '', 0, @impNetoP,
           0, 0, 'P', 0,
           0, NULL
         )`)
@@ -504,7 +535,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
       .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
       .input('codDeposi', sql.VarChar(10), codDeposi).input('cantidad', sql.Decimal(18, 4), cantidad)
-      .input('precioNet', sql.Decimal(18, 4), precio).input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
+      .input('precioNet', sql.Decimal(18, 4), precioNeto)
+      .input('precioPan', sql.Decimal(18, 4), precioLista)
+      .input('bonif', sql.Decimal(9, 4), bonificacion)
+      .input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
       .input('fechaMov', sql.DateTime, fechaEmision).input('nroSucurs', sql.SmallInt, Number(sta.NRO_SUCURS) || 1001)
       .query(`
         INSERT INTO CTA07 (

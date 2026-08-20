@@ -57,8 +57,9 @@ function schemaRenglones(): Record<string, unknown> {
             descripcion: { type: 'string' },
             cantidad: { type: 'string' },
             precioUnitario: { type: 'string' },
+            bonificacion: { type: 'string' },
           },
-          required: ['lineaRemito', 'descripcion', 'cantidad', 'precioUnitario'],
+          required: ['lineaRemito', 'descripcion', 'cantidad', 'precioUnitario', 'bonificacion'],
           additionalProperties: false,
         },
       },
@@ -104,18 +105,20 @@ Reglas:
    artículo: cada una con su lineaRemito y con la cantidad de ESE talle,
    nunca el total de la línea impresa.
 
-   Ejemplo. Si la factura imprime
+   OJO CON EL RENGLÓN PARTIDO EN DOS. Lo habitual es que el código y la
+   descripción estén en una línea y el desglose de talles en la de abajo,
+   junto con la cantidad total, el precio y la bonificación. Las dos líneas
+   son UN SOLO renglón de la factura. Así imprime TOPPER:
 
-       025873 001 GRAF KIDS   270: 4  280: 4  310: 6      34,00
+       027383 001 POLARIS KIDS NEGRO / CARAMELO
+       270: 4  310: 6  320: 6  330: 6  340: 6  350: 6  :  34  27647,06  7,00  874200,01
 
-   y en la lista de arriba están los renglones "25873  001 27" (cantidad
-   4), "25873  001 28" (4) y "25873  001 31" (6), tenés que devolver tres
-   renglones: uno con cantidad "4" apuntando al primero, otro con "4"
-   apuntando al segundo y otro con "6" apuntando al tercero. El 34 no se
-   devuelve en ningún lado.
+   De ese renglón salen SEIS líneas: talle 270 con cantidad 4, talle 310
+   con 6, talle 320 con 6, talle 330 con 6, talle 340 con 6 y talle 350 con
+   6. El 34 es el total y no se devuelve en ningún lado.
 
-   El precio unitario de la línea impresa se repite en cada talle: es el
-   mismo artículo.
+   El precio unitario (27647,06) y la bonificación (7,00) son de la línea
+   entera: se repiten igual en cada talle, porque es el mismo artículo.
 
    Si la factura NO desglosa talles, devolvé la línea tal cual, una sola.
 
@@ -135,11 +138,23 @@ Reglas:
    el de la línea antes de impuestos; si la factura no lo muestra, dejalo
    vacío.
 
-6. En descripcion va la descripción tal como la imprime el proveedor, no la
+6. En bonificacion va el PORCENTAJE de descuento de esa línea, tal como
+   figura impreso. Suele estar en una columna llamada "Bonif. %", "Desc.%"
+   o "Dto". En el ejemplo de arriba es "7,00".
+
+   Es importante: el precio unitario que imprime la factura casi siempre es
+   el de lista, ANTES del descuento, y el importe de la línea ya viene
+   descontado. Si no devolvés la bonificación, la suma de los renglones no
+   va a coincidir con el neto gravado del comprobante.
+
+   Si la línea no tiene descuento, dejá bonificacion vacío. No la calcules
+   ni la deduzcas del importe: solo transcribí lo que está impreso.
+
+7. En descripcion va la descripción tal como la imprime el proveedor, no la
    nuestra. Si desglosaste por talle, agregale el talle al final para que
    el operador sepa cuál de las líneas es.
 
-7. No inventes renglones que no estén impresos, y no omitas ninguno: si un
+8. No inventes renglones que no estén impresos, y no omitas ninguno: si un
    artículo de la lista no aparece en la factura, simplemente no va a tener
    ninguna línea que lo señale. Eso lo detecta la app, no vos.`
 }
@@ -171,6 +186,7 @@ export function parsearRenglonesFacturados(crudo: string): RenglonFacturado[] {
       descripcion,
       cantidad,
       precioUnitario: texto(o.precioUnitario),
+      bonificacion: texto(o.bonificacion),
     })
   }
   return salida

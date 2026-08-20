@@ -36,6 +36,13 @@ export type RenglonFacturado = {
   /** Como lo leyó la IA, sin parsear: "12", "1.200,50". */
   cantidad: string | null
   precioUnitario: string | null
+  /**
+   * El porcentaje de bonificación de la línea, como lo imprime la factura.
+   * El precio unitario suele ser el de lista, ANTES del descuento, y el
+   * importe ya viene descontado: sin esto la suma de los renglones no
+   * cierra contra el neto gravado de la cabecera.
+   */
+  bonificacion: string | null
 }
 
 export type Diferencia =

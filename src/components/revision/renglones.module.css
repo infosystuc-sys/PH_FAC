@@ -112,3 +112,10 @@
   color: var(--alerta);
   font-weight: 700;
 }
+
+/* La bonificacion, pegada al precio de lista: explica por que el importe
+   no es cantidad x precio. */
+.bonif {
+  color: var(--alerta);
+  font-size: 10.5px;
+}

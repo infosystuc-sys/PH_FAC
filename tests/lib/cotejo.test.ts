@@ -25,7 +25,7 @@ const REMITO: LineaRemito[] = [
 ]
 
 function facturado(lineaRemito: number, cantidad: string, descripcion = 'x'): RenglonFacturado {
-  return { lineaRemito, descripcion, cantidad, precioUnitario: '100,00' }
+  return { lineaRemito, descripcion, cantidad, precioUnitario: '100,00', bonificacion: null }
 }
 
 describe('cotejarRenglones', () => {
@@ -61,6 +61,7 @@ describe('cotejarRenglones', () => {
       descripcion: 'FLETE',
       cantidad: '1',
       precioUnitario: '5.000,00',
+      bonificacion: null,
     }
     const d = cotejarRenglones([facturado(1, '20'), facturado(2, '6'), extra], REMITO)
     expect(d).toHaveLength(1)
@@ -116,6 +117,7 @@ describe('cotejarRenglones', () => {
       descripcion: 'FLETE',
       cantidad: '1',
       precioUnitario: null,
+      bonificacion: null,
     }
     const d = cotejarRenglones([facturado(1, '24'), extra], REMITO)
     expect(d.map((x) => x.tipo)).toEqual(['cantidad', 'falta-en-factura', 'no-esta-en-remito'])
@@ -146,9 +148,9 @@ describe('describirDiferencias', () => {
     const sinDesc: LineaRemito[] = [{ ...REMITO[0], descripcion: null }]
     const d = cotejarRenglones(
       [
-        { lineaRemito: 1, descripcion: null, cantidad: '5', precioUnitario: null },
-        { lineaRemito: 1, descripcion: null, cantidad: '5', precioUnitario: null },
-        { lineaRemito: 0, descripcion: null, cantidad: '1', precioUnitario: null },
+        { lineaRemito: 1, descripcion: null, cantidad: '5', precioUnitario: null, bonificacion: null },
+        { lineaRemito: 1, descripcion: null, cantidad: '5', precioUnitario: null, bonificacion: null },
+        { lineaRemito: 0, descripcion: null, cantidad: '1', precioUnitario: null, bonificacion: null },
       ],
       sinDesc,
     )

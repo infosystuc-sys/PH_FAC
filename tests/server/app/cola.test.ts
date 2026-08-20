@@ -529,7 +529,7 @@ describe('guardarRenglonesFacturadosEn', () => {
       const n = await guardarRenglonesFacturadosEn(
         tx,
         id,
-        [{ lineaRemito: 1, descripcion: 'ZAPATILLA X', cantidad: '20', precioUnitario: '1.250,50' }],
+        [{ lineaRemito: 1, descripcion: 'ZAPATILLA X', cantidad: '20', precioUnitario: '1.250,50', bonificacion: null }],
         ORIGEN,
         LINEAS,
       )
@@ -561,7 +561,7 @@ describe('guardarRenglonesFacturadosEn', () => {
       await guardarRenglonesFacturadosEn(
         tx,
         id,
-        [{ lineaRemito: 0, descripcion: 'FLETE', cantidad: '1', precioUnitario: '5.000,00' }],
+        [{ lineaRemito: 0, descripcion: 'FLETE', cantidad: '1', precioUnitario: '5.000,00', bonificacion: null }],
         ORIGEN,
         LINEAS,
       )
@@ -577,13 +577,45 @@ describe('guardarRenglonesFacturadosEn', () => {
     })
   })
 
-  it('calcula el importe con el precio de la factura', async () => {
+  it('descuenta la bonificacion al calcular el importe', async () => {
+    // Caso real (TOPPER, factura A 00531799): el precio impreso es el de
+    // lista y la linea trae 7% de bonificacion. Guardar cantidad x precio
+    // sin descontar inflaba ese comprobante en $139.341,24 y la suma de los
+    // renglones no cerraba contra el neto gravado de la cabecera.
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       await guardarRenglonesFacturadosEn(
         tx,
         id,
-        [{ lineaRemito: 1, descripcion: 'X', cantidad: '4', precioUnitario: '100,00' }],
+        [{
+          lineaRemito: 1,
+          descripcion: 'POLARIS KIDS',
+          cantidad: '34',
+          precioUnitario: '27.647,06',
+          bonificacion: '7,00',
+        }],
+        ORIGEN,
+        LINEAS,
+      )
+
+      const d = await obtenerDetalleEn(tx, id)
+      const r = d.renglones[0]
+      // El bruto se guarda tal cual: es lo que el operador ve en el papel.
+      expect(r.precioUnitario).toBe('27647.06')
+      expect(r.porcBonif).toBe('7')
+      // 34 x 27647,06 x 0,93 = 874.200,03 (el PDF imprime 874.200,01: la
+      // diferencia de centavos es del redondeo del proveedor, no nuestro).
+      expect(Number(r.importe)).toBeCloseTo(874200.03, 1)
+    })
+  })
+
+  it('sin bonificacion el importe es cantidad por precio', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarRenglonesFacturadosEn(
+        tx,
+        id,
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '4', precioUnitario: '100,00', bonificacion: null }],
         ORIGEN,
         LINEAS,
       )
@@ -652,7 +684,7 @@ describe('observarDiferenciasEn', () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       const diferencias = cotejarRenglones(
-        [{ lineaRemito: 1, descripcion: 'X', cantidad: '24', precioUnitario: '100' }],
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '24', precioUnitario: '100', bonificacion: null }],
         LINEAS,
       )
 
@@ -678,7 +710,7 @@ describe('observarDiferenciasEn', () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       const diferencias = cotejarRenglones(
-        [{ lineaRemito: 1, descripcion: 'X', cantidad: '20', precioUnitario: '100' }],
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '20', precioUnitario: '100', bonificacion: null }],
         LINEAS,
       )
       expect(diferencias).toEqual([])

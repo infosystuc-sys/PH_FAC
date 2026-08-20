@@ -126,7 +126,18 @@ export function Renglones({
               )}
             </span>
 
-            <span className={styles.monoDerecha}>{formatMoneda(num(r.precioUnitario))}</span>
+            <span className={styles.monoDerecha}>
+              {formatMoneda(num(r.precioUnitario))}
+              {/* El precio impreso es el de lista y el importe ya viene
+                  descontado: sin mostrar la bonificacion, cantidad x precio
+                  no da el importe y el operador cree que hay un error. */}
+              {num(r.porcBonif) ? (
+                <span className={styles.bonif}>
+                  {' '}
+                  −{formatCantidad(num(r.porcBonif))}%
+                </span>
+              ) : null}
+            </span>
             <span className={styles.importe}>{formatMoneda(num(r.importe))}</span>
           </div>
         )

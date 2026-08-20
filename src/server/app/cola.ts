@@ -382,6 +382,12 @@ export async function guardarRenglonesFacturadosEn(
 
     const cantidad = parsearImporteONulo(f.cantidad)
     const precio = parsearImporteONulo(f.precioUnitario)
+    // El precio impreso es el de lista; el importe de la linea ya viene con
+    // el descuento aplicado. Se guarda el bruto en PRECIO_UNITARIO_IA -- es
+    // lo que el operador ve en el papel -- y el importe YA NETO, para que la
+    // suma de los renglones cierre contra el neto gravado de la cabecera.
+    const bonif = parsearImporteONulo(f.bonificacion)
+    const neto = precio !== null && bonif !== null ? precio * (1 - bonif / 100) : precio
 
     await e
       .request()
@@ -394,10 +400,11 @@ export async function guardarRenglonesFacturadosEn(
       .input('desc', sql.NVarChar(500), f.descripcion)
       .input('cant', sql.Decimal(19, 4), cantidad)
       .input('pu', sql.Decimal(19, 4), precio)
+      .input('bonif', sql.Decimal(9, 4), bonif)
       .input(
         'imp',
         sql.Decimal(19, 4),
-        cantidad !== null && precio !== null ? cantidad * precio : null,
+        cantidad !== null && neto !== null ? cantidad * neto : null,
       )
       .input('ncompInS', sql.VarChar(20), o ? o.ncompInS : null)
       .input('nRenglS', sql.Int, o ? o.nRenglon : null)
@@ -410,9 +417,10 @@ export async function guardarRenglonesFacturadosEn(
         INSERT INTO PHF_RENGLON
           (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
            CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA,
-           REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO, CANTIDAD_REMITO)
+           REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO, CANTIDAD_REMITO,
+           PORC_BONIF)
         VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS,
-                @numero, @cantRemito)
+                @numero, @cantRemito, @bonif)
       `)
   }
 

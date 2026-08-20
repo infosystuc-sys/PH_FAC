@@ -123,6 +123,7 @@ const DEFINICIONES: Definicion[] = [
         REMITO_NUMERO       VARCHAR(20)    NULL,
         CANTIDAD_REMITO     DECIMAL(19,4)  NULL,
         CODIGO_FINAL        NVARCHAR(60)   NULL,
+        PORC_BONIF          DECIMAL(9,4)   NULL,
         CONSTRAINT PK_PHF_RENGLON PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_COMP FOREIGN KEY (COMPROBANTE_ID)
@@ -148,6 +149,11 @@ const DEFINICIONES: Definicion[] = [
       // PHF_CAMPO: CODIGO_IA guarda lo que resolvio el sistema y no se
       // pisa, para no contaminar la medicion de que tan bien empareja.
       { nombre: 'CODIGO_FINAL', ddl: 'CODIGO_FINAL NVARCHAR(60) NULL' },
+      // El % de bonificacion de la linea. El precio unitario que imprime la
+      // factura es el de lista, ANTES del descuento, y el importe ya viene
+      // descontado: sin esto la suma de los renglones no cierra contra el
+      // neto gravado. Va a CPA46.PORCE_DCTO al registrar.
+      { nombre: 'PORC_BONIF', ddl: 'PORC_BONIF DECIMAL(9,4) NULL' },
     ],
   },
   {
