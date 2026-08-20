@@ -34,6 +34,11 @@ export type RenglonGuardado = RenglonExtraido & {
   codigoFinal: string | null
   /** El % de bonificación de la línea, si la factura lo trae. */
   porcBonif: string | null
+  /**
+   * El código con el que el proveedor identifica el artículo en su factura.
+   * Es lo que se guarda en CPA15 al confirmar el emparejamiento.
+   */
+  codProveedor: string | null
 }
 
 export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
@@ -121,7 +126,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
 
       SELECT ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
              PRECIO_UNITARIO_IA, IMPORTE_IA, REMITO_NCOMP_IN_S, REMITO_N_RENGL_S,
-             REMITO_NUMERO, CANTIDAD_REMITO, CODIGO_FINAL, PORC_BONIF
+             REMITO_NUMERO, CANTIDAD_REMITO, CODIGO_FINAL, PORC_BONIF, COD_PROVEEDOR
       FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
       SELECT FECHA, TEXTO, USUARIO
@@ -152,6 +157,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       cantidadRemito: x.CANTIDAD_REMITO === null ? null : String(x.CANTIDAD_REMITO),
       codigoFinal: x.CODIGO_FINAL === null ? null : String(x.CODIGO_FINAL),
       porcBonif: x.PORC_BONIF === null ? null : String(x.PORC_BONIF),
+      codProveedor: x.COD_PROVEEDOR === null ? null : String(x.COD_PROVEEDOR),
     })),
     auditoria: a.map((x) => ({
       fecha: new Date(x.FECHA as string),

@@ -26,6 +26,12 @@ export type LineaRemito = {
   cantidad: number
   /** Para poder señalar el renglón exacto en el mensaje. */
   numeroRemito: string
+  /**
+   * El código con el que este proveedor llama al artículo, si ya está
+   * cargado en CPA15. Se le muestra al modelo para que empareje por ahí en
+   * vez de tener que deducirlo de la descripción.
+   */
+  codigoProveedor?: string | null
 }
 
 /** Un renglón leído de la factura en la segunda pasada. */
@@ -43,6 +49,13 @@ export type RenglonFacturado = {
    * cierra contra el neto gravado de la cabecera.
    */
   bonificacion: string | null
+  /**
+   * El código con el que el proveedor identifica el artículo en SU factura.
+   * Es lo que se guarda en `CPA15.COD_SINONI` cuando el operador confirma
+   * el emparejamiento, para que la próxima factura del mismo proveedor se
+   * resuelva sola.
+   */
+  codigoProveedor: string | null
 }
 
 export type Diferencia =

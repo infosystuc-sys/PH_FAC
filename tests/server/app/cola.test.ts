@@ -529,7 +529,7 @@ describe('guardarRenglonesFacturadosEn', () => {
       const n = await guardarRenglonesFacturadosEn(
         tx,
         id,
-        [{ lineaRemito: 1, descripcion: 'ZAPATILLA X', cantidad: '20', precioUnitario: '1.250,50', bonificacion: null }],
+        [{ lineaRemito: 1, descripcion: 'ZAPATILLA X', cantidad: '20', precioUnitario: '1.250,50', bonificacion: null, codigoProveedor: null }],
         ORIGEN,
         LINEAS,
       )
@@ -561,7 +561,7 @@ describe('guardarRenglonesFacturadosEn', () => {
       await guardarRenglonesFacturadosEn(
         tx,
         id,
-        [{ lineaRemito: 0, descripcion: 'FLETE', cantidad: '1', precioUnitario: '5.000,00', bonificacion: null }],
+        [{ lineaRemito: 0, descripcion: 'FLETE', cantidad: '1', precioUnitario: '5.000,00', bonificacion: null, codigoProveedor: null }],
         ORIGEN,
         LINEAS,
       )
@@ -592,7 +592,7 @@ describe('guardarRenglonesFacturadosEn', () => {
           descripcion: 'POLARIS KIDS',
           cantidad: '34',
           precioUnitario: '27.647,06',
-          bonificacion: '7,00',
+          bonificacion: '7,00', codigoProveedor: null
         }],
         ORIGEN,
         LINEAS,
@@ -615,7 +615,7 @@ describe('guardarRenglonesFacturadosEn', () => {
       await guardarRenglonesFacturadosEn(
         tx,
         id,
-        [{ lineaRemito: 1, descripcion: 'X', cantidad: '4', precioUnitario: '100,00', bonificacion: null }],
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '4', precioUnitario: '100,00', bonificacion: null, codigoProveedor: null }],
         ORIGEN,
         LINEAS,
       )
@@ -684,7 +684,7 @@ describe('observarDiferenciasEn', () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       const diferencias = cotejarRenglones(
-        [{ lineaRemito: 1, descripcion: 'X', cantidad: '24', precioUnitario: '100', bonificacion: null }],
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '24', precioUnitario: '100', bonificacion: null, codigoProveedor: null }],
         LINEAS,
       )
 
@@ -710,7 +710,7 @@ describe('observarDiferenciasEn', () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       const diferencias = cotejarRenglones(
-        [{ lineaRemito: 1, descripcion: 'X', cantidad: '20', precioUnitario: '100', bonificacion: null }],
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '20', precioUnitario: '100', bonificacion: null, codigoProveedor: null }],
         LINEAS,
       )
       expect(diferencias).toEqual([])

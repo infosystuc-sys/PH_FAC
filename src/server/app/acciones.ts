@@ -18,7 +18,11 @@ import {
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
 import { registrarComprobante as registrarComprobanteTango } from '@/server/tango/comprobantes'
-import { buscarArticulos, type ArticuloTango } from '@/server/tango/articulos'
+import {
+  buscarArticulos,
+  asociarArticuloProveedor,
+  type ArticuloTango,
+} from '@/server/tango/articulos'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -309,8 +313,41 @@ export type ComprobanteEliminado = {
 }
 
 /** Busca en el maestro de artículos de Tango, para corregir a mano. */
-export async function buscarArticulosTango(texto: string): Promise<ArticuloTango[]> {
-  return buscarArticulos(texto)
+export async function buscarArticulosTango(
+  texto: string,
+  codProvee?: string | null,
+): Promise<ArticuloTango[]> {
+  return buscarArticulos(texto, codProvee)
+}
+
+/**
+ * Le enseña a Tango cómo llama este proveedor a un artículo, escribiendo
+ * `CPA15.COD_SINONI`. Es la única escritura de la app sobre datos maestros
+ * del ERP: todo lo demás que escribe son comprobantes.
+ *
+ * Va explícita y no automática al corregir un renglón. Corregir es decir
+ * "este renglón es este artículo"; asociar el código es decir "de ahora en
+ * más, cada vez que este proveedor escriba esto, es este artículo". Lo
+ * segundo afecta a las facturas que vengan y a cualquiera que use Tango,
+ * así que lo decide el operador.
+ */
+export async function asociarCodigoProveedor(
+  comprobanteId: number,
+  codProvee: string,
+  codArticu: string,
+  codSinoni: string,
+): Promise<void> {
+  await asociarArticuloProveedor(codProvee, codArticu, codSinoni)
+
+  await conTransaccion((tx) =>
+    auditarEn(
+      tx,
+      comprobanteId,
+      `Código del proveedor asociado en Tango: "${codSinoni}" = ${codArticu}`,
+    ),
+  )
+
+  revalidatePath(`/comprobantes/${comprobanteId}`)
 }
 
 /**

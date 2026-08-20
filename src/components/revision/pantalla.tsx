@@ -64,6 +64,7 @@ export function Pantalla({
   alicuotasIva,
   concepto,
   remitosPendientes,
+  codProvee,
   motivoObservacion,
   notaObservacion,
   soloLectura = false,
@@ -89,6 +90,8 @@ export function Pantalla({
    * para ofrecer, en cada uno, a qué renglón de remito reapuntarlo.
    */
   remitosPendientes: RemitoPendiente[]
+  /** El proveedor ya resuelto, para buscar y asociar artículos en Tango. */
+  codProvee: string | null
   // Por que esta en observacion. Va arriba de todo porque explica el
   // estado del comprobante entero, no un campo.
   motivoObservacion: string | null
@@ -129,6 +132,7 @@ export function Pantalla({
           comprobanteId={comprobanteId}
           renglones={renglones}
           remitos={remitosPendientes}
+          codProvee={codProvee}
           soloLectura={soloLectura}
         />
         <Historial entradas={auditoria} />

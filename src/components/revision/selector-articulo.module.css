@@ -129,3 +129,25 @@
 .ocupado .desc {
   color: var(--texto-4);
 }
+
+/* Enseñarle a Tango el codigo del proveedor. Va separado de las acciones
+   normales porque no afecta a este comprobante sino a los que vengan. */
+.asociar {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--acento-tenue);
+  border-radius: 6px;
+  background: var(--acento-tenue);
+  color: var(--acento);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.asociar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

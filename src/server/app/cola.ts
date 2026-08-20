@@ -4,6 +4,7 @@ import { conTransaccion } from '../db/tx'
 import { extraerDePdf, type Extraccion } from '../ia/extraccion'
 import { buscarProveedoresPorCuit } from '../tango/proveedores'
 import { buscarConceptoProveedor } from '../tango/conceptos'
+import { sinonimosDelProveedor } from '../tango/articulos'
 import { buscarRemitoPorNumero } from '../tango/remitos'
 import { extraerRenglonesFacturados } from '../ia/renglones'
 import {
@@ -347,6 +348,16 @@ export async function lineasDeRemitos(
     }
   }
 
+  // Lo que el operador ya enseño en CPA15: si este proveedor tiene cargado
+  // el codigo con el que llama a alguno de estos articulos, se lo pasamos al
+  // modelo. Cierra el ciclo -- una correccion manual mejora el
+  // emparejamiento automatico de la proxima factura.
+  const sinonimos = await sinonimosDelProveedor(
+    codProvee,
+    lineas.map((l) => l.codArticulo),
+  )
+  for (const l of lineas) l.codigoProveedor = sinonimos.get(l.codArticulo) ?? null
+
   return { lineas, origen, carga }
 }
 
@@ -401,6 +412,7 @@ export async function guardarRenglonesFacturadosEn(
       .input('cant', sql.Decimal(19, 4), cantidad)
       .input('pu', sql.Decimal(19, 4), precio)
       .input('bonif', sql.Decimal(9, 4), bonif)
+      .input('codProv', sql.NVarChar(60), f.codigoProveedor)
       .input(
         'imp',
         sql.Decimal(19, 4),
@@ -418,9 +430,9 @@ export async function guardarRenglonesFacturadosEn(
           (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
            CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA,
            REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO, CANTIDAD_REMITO,
-           PORC_BONIF)
+           PORC_BONIF, COD_PROVEEDOR)
         VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS,
-                @numero, @cantRemito, @bonif)
+                @numero, @cantRemito, @bonif, @codProv)
       `)
   }
 

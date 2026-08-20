@@ -119,3 +119,10 @@
   color: var(--alerta);
   font-size: 10.5px;
 }
+
+/* Renglon que entrego el remito y la factura no cobra. No hay fila en
+   PHF_RENGLON detras -- se pinta desde el remito -- asi que se atenua para
+   que no se confunda con lo que el proveedor esta cobrando. */
+.fantasma {
+  color: var(--texto-4);
+}

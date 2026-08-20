@@ -124,6 +124,7 @@ const DEFINICIONES: Definicion[] = [
         CANTIDAD_REMITO     DECIMAL(19,4)  NULL,
         CODIGO_FINAL        NVARCHAR(60)   NULL,
         PORC_BONIF          DECIMAL(9,4)   NULL,
+        COD_PROVEEDOR       NVARCHAR(60)   NULL,
         CONSTRAINT PK_PHF_RENGLON PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_COMP FOREIGN KEY (COMPROBANTE_ID)
@@ -154,6 +155,10 @@ const DEFINICIONES: Definicion[] = [
       // descontado: sin esto la suma de los renglones no cierra contra el
       // neto gravado. Va a CPA46.PORCE_DCTO al registrar.
       { nombre: 'PORC_BONIF', ddl: 'PORC_BONIF DECIMAL(9,4) NULL' },
+      // El codigo con el que el proveedor identifica el articulo en SU
+      // factura. Se guarda para poder asociarlo despues a nuestro articulo
+      // en CPA15.COD_SINONI, que es la funcion que Tango tiene prevista.
+      { nombre: 'COD_PROVEEDOR', ddl: 'COD_PROVEEDOR NVARCHAR(60) NULL' },
     ],
   },
   {

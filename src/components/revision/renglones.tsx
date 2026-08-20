@@ -43,12 +43,15 @@ export function Renglones({
   comprobanteId,
   renglones,
   remitos,
+  codProvee,
   soloLectura = false,
 }: {
   comprobanteId: number
   renglones: RenglonGuardado[]
   /** Los remitos con saldo del proveedor, para poder reasignar un renglón. */
   remitos: RemitoPendiente[]
+  /** El proveedor del comprobante, para buscar y asociar artículos. */
+  codProvee: string | null
   /** Comprobante registrado: terminal, no se corrige nada. */
   soloLectura?: boolean
 }) {
@@ -74,6 +77,21 @@ export function Renglones({
     renglones.map((r) => r.remitoNcompInS).filter((x): x is string => x !== null),
   )
   const remitosPropios = remitos.filter((x) => internosDelComprobante.has(x.numeroInterno))
+
+  // Los renglones del remito que ningun renglon de la factura cobra. No
+  // tienen fila propia porque la tarjeta muestra PHF_RENGLON, que son los
+  // renglones de la FACTURA: un articulo entregado que nadie facturo no
+  // genera ninguno. Se pintan igual, en gris, para que el operador compare
+  // en una sola grilla en vez de leerlos en la nota de observacion -- que
+  // ademas se corta a 1.000 caracteres y con muchas diferencias no entran.
+  //
+  // Es el caso mas caro de los dos: mercaderia que entro al deposito y el
+  // proveedor todavia no facturo, o un renglon que el modelo perdio al leer.
+  const noFacturados = remitosPropios.flatMap((remito) =>
+    remito.renglones
+      .filter((rr) => !yaAsignados.has(`${remito.numeroInterno}-${rr.nRenglon}`))
+      .map((rr) => ({ remito, rr })),
+  )
 
   return (
     <section className={styles.tarjeta}>
@@ -131,6 +149,9 @@ export function Renglones({
                       ? `${r.remitoNcompInS}-${r.remitoNRenglS}`
                       : null
                   }
+                  codProvee={codProvee}
+                  codProveedorLeido={r.codProveedor}
+                  codArticuloActual={codigo}
                 />
               )}
             </span>
@@ -170,6 +191,34 @@ export function Renglones({
           </div>
         )
       })}
+
+      {noFacturados.map(({ remito, rr }) => (
+        <div key={`no-${remito.numeroInterno}-${rr.nRenglon}`} className={styles.fila}>
+          <span className={`${styles.mono} ${styles.fantasma}`}>{rr.codArticulo}</span>
+          <span className={styles.descripcionCol}>
+            <span className={`${styles.descripcion} ${styles.fantasma}`}>
+              {rr.descripcion ?? 'sin descripción'}
+            </span>
+            <span className={styles.remito}>
+              Remito {remito.numero} · renglón {rr.nRenglon}
+            </span>
+            <span className={styles.sinRemito}>La factura no lo cobra</span>
+          </span>
+
+          <span className={`${styles.monoDerecha} ${styles.difiere}`}>
+            {formatCantidad(rr.cantidadPendiente)}
+          </span>
+          <span className={`${styles.monoDerecha} ${styles.difiere}`}>
+            —
+            <span className={styles.marca} title="El remito lo entregó y la factura no lo cobra">
+              ✕
+            </span>
+          </span>
+
+          <span className={`${styles.monoDerecha} ${styles.fantasma}`}>—</span>
+          <span className={`${styles.importe} ${styles.fantasma}`}>—</span>
+        </div>
+      ))}
     </section>
   )
 }

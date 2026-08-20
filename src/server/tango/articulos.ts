@@ -30,22 +30,26 @@ export type ArticuloTango = {
  *                operador vea que ese match es por texto y desconfíe.
  *   DESC_ADIC    90%, y es lo que distingue color y talle ("NEGRO T 27").
  *
- * CPA15 queda AFUERA a propósito. Sería el lugar natural -- es la tabla de
- * artículos por proveedor -- pero de sus 539 filas solo 2 tienen cargado
- * COD_SINONI, el código con el que el proveedor lo llama. Registra a quién
- * le compramos cada artículo, no cómo lo nombra: como llave de búsqueda
- * desde el papel resolvería dos casos en toda la base. Si algún día se
- * cargan esos códigos, va primera.
+ * CPA15 va PRIMERA cuando se sabe de qué proveedor es el comprobante. Es la
+ * tabla de artículos por proveedor y `COD_SINONI` guarda el código con el
+ * que ese proveedor lo llama, que es justo lo que imprime la factura. Hoy
+ * está cargada en 2 de 539 filas -- por eso el resto de la cascada sigue
+ * existiendo --, pero `asociarArticuloProveedor` la va llenando cada vez
+ * que el operador corrige un renglón, así que gana precisión con el uso.
  */
 const MAX_RESULTADOS = 25
 
-export async function buscarArticulos(texto: string): Promise<ArticuloTango[]> {
+export async function buscarArticulos(
+  texto: string,
+  codProvee?: string | null,
+): Promise<ArticuloTango[]> {
   const t = texto.trim()
   if (t.length < 2) return []
 
   const pool = await getPool()
   const r = await pool
     .request()
+    .input('prov', sql.VarChar(6), codProvee?.trim() || null)
     .input('exacto', sql.VarChar(60), t)
     .input('like', sql.VarChar(62), `${t}%`)
     .input('contiene', sql.NVarChar(64), `%${t}%`)
@@ -58,6 +62,7 @@ export async function buscarArticulos(texto: string): Promise<ArticuloTango[]> {
         LTRIM(RTRIM(ISNULL(a.COD_BARRA,'')))   AS codBarra,
         LTRIM(RTRIM(ISNULL(a.SINONIMO,'')))    AS sinonimo,
         CASE
+          WHEN sin.COD_ARTICU IS NOT NULL                     THEN 'código del proveedor'
           WHEN LTRIM(RTRIM(ISNULL(a.COD_BARRA,''))) = @exacto THEN 'código de barras'
           WHEN LTRIM(RTRIM(a.COD_ARTICU))          = @exacto THEN 'código de artículo'
           WHEN LTRIM(RTRIM(ISNULL(a.SINONIMO,''))) = @exacto THEN 'sinónimo'
@@ -65,6 +70,7 @@ export async function buscarArticulos(texto: string): Promise<ArticuloTango[]> {
           ELSE 'descripción'
         END AS porQue,
         CASE
+          WHEN sin.COD_ARTICU IS NOT NULL                     THEN 0
           WHEN LTRIM(RTRIM(ISNULL(a.COD_BARRA,''))) = @exacto THEN 1
           WHEN LTRIM(RTRIM(a.COD_ARTICU))          = @exacto THEN 2
           WHEN LTRIM(RTRIM(ISNULL(a.SINONIMO,''))) = @exacto THEN 3
@@ -72,7 +78,15 @@ export async function buscarArticulos(texto: string): Promise<ArticuloTango[]> {
           ELSE 5
         END AS prioridad
       FROM STA11 a
-      WHERE LTRIM(RTRIM(ISNULL(a.COD_BARRA,''))) = @exacto
+      -- El codigo con el que ESTE proveedor llama al articulo. Es la unica
+      -- llave pensada para esto, asi que gana sobre todo lo demas.
+      LEFT JOIN CPA15 sin
+        ON sin.COD_ARTICU = a.COD_ARTICU
+       AND @prov IS NOT NULL
+       AND LTRIM(RTRIM(sin.COD_PROVEE)) = @prov
+       AND LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @exacto
+      WHERE sin.COD_ARTICU IS NOT NULL
+         OR LTRIM(RTRIM(ISNULL(a.COD_BARRA,''))) = @exacto
          OR LTRIM(RTRIM(a.COD_ARTICU))           = @exacto
          OR LTRIM(RTRIM(ISNULL(a.SINONIMO,'')))  = @exacto
          OR LTRIM(RTRIM(a.COD_ARTICU))    LIKE @like
@@ -89,4 +103,95 @@ export async function buscarArticulos(texto: string): Promise<ArticuloTango[]> {
     sinonimo: x.sinonimo ? String(x.sinonimo) : null,
     porQue: String(x.porQue),
   }))
+}
+
+/**
+ * Enseña a Tango cómo llama este proveedor a un artículo nuestro, para que
+ * la próxima factura se empareje sola.
+ *
+ * Escribe `CPA15.COD_SINONI`, que es la función que el ERP tiene prevista
+ * para esto: la tabla tiene dos índices propios sobre ese campo,
+ * `(COD_SINONI, COD_PROVEE)` y su inverso, que existen justamente para
+ * buscar por el código del proveedor.
+ *
+ * Es un UPSERT porque `IX_0` es único en `(COD_PROVEE, COD_ARTICU)`: un
+ * artículo tiene una sola fila por proveedor. Y lo normal es el UPDATE --
+ * de los artículos que TOPPER facturó, 57 de 61 ya tenían fila con
+ * `COD_SINONI` vacío. Tango registra a quién le compramos cada cosa aunque
+ * no sepa cómo la nombra.
+ *
+ * `ID_CPA15` se omite a propósito en el INSERT: su default es
+ * `NEXT VALUE FOR [SEQUENCE_CPA15]`, la secuencia con la que numera Tango.
+ * Calcularlo con MAX+1 chocaría con lo que el ERP asigne después.
+ * `USA_ESC` se copia de STA11 -- espeja exacto en las 539 filas -- y
+ * `PROV_HABITUAL` se deja en su default 'N': marcar a un proveedor como
+ * habitual es una decisión de compras, no algo que se deduzca de haber
+ * corregido un renglón.
+ */
+export async function asociarArticuloProveedor(
+  codProvee: string,
+  codArticu: string,
+  codSinoni: string,
+): Promise<void> {
+  const prov = codProvee.trim()
+  const art = codArticu.trim()
+  const sinonimo = codSinoni.trim()
+  if (!prov || !art || !sinonimo) return
+
+  const pool = await getPool()
+  await pool
+    .request()
+    .input('prov', sql.VarChar(6), prov)
+    .input('art', sql.VarChar(15), art)
+    .input('sin', sql.VarChar(15), sinonimo.slice(0, 15))
+    .query(`
+      MERGE CPA15 WITH (HOLDLOCK) AS destino
+      USING (SELECT @prov AS COD_PROVEE, @art AS COD_ARTICU) AS origen
+        ON  LTRIM(RTRIM(destino.COD_PROVEE)) = origen.COD_PROVEE
+        AND LTRIM(RTRIM(destino.COD_ARTICU)) = origen.COD_ARTICU
+      WHEN MATCHED THEN
+        UPDATE SET COD_SINONI = @sin
+      WHEN NOT MATCHED THEN
+        INSERT (COD_ARTICU, COD_PROVEE, COD_SINONI, USA_ESC, ID_STA11, ID_CPA01,
+                COD_CPA01_PROVEEDOR)
+        VALUES (
+          @art, @prov, @sin,
+          ISNULL((SELECT LTRIM(RTRIM(ISNULL(USA_ESC,'N'))) FROM STA11 WHERE COD_ARTICU = @art), 'N'),
+          (SELECT ID_STA11 FROM STA11 WHERE COD_ARTICU = @art),
+          (SELECT ID_CPA01 FROM CPA01 WHERE COD_PROVEE = @prov),
+          @prov
+        );
+    `)
+}
+
+/**
+ * El código con el que un proveedor llama a cada uno de estos artículos.
+ * Se le pasa al modelo en la segunda pasada: lo que el operador enseñó una
+ * vez, el emparejamiento automático lo aprovecha después.
+ */
+export async function sinonimosDelProveedor(
+  codProvee: string,
+  codArticulos: string[],
+): Promise<Map<string, string>> {
+  const prov = codProvee.trim()
+  if (!prov || codArticulos.length === 0) return new Map()
+
+  const pool = await getPool()
+  const r = await pool
+    .request()
+    .input('prov', sql.VarChar(6), prov)
+    .query<Record<string, unknown>>(`
+      SELECT LTRIM(RTRIM(COD_ARTICU)) AS art, LTRIM(RTRIM(COD_SINONI)) AS sinonimo
+      FROM CPA15
+      WHERE LTRIM(RTRIM(COD_PROVEE)) = @prov
+        AND LTRIM(RTRIM(ISNULL(COD_SINONI,''))) <> ''
+    `)
+
+  const pedidos = new Set(codArticulos.map((x) => x.trim()))
+  const m = new Map<string, string>()
+  for (const f of r.recordset) {
+    const art = String(f.art)
+    if (pedidos.has(art)) m.set(art, String(f.sinonimo))
+  }
+  return m
 }

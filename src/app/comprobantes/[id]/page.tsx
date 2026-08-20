@@ -157,6 +157,7 @@ export default async function RevisionPage({
           alicuotasIva={alicuotasIva}
           concepto={concepto}
           remitosPendientes={remitosPendientes}
+          codProvee={codProveeCampo}
           motivoObservacion={
             encabezado.estado === 'observacion' ? encabezado.motivoObservacion : null
           }

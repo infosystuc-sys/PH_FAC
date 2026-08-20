@@ -58,8 +58,16 @@ function schemaRenglones(): Record<string, unknown> {
             cantidad: { type: 'string' },
             precioUnitario: { type: 'string' },
             bonificacion: { type: 'string' },
+            codigoProveedor: { type: 'string' },
           },
-          required: ['lineaRemito', 'descripcion', 'cantidad', 'precioUnitario', 'bonificacion'],
+          required: [
+            'lineaRemito',
+            'descripcion',
+            'cantidad',
+            'precioUnitario',
+            'bonificacion',
+            'codigoProveedor',
+          ],
           additionalProperties: false,
         },
       },
@@ -79,7 +87,11 @@ function armarPrompt(lineas: LineaRemito[]): string {
     .map(
       (l) =>
         `${l.indice}. ${l.codArticulo} — ${l.descripcion ?? 'sin descripción'} ` +
-        `(remito ${l.numeroRemito}, cantidad entregada ${l.cantidad})`,
+        `(remito ${l.numeroRemito}, cantidad entregada ${l.cantidad}` +
+        // Si ya sabemos como lo llama este proveedor, se lo decimos: es el
+        // dato que hace el emparejamiento trivial en vez de deducido.
+        (l.codigoProveedor ? `, el proveedor lo llama ${l.codigoProveedor}` : '') +
+        `)`,
     )
     .join('\n')
 
@@ -154,7 +166,15 @@ Reglas:
    nuestra. Si desglosaste por talle, agregale el talle al final para que
    el operador sepa cuál de las líneas es.
 
-8. No inventes renglones que no estén impresos, y no omitas ninguno: si un
+8. En codigoProveedor va el código con el que el proveedor identifica el
+   artículo en SU factura, tal como está impreso -- en el ejemplo de arriba,
+   "027383 001". Es el código de ellos, no el nuestro. Si la línea no
+   muestra ningún código, dejalo vacío.
+
+   Sirve para que la próxima factura de este proveedor se empareje sola: la
+   app lo guarda asociado a nuestro artículo.
+
+9. No inventes renglones que no estén impresos, y no omitas ninguno: si un
    artículo de la lista no aparece en la factura, simplemente no va a tener
    ninguna línea que lo señale. Eso lo detecta la app, no vos.`
 }
@@ -187,6 +207,7 @@ export function parsearRenglonesFacturados(crudo: string): RenglonFacturado[] {
       cantidad,
       precioUnitario: texto(o.precioUnitario),
       bonificacion: texto(o.bonificacion),
+      codigoProveedor: texto(o.codigoProveedor),
     })
   }
   return salida
