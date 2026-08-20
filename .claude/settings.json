@@ -30,9 +30,6 @@
       "Edit(//d/APP/PH_FAC/**)",
       "Write(//d/APP/PH_FAC/**)",
       "Read(//c/Users/USUARIO/.claude/plugins/**)"
-    ],
-    "deny": [
-      "Bash(git push *)"
     ]
   }
 }

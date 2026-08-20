@@ -545,6 +545,11 @@ describe('guardarRenglonesFacturadosEn', () => {
       expect(r.descripcion).toBe('ZAPATILLA X')
       expect(r.remitoNcompInS).toBe('00003684')
       expect(r.remitoNRenglS).toBe(1)
+      // Lo que entrego el remito viaja junto a lo facturado: es lo que deja
+      // a la pantalla mostrar las dos cantidades enfrentadas sin volver a
+      // consultar Tango (un remito consumido del todo desaparece de la
+      // lista de pendientes, asi que releerlo no siempre es posible).
+      expect(r.cantidadRemito).toBe('20')
     })
   })
 
@@ -566,6 +571,9 @@ describe('guardarRenglonesFacturadosEn', () => {
       expect(d.renglones[0].descripcion).toBe('FLETE')
       expect(d.renglones[0].remitoNcompInS).toBeNull()
       expect(d.renglones[0].codigo).toBeNull()
+      // Sin renglon de remito no hay cantidad entregada contra la cual
+      // cotejar: la pantalla muestra un guion, no un cero.
+      expect(d.renglones[0].cantidadRemito).toBeNull()
     })
   })
 

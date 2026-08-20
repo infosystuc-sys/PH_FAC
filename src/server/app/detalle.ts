@@ -21,6 +21,12 @@ export type RenglonGuardado = RenglonExtraido & {
   remitoNRenglS: number | null
   /** El número impreso del remito (`N_COMP`), para mostrarlo en pantalla. */
   remitoNumero: string | null
+  /**
+   * Lo que el remito entregó de este renglón, para poder cotejarlo en
+   * pantalla contra lo que factura el proveedor. `null` en los renglones
+   * que la factura cobra y no están en ningún remito.
+   */
+  cantidadRemito: string | null
 }
 
 export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
@@ -107,7 +113,8 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       FROM PHF_CAMPO WHERE COMPROBANTE_ID = @id ORDER BY CLAVE;
 
       SELECT ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
-             PRECIO_UNITARIO_IA, IMPORTE_IA, REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO
+             PRECIO_UNITARIO_IA, IMPORTE_IA, REMITO_NCOMP_IN_S, REMITO_N_RENGL_S,
+             REMITO_NUMERO, CANTIDAD_REMITO
       FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
       SELECT FECHA, TEXTO, USUARIO
@@ -135,6 +142,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       remitoNcompInS: x.REMITO_NCOMP_IN_S === null ? null : String(x.REMITO_NCOMP_IN_S),
       remitoNRenglS: x.REMITO_N_RENGL_S === null ? null : Number(x.REMITO_N_RENGL_S),
       remitoNumero: x.REMITO_NUMERO === null ? null : String(x.REMITO_NUMERO),
+      cantidadRemito: x.CANTIDAD_REMITO === null ? null : String(x.CANTIDAD_REMITO),
     })),
     auditoria: a.map((x) => ({
       fecha: new Date(x.FECHA as string),

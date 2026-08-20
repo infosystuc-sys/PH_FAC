@@ -18,6 +18,25 @@ function num(v: string | null): number | null {
   return v === null ? null : Number(v)
 }
 
+/**
+ * Compara lo que factura el proveedor contra lo que entregó el remito.
+ *
+ * Es la misma cuenta que hace `cotejarRenglones` del lado del servidor para
+ * decidir si el comprobante va a observación -- acá se repite solo para
+ * pintar la marca de cada fila. Se compara con la misma tolerancia de
+ * cuatro decimales, la precisión de la columna: las cantidades vienen de
+ * parsear texto de un PDF y comparar con `===` marcaría en rojo una
+ * diferencia de redondeo que no existe.
+ */
+function cotejo(
+  facturada: number | null,
+  remito: number | null,
+): 'coincide' | 'difiere' | 'sin-remito' {
+  if (remito === null) return 'sin-remito'
+  if (facturada === null) return 'difiere'
+  return Math.abs(facturada - remito) < 0.00005 ? 'coincide' : 'difiere'
+}
+
 export function Renglones({ renglones }: { renglones: RenglonGuardado[] }) {
   // El 77% de los comprobantes vienen solo con cabecera: una tarjeta vacía
   // sería ruido permanente en la pantalla donde el operador pasa el 90%
@@ -31,28 +50,59 @@ export function Renglones({ renglones }: { renglones: RenglonGuardado[] }) {
       <div className={styles.header}>
         <span>Código</span>
         <span>Descripción</span>
+        <span className={styles.derecha}>Remito</span>
         <span className={styles.derecha}>Cant.</span>
         <span className={styles.derecha}>P. unitario</span>
         <span className={styles.derecha}>Importe</span>
       </div>
 
-      {renglones.map((r) => (
-        <div key={r.orden} className={styles.fila}>
-          <span className={styles.mono}>{r.codigo ?? '—'}</span>
-          <span className={styles.descripcionCol}>
-            <span className={styles.descripcion}>{r.descripcion ?? '—'}</span>
-            {r.remitoNumero && (
-              <span className={styles.remito}>
-                Remito {r.remitoNumero}
-                {r.remitoNRenglS !== null && ` · renglón ${r.remitoNRenglS}`}
-              </span>
-            )}
-          </span>
-          <span className={styles.monoDerecha}>{formatCantidad(num(r.cantidad))}</span>
-          <span className={styles.monoDerecha}>{formatMoneda(num(r.precioUnitario))}</span>
-          <span className={styles.importe}>{formatMoneda(num(r.importe))}</span>
-        </div>
-      ))}
+      {renglones.map((r) => {
+        const facturada = num(r.cantidad)
+        const entregada = num(r.cantidadRemito)
+        const estado = cotejo(facturada, entregada)
+
+        return (
+          <div key={r.orden} className={styles.fila}>
+            <span className={styles.mono}>{r.codigo ?? '—'}</span>
+            <span className={styles.descripcionCol}>
+              <span className={styles.descripcion}>{r.descripcion ?? '—'}</span>
+              {r.remitoNumero ? (
+                <span className={styles.remito}>
+                  Remito {r.remitoNumero}
+                  {r.remitoNRenglS !== null && ` · renglón ${r.remitoNRenglS}`}
+                </span>
+              ) : (
+                // Lo que la factura cobra y ningun remito entregó. El cotejo
+                // del servidor ya lo mandó a observación; acá se nombra para
+                // que el operador sepa cuál de las filas es.
+                <span className={styles.sinRemito}>No figura en el remito</span>
+              )}
+            </span>
+
+            <span className={`${styles.monoDerecha} ${styles[estado]}`}>
+              {entregada === null ? '—' : formatCantidad(entregada)}
+            </span>
+            <span className={`${styles.monoDerecha} ${styles[estado]}`}>
+              {formatCantidad(facturada)}
+              {estado !== 'sin-remito' && (
+                <span
+                  className={styles.marca}
+                  title={
+                    estado === 'coincide'
+                      ? 'Coincide con el remito'
+                      : 'No coincide con lo que entregó el remito'
+                  }
+                >
+                  {estado === 'coincide' ? '✓' : '✕'}
+                </span>
+              )}
+            </span>
+
+            <span className={styles.monoDerecha}>{formatMoneda(num(r.precioUnitario))}</span>
+            <span className={styles.importe}>{formatMoneda(num(r.importe))}</span>
+          </div>
+        )
+      })}
     </section>
   )
 }

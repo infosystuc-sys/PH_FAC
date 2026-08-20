@@ -402,12 +402,17 @@ export async function guardarRenglonesFacturadosEn(
       .input('ncompInS', sql.VarChar(20), o ? o.ncompInS : null)
       .input('nRenglS', sql.Int, o ? o.nRenglon : null)
       .input('numero', sql.VarChar(20), o ? o.numero : null)
+      // Lo que entrego el remito de este renglon. Se guarda junto a lo que
+      // factura el proveedor para que la pantalla pueda mostrar las dos
+      // cantidades y el operador vea de un vistazo si coinciden.
+      .input('cantRemito', sql.Decimal(19, 4), linea ? linea.cantidad : null)
       .query(`
         INSERT INTO PHF_RENGLON
           (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
            CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA,
-           REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO)
-        VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS, @numero)
+           REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO, CANTIDAD_REMITO)
+        VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS,
+                @numero, @cantRemito)
       `)
   }
 

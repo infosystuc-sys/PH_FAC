@@ -121,6 +121,7 @@ const DEFINICIONES: Definicion[] = [
         REMITO_NCOMP_IN_S   VARCHAR(20)    NULL,
         REMITO_N_RENGL_S    INT            NULL,
         REMITO_NUMERO       VARCHAR(20)    NULL,
+        CANTIDAD_REMITO     DECIMAL(19,4)  NULL,
         CONSTRAINT PK_PHF_RENGLON PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_COMP FOREIGN KEY (COMPROBANTE_ID)
@@ -135,6 +136,12 @@ const DEFINICIONES: Definicion[] = [
       // no se guardara acá. `REMITO_NCOMP_IN_S` (el código interno) sigue
       // siendo la clave real para el join contra STA14/STA20 al registrar.
       { nombre: 'REMITO_NUMERO', ddl: 'REMITO_NUMERO VARCHAR(20) NULL' },
+      // Lo que el remito entrego de ESE renglon, para poder mostrarlo al
+      // lado de lo que factura el proveedor. Se guarda en vez de releerlo
+      // en pantalla por el mismo motivo que REMITO_NUMERO: un remito que se
+      // consume del todo desaparece de la lista de pendientes, y despues de
+      // registrar el dato quedaria huerfano.
+      { nombre: 'CANTIDAD_REMITO', ddl: 'CANTIDAD_REMITO DECIMAL(19,4) NULL' },
     ],
   },
   {

@@ -21,7 +21,7 @@
 .header,
 .fila {
   display: grid;
-  grid-template-columns: 70px 1fr 60px 96px 104px;
+  grid-template-columns: 70px 1fr 66px 76px 96px 104px;
   gap: 8px;
   align-items: baseline;
 }
@@ -80,4 +80,27 @@
   font-family: var(--mono);
   font-weight: 500;
   text-align: right;
+}
+
+/* Cotejo contra el remito. El verde no grita -- la mayoria de las filas
+   coinciden, y una columna entera en color seria ruido; lo que tiene que
+   saltar a la vista es la que NO coincide. */
+.coincide {
+  color: var(--exito);
+}
+
+.difiere {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.sinRemito {
+  font-size: 10.5px;
+  color: var(--error);
+}
+
+.marca {
+  margin-left: 5px;
+  font-family: var(--sans);
+  font-size: 11px;
 }

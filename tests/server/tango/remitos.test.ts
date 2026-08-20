@@ -217,11 +217,16 @@ describe('buscarRemitoPorNumero', () => {
     // Caso real: proveedor 010685 (TOPPER ARGENTINA S.A.). El PDF imprime
     // "Remito/Factura Nº: 5026-00530766", pero Tango lo tiene guardado
     // como R0502610530766 -- identico salvo el primer digito del numero.
-    // Este remito ya esta facturado por completo (ESTADO_MOV = 'F'): existe
-    // pero no tiene renglones pendientes, asi que el estado esperado es
-    // "sin-saldo", no "no-existe" como daba antes del comodin.
+    // Sin el comodin daba "no-existe", que mandaba el comprobante a
+    // observacion diciendo que el numero estaba mal leido.
+    //
+    // Lo que se afirma es que lo ENCUENTRA, no en que estado esta: el saldo
+    // de un remito real lo mueve la gente desde Tango. Este mismo estaba en
+    // 'F' (facturado por completo) cuando se escribio el test y despues
+    // volvio a 'P' con 92 unidades pendientes -- fijar "sin-saldo" hacia
+    // fallar la suite por un cambio de datos, no por una regresion.
     const r = await buscarRemitoPorNumero('010685', '5026-00530766')
-    expect(r.estado).toBe('sin-saldo')
+    expect(r.estado).not.toBe('no-existe')
   })
 
   it('no cruza remitos entre proveedores distintos', async () => {
