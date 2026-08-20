@@ -1,8 +1,38 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-11. La IA ya no detecta renglones en comprobantes de servicios (ver sección abajo). Agregado el tercer valor de `tipoFactura` ("Liquidación de tarjeta"), bloqueado hasta que se implemente. Restricción de percepciones de IVA/IIBB completa. Todo en `master` directamente, sin rama propia. Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
+**Última actualización:** 2026-08-19/20. "Renglones detectados" ahora muestra, por renglón, de qué remito y qué línea de Tango salió (ver sección abajo). `buscarRemitoPorNumero` ahora tolera que el primer dígito del número de remito no coincida con lo que imprime el proveedor (ver sección abajo). 2026-08-11: la IA ya no detecta renglones en comprobantes de servicios (ver sección abajo). Agregado el tercer valor de `tipoFactura` ("Liquidación de tarjeta"), bloqueado hasta que se implemente. Restricción de percepciones de IVA/IIBB completa. Todo en `master` directamente, sin rama propia. Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
+
+---
+
+## "Renglones detectados" muestra el remito y la línea de Tango de origen
+
+Pedido del usuario tras ver el bloque "Renglones detectados" (que **ya venía de Tango**, no de la IA — ver la sección anterior) y el bloque separado "Remitos pendientes" mostrando esencialmente lo mismo por separado, sin forma directa de saber a simple vista de qué remito salió cada renglón sin cruzarlos a mano. Eligió, de dos opciones ofrecidas, mostrar por cada renglón su remito y N° de línea de Tango directamente en la tarjeta "Renglones detectados" (`src/components/revision/renglones.tsx`), en vez de una relectura en vivo contra Tango antes de confirmar.
+
+Columna nueva `PHF_RENGLON.REMITO_NUMERO` (`scripts/migrate.ts`, camino de reparación de columna): guarda el número impreso del remito (`N_COMP`, ej. `"R0502600531798"`), separado de `REMITO_NCOMP_IN_S` (el código interno, que sigue siendo la clave real para el join contra STA20/STA14 al registrar). Se decidió guardarlo en vez de recalcularlo en pantalla contra `buscarRemitosPendientes`: un remito que se consume del todo desaparece de esa lista, así que una vez registrado el comprobante el dato quedaría huérfano si no estuviera guardado.
+
+Se escribe en dos caminos:
+- **Automático** (`cargarRenglonesDeRemitosEn`, `src/server/app/cola.ts`): ya tenía `r.remito.numero` en memoria al insertar `PHF_RENGLON`, solo hubo que sumarlo al INSERT.
+- **Manual** (`asignarRemitoEn`/`asignarRemito`, `src/server/app/acciones.ts`): el panel "Remitos pendientes" (`remitos-pendientes.tsx`) ya tenía el número impreso disponible en el prop `remitos` (viene de `buscarRemitosPendientes`), así que se lo pasa como tercer valor codificado en el `<option>` en vez de agregar una consulta nueva a Tango.
+
+**Backfill:** los 48 renglones del único comprobante real con remito ya asignado antes de este cambio (6402, TOPPER) se completaron con un script puntual dentro de `src/server/tango/` (respeta la frontera del proyecto: solo ese módulo consulta STA14) y se borró después de correrlo.
+
+**Verificado en vivo con Playwright** contra el comprobante real 6402: cada renglón de la tarjeta ahora muestra "Remito R0502600531798 · renglón N" en una segunda línea bajo la descripción, en IBM Plex Mono, `--texto-4`.
+
+Suite completa: **398 tests en verde**, `tsc --noEmit` limpio.
+
+---
+
+## `buscarRemitoPorNumero` tolera el primer dígito del número
+
+Pedido directo del usuario tras ver el comprobante real 6264 (TOPPER ARGENTINA S.A.) en observación con "Remito sin saldo o inexistente" pese a que el remito **sí existe** en Tango. El PDF imprime "Remito/Factura Nº: 5026-00530766" (verificado leyendo el PDF directamente, texto y render coinciden) pero Tango lo tiene guardado como `N_COMP = "R0502610530766"` — idéntico salvo el primer dígito del número (`0` vs `1`), con el punto de venta y los siete dígitos restantes exactamente iguales.
+
+`normalizarNumeroRemito` (`src/server/tango/remitos.ts`) cambió de contrato: ya no arma el string completo de 14 caracteres, devuelve `{ ptovta, numero }` por separado — el único consumidor era `buscarRemitoPorNumero`, así que no hay otros callers que romper. `buscarRemitoPorNumero` arma un patrón `LIKE` con `_` (comodín de un carácter SQL) en el primer dígito del número, y ordena los resultados prefiriendo el match exacto si existe más de uno. La eliminación de guiones ya la hacía el regex existente al usarlos como separador; no hizo falta agregar nada para eso.
+
+**Verificado en vivo, sin usar el navegador:** `buscarRemitoPorNumero('010685', '5026-00530766')` pasó de `{ estado: 'no-existe' }` a `{ estado: 'sin-saldo' }` — el remito real está facturado por completo (`ESTADO_MOV = 'F'`), así que "sin saldo" es la clasificación correcta, distinta de "no existe". Reprocesado el comprobante 6264 real de punta a punta (con reintento: la primera pasada de extracción con IA no volvió a leer `remito1`, no determinístico y sin relación con este cambio): la observación ahora dice "Remito 5026-00530766 ya está facturado por completo en Tango: no queda mercadería pendiente para asociar." — correcto y distinto del mensaje anterior, que insinuaba un número mal leído.
+
+Suite completa: **398 tests en verde**, `tsc --noEmit` limpio.
 
 ---
 

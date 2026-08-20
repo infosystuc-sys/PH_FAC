@@ -120,12 +120,22 @@ const DEFINICIONES: Definicion[] = [
         IMPORTE_IA          DECIMAL(19,4)  NULL,
         REMITO_NCOMP_IN_S   VARCHAR(20)    NULL,
         REMITO_N_RENGL_S    INT            NULL,
+        REMITO_NUMERO       VARCHAR(20)    NULL,
         CONSTRAINT PK_PHF_RENGLON PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_COMP FOREIGN KEY (COMPROBANTE_ID)
           REFERENCES PHF_COMPROBANTE (ID) ON DELETE CASCADE
       );
     `,
+    columnas: [
+      // El número impreso del remito (`N_COMP`, ej. "R0502600531798"), para
+      // mostrarlo junto al renglón sin depender de que el remito siga
+      // apareciendo en `buscarRemitosPendientes` -- una vez que se consume
+      // del todo, desaparece de esa lista, y este dato quedaría huérfano si
+      // no se guardara acá. `REMITO_NCOMP_IN_S` (el código interno) sigue
+      // siendo la clave real para el join contra STA14/STA20 al registrar.
+      { nombre: 'REMITO_NUMERO', ddl: 'REMITO_NUMERO VARCHAR(20) NULL' },
+    ],
   },
   {
     tabla: 'PHF_AUDITORIA',

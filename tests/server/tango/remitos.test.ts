@@ -137,12 +137,15 @@ describe('normalizarNumeroRemito', () => {
       'Remito 0001 00029869',
       '000100029869',
     ]) {
-      expect(normalizarNumeroRemito(impreso), impreso).toBe('R0000100029869')
+      expect(normalizarNumeroRemito(impreso), impreso).toEqual({
+        ptovta: '00001',
+        numero: '00029869',
+      })
     }
   })
 
   it('rellena el punto de venta con ceros a la izquierda', () => {
-    expect(normalizarNumeroRemito('1-29869')).toBe('R0000100029869')
+    expect(normalizarNumeroRemito('1-29869')).toEqual({ ptovta: '00001', numero: '00029869' })
   })
 
   it('devuelve null cuando no hay digitos suficientes', () => {
@@ -208,6 +211,17 @@ describe('buscarRemitoPorNumero', () => {
       const inventado = await buscarRemitoPorNumero(String(p.prov), '99999-99999999')
       expect(inventado.estado).toBe('no-existe')
     }
+  })
+
+  it('encuentra el remito aunque el primer digito del numero no coincida', async () => {
+    // Caso real: proveedor 010685 (TOPPER ARGENTINA S.A.). El PDF imprime
+    // "Remito/Factura Nº: 5026-00530766", pero Tango lo tiene guardado
+    // como R0502610530766 -- identico salvo el primer digito del numero.
+    // Este remito ya esta facturado por completo (ESTADO_MOV = 'F'): existe
+    // pero no tiene renglones pendientes, asi que el estado esperado es
+    // "sin-saldo", no "no-existe" como daba antes del comodin.
+    const r = await buscarRemitoPorNumero('010685', '5026-00530766')
+    expect(r.estado).toBe('sin-saldo')
   })
 
   it('no cruza remitos entre proveedores distintos', async () => {

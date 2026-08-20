@@ -448,6 +448,7 @@ describe('cargarRenglonesDeRemitosEn', () => {
         // renglon por renglon, que era el trabajo que esto le saca.
         expect(r.remitoNcompInS).toBe(String(rem.interno))
         expect(r.remitoNRenglS).not.toBeNull()
+        expect(r.remitoNumero).toBe(String(rem.nComp))
         expect(r.codigo).toBeTruthy()
       }
     })

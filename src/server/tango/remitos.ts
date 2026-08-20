@@ -129,6 +129,8 @@ function agrupar(filas: Record<string, unknown>[]): RemitoPendiente[] {
 const LARGO_PTOVTA = 5
 const LARGO_NUMERO = 8
 
+export type NumeroRemito = { ptovta: string; numero: string }
+
 /**
  * Lleva a la forma de Tango lo que la IA leyo del PDF. El proveedor lo
  * imprime como se le ocurre -- "Remito 0001-00029869", "R 1-29869",
@@ -137,7 +139,7 @@ const LARGO_NUMERO = 8
  * Devuelve null si no hay digitos suficientes para armar un numero: mejor
  * no buscar que buscar cualquier cosa.
  */
-export function normalizarNumeroRemito(texto: string | null | undefined): string | null {
+export function normalizarNumeroRemito(texto: string | null | undefined): NumeroRemito | null {
   const t = (texto ?? '').trim()
   if (t === '') return null
 
@@ -151,7 +153,10 @@ export function normalizarNumeroRemito(texto: string | null | undefined): string
   // tomando los ultimos 5 y devolveria un remito que no es.
   const partido = /(?<!\d)(\d{1,5})\s*[-/\s]\s*(\d{1,8})\s*$/.exec(t)
   if (partido) {
-    return `R${partido[1].padStart(LARGO_PTOVTA, '0')}${partido[2].padStart(LARGO_NUMERO, '0')}`
+    return {
+      ptovta: partido[1].padStart(LARGO_PTOVTA, '0'),
+      numero: partido[2].padStart(LARGO_NUMERO, '0'),
+    }
   }
 
   // Sin separador: los ultimos 8 digitos son el numero y lo de adelante el
@@ -163,7 +168,7 @@ export function normalizarNumeroRemito(texto: string | null | undefined): string
   const ptovta = digitos.slice(0, -LARGO_NUMERO).padStart(LARGO_PTOVTA, '0')
   if (ptovta.length > LARGO_PTOVTA) return null
 
-  return `R${ptovta}${numero}`
+  return { ptovta, numero }
 }
 
 export type RemitoBuscado =
@@ -188,19 +193,30 @@ export async function buscarRemitoPorNumero(
   numeroLeido: string,
 ): Promise<RemitoBuscado> {
   const cod = codProvee.trim()
-  const nComp = normalizarNumeroRemito(numeroLeido)
-  if (!cod || !nComp) return { estado: 'no-existe', numero: numeroLeido }
+  const partido = normalizarNumeroRemito(numeroLeido)
+  if (!cod || !partido) return { estado: 'no-existe', numero: numeroLeido }
+
+  const exacto = `R${partido.ptovta}${partido.numero}`
+  // El primer digito del numero (el que sigue al punto de venta) no es
+  // confiable: un remito real de Topper (proveedor 010685) lo prueba -- el
+  // PDF imprime "5026-00530766" y Tango lo tiene guardado como
+  // "R0502610530766", identico salvo ese primer digito del numero. Se
+  // busca con ese digito como comodin y, si hay mas de un match, se
+  // prefiere el exacto.
+  const patron = `R${partido.ptovta}_${partido.numero.slice(1)}`
 
   const pool = await getPool()
   const r = await pool
     .request()
     .input('prov', sql.VarChar(6), cod)
-    .input('ncomp', sql.VarChar(14), nComp)
+    .input('patron', sql.VarChar(14), patron)
+    .input('exacto', sql.VarChar(14), exacto)
     .query<Record<string, unknown>>(`
       ${SELECT}
         AND h.COD_PRO_CL = @prov
-        AND LTRIM(RTRIM(h.N_COMP)) = @ncomp
-      ORDER BY r.N_RENGL_S
+        AND LTRIM(RTRIM(h.N_COMP)) LIKE @patron
+      ORDER BY CASE WHEN LTRIM(RTRIM(h.N_COMP)) = @exacto THEN 0 ELSE 1 END,
+               h.NCOMP_IN_S, r.N_RENGL_S
     `)
 
   const remitos = agrupar(r.recordset)
@@ -211,13 +227,13 @@ export async function buscarRemitoPorNumero(
   const existe = await pool
     .request()
     .input('prov', sql.VarChar(6), cod)
-    .input('ncomp', sql.VarChar(14), nComp)
+    .input('patron', sql.VarChar(14), patron)
     .query(`
       SELECT TOP 1 1 AS hay FROM STA14
-      WHERE TCOMP_IN_S = 'RP' AND COD_PRO_CL = @prov AND LTRIM(RTRIM(N_COMP)) = @ncomp
+      WHERE TCOMP_IN_S = 'RP' AND COD_PRO_CL = @prov AND LTRIM(RTRIM(N_COMP)) LIKE @patron
     `)
 
   return existe.recordset.length > 0
-    ? { estado: 'sin-saldo', numero: nComp }
+    ? { estado: 'sin-saldo', numero: exacto }
     : { estado: 'no-existe', numero: numeroLeido }
 }

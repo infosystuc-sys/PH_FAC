@@ -39,7 +39,15 @@ export function Renglones({ renglones }: { renglones: RenglonGuardado[] }) {
       {renglones.map((r) => (
         <div key={r.orden} className={styles.fila}>
           <span className={styles.mono}>{r.codigo ?? '—'}</span>
-          <span className={styles.descripcion}>{r.descripcion ?? '—'}</span>
+          <span className={styles.descripcionCol}>
+            <span className={styles.descripcion}>{r.descripcion ?? '—'}</span>
+            {r.remitoNumero && (
+              <span className={styles.remito}>
+                Remito {r.remitoNumero}
+                {r.remitoNRenglS !== null && ` · renglón ${r.remitoNRenglS}`}
+              </span>
+            )}
+          </span>
           <span className={styles.monoDerecha}>{formatCantidad(num(r.cantidad))}</span>
           <span className={styles.monoDerecha}>{formatMoneda(num(r.precioUnitario))}</span>
           <span className={styles.importe}>{formatMoneda(num(r.importe))}</span>

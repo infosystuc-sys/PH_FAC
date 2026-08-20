@@ -33,10 +33,10 @@ export function RemitosPendientes({
     arrancar(async () => {
       try {
         if (!valor) {
-          await asignarRemito(comprobanteId, renglonId, null, null)
+          await asignarRemito(comprobanteId, renglonId, null, null, null)
         } else {
-          const [ncompInS, nRenglS] = valor.split('|')
-          await asignarRemito(comprobanteId, renglonId, ncompInS, Number(nRenglS))
+          const [ncompInS, nRenglS, numero] = valor.split('|')
+          await asignarRemito(comprobanteId, renglonId, ncompInS, Number(nRenglS), numero)
         }
         router.refresh()
       } catch (err) {
@@ -49,7 +49,10 @@ export function RemitosPendientes({
     <div className={styles.panel}>
       <h3 className={styles.titulo}>Remitos pendientes</h3>
       {renglones.map((r) => {
-        const valorActual = r.remitoNcompInS && r.remitoNRenglS ? `${r.remitoNcompInS}|${r.remitoNRenglS}` : ''
+        const valorActual =
+          r.remitoNcompInS && r.remitoNRenglS
+            ? `${r.remitoNcompInS}|${r.remitoNRenglS}|${r.remitoNumero ?? ''}`
+            : ''
         return (
           <div key={r.id} className={styles.fila}>
             <span className={styles.descripcion}>{r.descripcion ?? `Renglón ${r.id}`}</span>
@@ -65,7 +68,7 @@ export function RemitosPendientes({
                   const clave = `${remito.numeroInterno}-${rr.nRenglon}`
                   if (asignados.has(clave) && clave !== `${r.remitoNcompInS}-${r.remitoNRenglS}`) return null
                   return (
-                    <option key={clave} value={`${remito.numeroInterno}|${rr.nRenglon}`}>
+                    <option key={clave} value={`${remito.numeroInterno}|${rr.nRenglon}|${remito.numero}`}>
                       Remito {remito.numero} — {rr.descripcion ?? rr.codArticulo} (pend. {rr.cantidadPendiente})
                     </option>
                   )

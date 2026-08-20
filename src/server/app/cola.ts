@@ -343,12 +343,13 @@ export async function cargarRenglonesDeRemitosEn(
         )
         .input('ncompInS', sql.VarChar(20), r.remito.numeroInterno)
         .input('nRenglS', sql.Int, renglon.nRenglon)
+        .input('numero', sql.VarChar(20), r.remito.numero)
         .query(`
           INSERT INTO PHF_RENGLON
             (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
              CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA,
-             REMITO_NCOMP_IN_S, REMITO_N_RENGL_S)
-          VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS)
+             REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO)
+          VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS, @numero)
         `)
       salida.renglones += 1
     }

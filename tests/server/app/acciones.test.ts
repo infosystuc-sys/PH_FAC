@@ -251,12 +251,13 @@ describe('asignarRemitoEn', () => {
         precioUnitario: '80745.57', importe: '322982.28',
       })
 
-      await asignarRemitoEn(tx, renglonId, '00003805', 1)
+      await asignarRemitoEn(tx, renglonId, '00003805', 1, 'R0000100029869')
 
       const r = await tx.request().input('id', sql.Int, renglonId)
-        .query(`SELECT REMITO_NCOMP_IN_S, REMITO_N_RENGL_S FROM PHF_RENGLON WHERE ID=@id`)
+        .query(`SELECT REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO FROM PHF_RENGLON WHERE ID=@id`)
       expect(String(r.recordset[0].REMITO_NCOMP_IN_S).trim()).toBe('00003805')
       expect(Number(r.recordset[0].REMITO_N_RENGL_S)).toBe(1)
+      expect(String(r.recordset[0].REMITO_NUMERO).trim()).toBe('R0000100029869')
     })
   })
 
@@ -267,13 +268,14 @@ describe('asignarRemitoEn', () => {
         codigo: '106817', descripcion: 'Articulo', cantidad: '4',
         precioUnitario: '80745.57', importe: '322982.28',
       })
-      await asignarRemitoEn(tx, renglonId, '00003805', 1)
-      await asignarRemitoEn(tx, renglonId, null, null)
+      await asignarRemitoEn(tx, renglonId, '00003805', 1, 'R0000100029869')
+      await asignarRemitoEn(tx, renglonId, null, null, null)
 
       const r = await tx.request().input('id', sql.Int, renglonId)
-        .query(`SELECT REMITO_NCOMP_IN_S, REMITO_N_RENGL_S FROM PHF_RENGLON WHERE ID=@id`)
+        .query(`SELECT REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO FROM PHF_RENGLON WHERE ID=@id`)
       expect(r.recordset[0].REMITO_NCOMP_IN_S).toBeNull()
       expect(r.recordset[0].REMITO_N_RENGL_S).toBeNull()
+      expect(r.recordset[0].REMITO_NUMERO).toBeNull()
     })
   })
 })

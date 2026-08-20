@@ -373,12 +373,22 @@ export async function asignarRemitoEn(
   renglonId: number,
   remitoNcompInS: string | null,
   remitoNRenglS: number | null,
+  // El numero impreso (N_COMP) es solo para mostrarlo en pantalla: lo trae
+  // el propio panel de remitos pendientes, que ya lo tiene de
+  // buscarRemitosPendientes, asi que no hace falta otra consulta a Tango
+  // para reconstruirlo aca.
+  remitoNumero: string | null = null,
 ): Promise<void> {
   await e.request()
     .input('id', sql.Int, renglonId)
     .input('ncompInS', sql.VarChar(8), remitoNcompInS)
     .input('nRenglS', sql.Int, remitoNRenglS)
-    .query(`UPDATE PHF_RENGLON SET REMITO_NCOMP_IN_S=@ncompInS, REMITO_N_RENGL_S=@nRenglS WHERE ID=@id`)
+    .input('numero', sql.VarChar(20), remitoNumero)
+    .query(`
+      UPDATE PHF_RENGLON
+      SET REMITO_NCOMP_IN_S=@ncompInS, REMITO_N_RENGL_S=@nRenglS, REMITO_NUMERO=@numero
+      WHERE ID=@id
+    `)
 }
 
 export async function asignarRemito(
@@ -386,8 +396,9 @@ export async function asignarRemito(
   renglonId: number,
   remitoNcompInS: string | null,
   remitoNRenglS: number | null,
+  remitoNumero: string | null = null,
 ): Promise<void> {
   const pool = await getPool()
-  await asignarRemitoEn(pool, renglonId, remitoNcompInS, remitoNRenglS)
+  await asignarRemitoEn(pool, renglonId, remitoNcompInS, remitoNRenglS, remitoNumero)
   revalidatePath(`/comprobantes/${comprobanteId}`)
 }
