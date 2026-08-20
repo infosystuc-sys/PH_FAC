@@ -1,6 +1,7 @@
 import type { RenglonGuardado } from '@/server/app/detalle'
 import { formatMoneda, formatCantidad } from '@/lib/formato'
 import { SelectorArticulo } from './selector-articulo'
+import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './renglones.module.css'
 
 /**
@@ -41,10 +42,13 @@ function cotejo(
 export function Renglones({
   comprobanteId,
   renglones,
+  remitos,
   soloLectura = false,
 }: {
   comprobanteId: number
   renglones: RenglonGuardado[]
+  /** Los remitos con saldo del proveedor, para poder reasignar un renglón. */
+  remitos: RemitoPendiente[]
   /** Comprobante registrado: terminal, no se corrige nada. */
   soloLectura?: boolean
 }) {
@@ -52,6 +56,24 @@ export function Renglones({
   // sería ruido permanente en la pantalla donde el operador pasa el 90%
   // del tiempo.
   if (renglones.length === 0) return null
+
+  // Los renglones de remito ya tomados: el selector no vuelve a ofrecerlos,
+  // asi que el mismo no se puede asignar a dos renglones de la factura.
+  const yaAsignados = new Set(
+    renglones
+      .filter((r) => r.remitoNcompInS && r.remitoNRenglS)
+      .map((r) => `${r.remitoNcompInS}-${r.remitoNRenglS}`),
+  )
+
+  // Solo los remitos que ESTE comprobante referencia. `buscarRemitosPendientes`
+  // trae todos los del proveedor -- con TOPPER son 132 renglones -- y ofrecer
+  // los de otros remitos no ayuda: si la factura apunta al remito equivocado,
+  // eso se arregla corrigiendo el numero en la cabecera, no reapuntando
+  // renglon por renglon.
+  const internosDelComprobante = new Set(
+    renglones.map((r) => r.remitoNcompInS).filter((x): x is string => x !== null),
+  )
+  const remitosPropios = remitos.filter((x) => internosDelComprobante.has(x.numeroInterno))
 
   return (
     <section className={styles.tarjeta}>
@@ -101,8 +123,14 @@ export function Renglones({
                 <SelectorArticulo
                   comprobanteId={comprobanteId}
                   renglonId={r.id}
-                  codigoActual={codigo}
                   corregido={r.codigoFinal !== null}
+                  remitos={remitosPropios}
+                  yaAsignados={yaAsignados}
+                  remitoActual={
+                    r.remitoNcompInS && r.remitoNRenglS
+                      ? `${r.remitoNcompInS}-${r.remitoNRenglS}`
+                      : null
+                  }
                 />
               )}
             </span>

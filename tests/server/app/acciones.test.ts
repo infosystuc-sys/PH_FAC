@@ -397,3 +397,47 @@ describe('elegirArticuloEn', () => {
     })
   })
 })
+
+describe('asignarRemitoEn al reapuntar un renglon', () => {
+  it('guarda la cantidad entregada y descarta la correccion de articulo', async () => {
+    // El articulo lo define el renglon del remito: una correccion manual
+    // anterior apuntaba a otro, y dejarla pegada mostraria un articulo que
+    // no es el del remito recien elegido.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: 'X', descripcion: 'X', cantidad: '1',
+        precioUnitario: '100', importe: '100',
+      })
+      await elegirArticuloEn(tx, renglonId, 'CORREGIDO-ANTES')
+
+      await asignarRemitoEn(tx, renglonId, '00003684', 7, 'R0000200006818', 6)
+
+      const d = await obtenerDetalleEn(tx, id)
+      const r = d.renglones[0]
+      expect(r.remitoNcompInS).toBe('00003684')
+      expect(r.remitoNRenglS).toBe(7)
+      expect(r.remitoNumero).toBe('R0000200006818')
+      expect(r.cantidadRemito).toBe('6')
+      expect(r.codigoFinal).toBeNull()
+    })
+  })
+
+  it('al sacar el remito deja la cantidad entregada en null, no en cero', async () => {
+    // Sin renglon de remito no hay cantidad contra la cual cotejar: un cero
+    // se leeria como que entregaron cero.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: 'X', descripcion: 'X', cantidad: '1',
+        precioUnitario: '100', importe: '100',
+      })
+      await asignarRemitoEn(tx, renglonId, '00003684', 7, 'R0000200006818', 6)
+      await asignarRemitoEn(tx, renglonId, null, null, null, null)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones[0].remitoNcompInS).toBeNull()
+      expect(d.renglones[0].cantidadRemito).toBeNull()
+    })
+  })
+})

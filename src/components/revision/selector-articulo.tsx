@@ -1,16 +1,28 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef } from 'react'
-import { buscarArticulosTango, elegirArticulo } from '@/server/app/acciones'
+import { buscarArticulosTango, elegirArticulo, asignarRemito } from '@/server/app/acciones'
 import type { ArticuloTango } from '@/server/tango/articulos'
+import type { RemitoPendiente } from '@/server/tango/remitos'
 import { useToast } from '@/components/toast/toast-provider'
 import styles from './selector-articulo.module.css'
 
 /**
- * Corrige a mano el artículo de un renglón cuando el emparejamiento
- * automático contra el remito se equivocó.
+ * Corrige a mano a qué apunta un renglón cuando el emparejamiento
+ * automático se equivocó. Dos caminos, en el orden en que conviene
+ * intentarlos:
  *
- * Arranca cerrado: la mayoría de los renglones están bien y un buscador
+ * 1. Los renglones del remito que todavía tienen saldo. Es lo más probable
+ *    y lo único que conserva el vínculo con Tango, así que van primero y
+ *    sin necesidad de buscar nada.
+ * 2. El maestro de artículos completo, por si lo que la factura cobra no
+ *    está en ningún remito.
+ *
+ * Reemplaza al panel "Remitos pendientes", que hacía lo primero en una
+ * tarjeta aparte: repetía la información de "Renglones detectados" y
+ * ocupaba más pantalla que los renglones mismos.
+ *
+ * Arranca cerrado: la mayoría de los renglones están bien y un selector
  * abierto en cada uno sería ruido en una tarjeta que puede tener 48 filas.
  *
  * Mismo patrón que `SelectorProveedor`: debounce de 250 ms y una bandera
@@ -20,14 +32,21 @@ import styles from './selector-articulo.module.css'
 export function SelectorArticulo({
   comprobanteId,
   renglonId,
-  codigoActual,
   corregido,
+  remitos,
+  yaAsignados,
+  remitoActual,
 }: {
   comprobanteId: number
   renglonId: number
-  codigoActual: string | null
   /** Si el código que se muestra ya viene de una corrección manual. */
   corregido: boolean
+  /** Los remitos con saldo del proveedor, para ofrecer sus renglones. */
+  remitos: RemitoPendiente[]
+  /** Claves "interno-renglón" ya tomadas por otro renglón de la factura. */
+  yaAsignados: Set<string>
+  /** La clave del renglón de remito al que apunta este, si apunta a alguno. */
+  remitoActual: string | null
 }) {
   const [abierto, setAbierto] = useState(false)
   const [query, setQuery] = useState('')
@@ -73,6 +92,41 @@ export function SelectorArticulo({
     })
   }
 
+  function asignar(
+    ncompInS: string | null,
+    nRenglon: number | null,
+    numero: string | null,
+    cantidad: number | null,
+  ) {
+    arrancar(async () => {
+      try {
+        await asignarRemito(comprobanteId, renglonId, ncompInS, nRenglon, numero, cantidad)
+        setAbierto(false)
+        setQuery('')
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'No se pudo cambiar el renglón del remito.')
+      }
+    })
+  }
+
+  // Todos los renglones del remito, incluidos los que ya se llevo otro
+  // renglon de la factura. Ocultarlos parecia mas prolijo pero rompe el caso
+  // mas comun: si el modelo intercambio dos talles, los dos estan tomados y
+  // no habria a que reapuntar. Se marcan como ocupados y se dejan elegir --
+  // el cotejo detecta el duplicado y el que quedo huerfano, asi que el
+  // operador ve enseguida que le falta arreglar la otra fila.
+  const delRemito = remitos.flatMap((remito) =>
+    remito.renglones.map((rr) => {
+      const clave = `${remito.numeroInterno}-${rr.nRenglon}`
+      return {
+        remito,
+        rr,
+        clave,
+        ocupado: clave !== remitoActual && yaAsignados.has(clave),
+      }
+    }),
+  )
+
   if (!abierto) {
     return (
       <button type="button" className={styles.abrir} onClick={() => setAbierto(true)}>
@@ -84,11 +138,50 @@ export function SelectorArticulo({
 
   return (
     <div className={styles.panel}>
+      {delRemito.length > 0 && (
+        <ul className={styles.resultados}>
+          {delRemito.map(({ remito, rr, clave, ocupado }) => (
+            <li key={clave}>
+              <button
+                type="button"
+                className={`${styles.resultado} ${clave === remitoActual ? styles.elegido : ''} ${
+                  ocupado ? styles.ocupado : ''
+                }`}
+                disabled={pendiente}
+                onClick={() =>
+                  asignar(remito.numeroInterno, rr.nRenglon, remito.numero, rr.cantidadPendiente)
+                }
+              >
+                <span className={styles.codigo}>{rr.codArticulo}</span>
+                <span className={styles.desc}>{rr.descripcion ?? 'sin descripción'}</span>
+                <span className={styles.porQue}>
+                  {ocupado ? 'ya asignado' : `remito · pend. ${rr.cantidadPendiente}`}
+                </span>
+              </button>
+            </li>
+          ))}
+          {remitoActual !== null && (
+            <li>
+              <button
+                type="button"
+                className={styles.resultado}
+                disabled={pendiente}
+                onClick={() => asignar(null, null, null, null)}
+              >
+                <span className={styles.codigo}>—</span>
+                <span className={styles.desc}>Sin remito</span>
+                <span className={styles.porQue} />
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
+
       <input
         className={styles.buscador}
         autoFocus
         value={query}
-        placeholder="Código de barras, código de artículo o descripción"
+        placeholder="…o buscá en todo Tango: código de barras, código o descripción"
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => e.key === 'Escape' && setAbierto(false)}
       />

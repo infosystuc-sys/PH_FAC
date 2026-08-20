@@ -424,20 +424,28 @@ export async function asignarRemitoEn(
   renglonId: number,
   remitoNcompInS: string | null,
   remitoNRenglS: number | null,
-  // El numero impreso (N_COMP) es solo para mostrarlo en pantalla: lo trae
-  // el propio panel de remitos pendientes, que ya lo tiene de
+  // El numero impreso (N_COMP) y la cantidad entregada son solo para
+  // mostrarlos en pantalla: los trae el propio selector, que ya los tiene de
   // buscarRemitosPendientes, asi que no hace falta otra consulta a Tango
-  // para reconstruirlo aca.
+  // para reconstruirlos aca.
   remitoNumero: string | null = null,
+  cantidadRemito: number | null = null,
 ): Promise<void> {
   await e.request()
     .input('id', sql.Int, renglonId)
     .input('ncompInS', sql.VarChar(8), remitoNcompInS)
     .input('nRenglS', sql.Int, remitoNRenglS)
     .input('numero', sql.VarChar(20), remitoNumero)
+    .input('cantRemito', sql.Decimal(19, 4), cantidadRemito)
     .query(`
       UPDATE PHF_RENGLON
-      SET REMITO_NCOMP_IN_S=@ncompInS, REMITO_N_RENGL_S=@nRenglS, REMITO_NUMERO=@numero
+      SET REMITO_NCOMP_IN_S=@ncompInS, REMITO_N_RENGL_S=@nRenglS, REMITO_NUMERO=@numero,
+          CANTIDAD_REMITO=@cantRemito,
+          -- El articulo lo define el renglon del remito. Una correccion
+          -- manual anterior apuntaba a otro renglon, asi que se descarta:
+          -- dejarla pegada mostraria un articulo que no es el del remito
+          -- recien elegido, que es el error mas silencioso de los dos.
+          CODIGO_FINAL = NULL
       WHERE ID=@id
     `)
 }
@@ -448,8 +456,9 @@ export async function asignarRemito(
   remitoNcompInS: string | null,
   remitoNRenglS: number | null,
   remitoNumero: string | null = null,
+  cantidadRemito: number | null = null,
 ): Promise<void> {
   const pool = await getPool()
-  await asignarRemitoEn(pool, renglonId, remitoNcompInS, remitoNRenglS, remitoNumero)
+  await asignarRemitoEn(pool, renglonId, remitoNcompInS, remitoNRenglS, remitoNumero, cantidadRemito)
   revalidatePath(`/comprobantes/${comprobanteId}`)
 }

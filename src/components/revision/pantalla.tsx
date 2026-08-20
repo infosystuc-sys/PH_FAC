@@ -8,7 +8,6 @@ import { PanelObservacion } from './panel-observacion'
 import { PanelValidaciones } from './validaciones'
 import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
-import { RemitosPendientes } from './remitos-pendientes'
 import { Historial } from './historial'
 import type { RenglonGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
@@ -85,6 +84,10 @@ export function Pantalla({
   codigosImpuesto: CodigoImpuesto[]
   alicuotasIva: AlicuotaTango[]
   concepto: { codConcepto: string; descripcion: string } | null
+  /**
+   * Los remitos con saldo del proveedor. Los usa la tarjeta de renglones
+   * para ofrecer, en cada uno, a qué renglón de remito reapuntarlo.
+   */
   remitosPendientes: RemitoPendiente[]
   // Por que esta en observacion. Va arriba de todo porque explica el
   // estado del comprobante entero, no un campo.
@@ -125,9 +128,9 @@ export function Pantalla({
         <Renglones
           comprobanteId={comprobanteId}
           renglones={renglones}
+          remitos={remitosPendientes}
           soloLectura={soloLectura}
         />
-        <RemitosPendientes comprobanteId={comprobanteId} renglones={renglones} remitos={remitosPendientes} />
         <Historial entradas={auditoria} />
       </div>
     </div>

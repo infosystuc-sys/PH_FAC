@@ -112,3 +112,20 @@
 .descartar {
   color: var(--alerta);
 }
+
+/* El renglon de remito al que ya apunta: se marca para que el operador vea
+   cual esta elegido sin tener que compararlo con la fila de arriba. */
+.elegido {
+  background: var(--acento-tenue);
+}
+
+.buscador {
+  margin-top: 6px;
+}
+
+/* Ya lo tomo otro renglon de la factura. Se puede elegir igual -- hace
+   falta para arreglar dos talles intercambiados -- pero se avisa. */
+.ocupado .codigo,
+.ocupado .desc {
+  color: var(--texto-4);
+}
