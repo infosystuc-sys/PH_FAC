@@ -14,11 +14,20 @@ export const MOTIVO_SIN_CONCEPTO = 'Proveedor sin concepto en Tango'
  */
 export const MOTIVO_REMITO_SIN_SALDO = 'Remito sin saldo o inexistente'
 
+/**
+ * El motivo cuando los renglones de una factura de articulos no coinciden
+ * con los del remito que referencia: cantidades distintas, articulos que
+ * faltan o articulos que la factura cobra de mas. La nota lleva el detalle
+ * renglon por renglon (ver describirDiferencias en lib/cotejo.ts).
+ */
+export const MOTIVO_FACTURA_NO_COINCIDE = 'La factura no coincide con el remito'
+
 export const MOTIVOS_OBSERVACION = [
   'Diferencia de importe con la O/C',
   'Proveedor inexistente en Tango',
   MOTIVO_SIN_CONCEPTO,
   MOTIVO_REMITO_SIN_SALDO,
+  MOTIVO_FACTURA_NO_COINCIDE,
   'Falta remito asociado',
   'CAE vencido o inválido',
   'Precio distinto al acordado',

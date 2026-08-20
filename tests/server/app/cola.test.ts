@@ -9,12 +9,19 @@ import {
   marcarFalloEn,
   resolverProveedorEn,
   observarSinConceptoEn,
-  cargarRenglonesDeRemitosEn,
+  lineasDeRemitos,
+  guardarRenglonesFacturadosEn,
   observarRemitosEn,
+  observarDiferenciasEn,
   desnormalizarBandejaEn,
   MAX_INTENTOS,
 } from '@/server/app/cola'
-import { MOTIVO_SIN_CONCEPTO, MOTIVO_REMITO_SIN_SALDO } from '@/lib/observacion'
+import {
+  MOTIVO_SIN_CONCEPTO,
+  MOTIVO_REMITO_SIN_SALDO,
+  MOTIVO_FACTURA_NO_COINCIDE,
+} from '@/lib/observacion'
+import { cotejarRenglones } from '@/lib/cotejo'
 import { obtenerDetalleEn } from '@/server/app/detalle'
 import { getPool } from '@/server/db/pool'
 
@@ -410,7 +417,7 @@ describe('observarSinConceptoEn', () => {
   })
 })
 
-describe('cargarRenglonesDeRemitosEn', () => {
+describe('lineasDeRemitos', () => {
   /** Un remito con saldo: se descubre, porque los pendientes se van facturando. */
   async function remitoPendiente() {
     const pool = await getPool()
@@ -426,71 +433,56 @@ describe('cargarRenglonesDeRemitosEn', () => {
     return r.recordset.length ? r.recordset[0] : null
   }
 
-  it('trae los renglones del remito y los deja asociados a su renglon de origen', async () => {
+  it('numera los renglones del remito para que la IA los empareje', async () => {
     const rem = await remitoPendiente()
     if (!rem) return
 
-    await conRollback(async (tx) => {
-      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
-      const carga = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', String(rem.prov), {
-        remito1: String(rem.nComp),
-        remito2: null,
-      })
-
-      expect(carga.renglones).toBe(Number(rem.renglones))
-      expect(carga.sinSaldo).toEqual([])
-      expect(carga.noEncontrados).toEqual([])
-
-      const d = await obtenerDetalleEn(tx, id)
-      expect(d.renglones).toHaveLength(Number(rem.renglones))
-      for (const r of d.renglones) {
-        // Ya vienen asociados: el operador no tiene que elegir el remito
-        // renglon por renglon, que era el trabajo que esto le saca.
-        expect(r.remitoNcompInS).toBe(String(rem.interno))
-        expect(r.remitoNRenglS).not.toBeNull()
-        expect(r.remitoNumero).toBe(String(rem.nComp))
-        expect(r.codigo).toBeTruthy()
-      }
+    const { lineas, origen, carga } = await lineasDeRemitos('articulos', String(rem.prov), {
+      remito1: String(rem.nComp),
+      remito2: null,
     })
+
+    expect(lineas).toHaveLength(Number(rem.renglones))
+    expect(carga.sinSaldo).toEqual([])
+    expect(carga.noEncontrados).toEqual([])
+
+    // Correlativos desde 1: es el numero que ve el modelo en el prompt.
+    expect(lineas.map((l) => l.indice)).toEqual(
+      Array.from({ length: lineas.length }, (_, i) => i + 1),
+    )
+    for (const l of lineas) {
+      expect(l.codArticulo).toBeTruthy()
+      expect(l.cantidad).toBeGreaterThan(0)
+      expect(l.numeroRemito).toBe(String(rem.nComp))
+      // Cada indice sabe de que renglon de Tango salio: es la clave del
+      // join contra STA20 al registrar.
+      expect(origen.get(l.indice)?.ncompInS).toBe(String(rem.interno))
+    }
   })
 
-  it('no carga nada si el tipo no es articulos', async () => {
+  it('no devuelve nada si el tipo no es articulos', async () => {
     const rem = await remitoPendiente()
     if (!rem) return
 
-    await conRollback(async (tx) => {
-      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
-      for (const tipo of ['conceptos', 'tarjeta'] as const) {
-        const carga = await cargarRenglonesDeRemitosEn(tx, id, tipo, String(rem.prov), {
-          remito1: String(rem.nComp),
-          remito2: null,
-        })
-        expect(carga.renglones).toBe(0)
-      }
-      expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(0)
-    })
-  })
-
-  it('no carga nada sin proveedor resuelto ni sin numero de remito', async () => {
-    const rem = await remitoPendiente()
-    if (!rem) return
-
-    await conRollback(async (tx) => {
-      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
-      const sinProv = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', null, {
+    for (const tipo of ['conceptos', 'tarjeta'] as const) {
+      const { lineas } = await lineasDeRemitos(tipo, String(rem.prov), {
         remito1: String(rem.nComp),
       })
-      expect(sinProv.renglones).toBe(0)
-
-      const sinNumero = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', String(rem.prov), {
-        remito1: '',
-        remito2: null,
-      })
-      expect(sinNumero.renglones).toBe(0)
-    })
+      expect(lineas, tipo).toEqual([])
+    }
   })
 
-  it('reporta el remito ya facturado como sin saldo, sin cargar renglones', async () => {
+  it('no devuelve nada sin proveedor resuelto ni sin numero de remito', async () => {
+    const rem = await remitoPendiente()
+    if (!rem) return
+
+    expect((await lineasDeRemitos('articulos', null, { remito1: String(rem.nComp) })).lineas)
+      .toEqual([])
+    expect((await lineasDeRemitos('articulos', String(rem.prov), { remito1: '' })).lineas)
+      .toEqual([])
+  })
+
+  it('reporta el remito ya facturado como sin saldo, sin devolver lineas', async () => {
     const pool = await getPool()
     const f = await pool.request().query(`
       SELECT TOP 1 LTRIM(RTRIM(N_COMP)) AS nComp, LTRIM(RTRIM(COD_PRO_CL)) AS prov
@@ -499,30 +491,96 @@ describe('cargarRenglonesDeRemitosEn', () => {
     if (f.recordset.length === 0) return
     const x = f.recordset[0]
 
-    await conRollback(async (tx) => {
-      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
-      const carga = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', String(x.prov), {
-        remito1: String(x.nComp),
-      })
-
-      // Cargarlos igual facturaria dos veces la misma mercaderia.
-      expect(carga.renglones).toBe(0)
-      expect(carga.sinSaldo).toEqual([String(x.nComp)])
-      expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(0)
+    const { lineas, carga } = await lineasDeRemitos('articulos', String(x.prov), {
+      remito1: String(x.nComp),
     })
+    expect(lineas).toEqual([])
+    expect(carga.sinSaldo).toEqual([String(x.nComp)])
   })
 
   it('reporta como no encontrado un numero que no existe para ese proveedor', async () => {
     const rem = await remitoPendiente()
     if (!rem) return
 
+    const { carga } = await lineasDeRemitos('articulos', String(rem.prov), {
+      remito1: '99999-99999999',
+    })
+    expect(carga.noEncontrados).toEqual(['99999-99999999'])
+  })
+})
+
+describe('guardarRenglonesFacturadosEn', () => {
+  const LINEAS = [
+    {
+      indice: 1,
+      codArticulo: '106362',
+      descripcion: 'TENDER ONE BOX',
+      cantidad: 20,
+      numeroRemito: 'R0000200006818',
+    },
+  ]
+  const ORIGEN = new Map([[1, { ncompInS: '00003684', nRenglon: 1, numero: 'R0000200006818' }]])
+
+  it('guarda la cantidad y el precio de la FACTURA, no los del remito', async () => {
+    // El remito no es valorizado: dice que entro y cuanto, y el precio sale
+    // de la factura (decision del usuario).
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
-      const carga = await cargarRenglonesDeRemitosEn(tx, id, 'articulos', String(rem.prov), {
-        remito1: '99999-99999999',
-      })
-      expect(carga.noEncontrados).toEqual(['99999-99999999'])
-      expect(carga.renglones).toBe(0)
+      const n = await guardarRenglonesFacturadosEn(
+        tx,
+        id,
+        [{ lineaRemito: 1, descripcion: 'ZAPATILLA X', cantidad: '20', precioUnitario: '1.250,50' }],
+        ORIGEN,
+        LINEAS,
+      )
+      expect(n).toBe(1)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones).toHaveLength(1)
+      const r = d.renglones[0]
+      expect(r.precioUnitario).toBe('1250.5')
+      // El codigo es el NUESTRO (con el que se graba en Tango); la
+      // descripcion es la del proveedor (la que el operador ve impresa).
+      expect(r.codigo).toBe('106362')
+      expect(r.descripcion).toBe('ZAPATILLA X')
+      expect(r.remitoNcompInS).toBe('00003684')
+      expect(r.remitoNRenglS).toBe(1)
+    })
+  })
+
+  it('guarda sin link de remito el renglon que la factura cobra de mas', async () => {
+    // Tiene que verse en pantalla: el cotejo ya lo marco como diferencia,
+    // pero si no se guardara el operador no sabria que linea es.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarRenglonesFacturadosEn(
+        tx,
+        id,
+        [{ lineaRemito: 0, descripcion: 'FLETE', cantidad: '1', precioUnitario: '5.000,00' }],
+        ORIGEN,
+        LINEAS,
+      )
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones).toHaveLength(1)
+      expect(d.renglones[0].descripcion).toBe('FLETE')
+      expect(d.renglones[0].remitoNcompInS).toBeNull()
+      expect(d.renglones[0].codigo).toBeNull()
+    })
+  })
+
+  it('calcula el importe con el precio de la factura', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarRenglonesFacturadosEn(
+        tx,
+        id,
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '4', precioUnitario: '100,00' }],
+        ORIGEN,
+        LINEAS,
+      )
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones[0].importe).toBe('400')
     })
   })
 })
@@ -563,6 +621,60 @@ describe('observarRemitosEn', () => {
         noEncontrados: [],
       })
       expect(observado).toBe(false)
+
+      const r = await tx.request().input('id', sql.Int, id)
+        .query('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(r.recordset[0].ESTADO).toBe('leido')
+    })
+  })
+})
+
+describe('observarDiferenciasEn', () => {
+  const LINEAS = [
+    {
+      indice: 1,
+      codArticulo: '106362',
+      descripcion: 'TENDER ONE BOX',
+      cantidad: 20,
+      numeroRemito: 'R0000200006818',
+    },
+  ]
+
+  it('manda a observacion con el detalle de la diferencia en la nota', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const diferencias = cotejarRenglones(
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '24', precioUnitario: '100' }],
+        LINEAS,
+      )
+
+      expect(await observarDiferenciasEn(tx, id, diferencias)).toBe(true)
+
+      const r = await tx.request().input('id', sql.Int, id).query(
+        'SELECT ESTADO, MOTIVO_OBSERVACION, NOTA_OBSERVACION FROM PHF_COMPROBANTE WHERE ID = @id',
+      )
+      const fila = r.recordset[0]
+      expect(fila.ESTADO).toBe('observacion')
+      expect(fila.MOTIVO_OBSERVACION).toBe(MOTIVO_FACTURA_NO_COINCIDE)
+      // El operador tiene que poder ir al papel sin abrir Tango: la nota
+      // nombra el articulo, el remito y las dos cantidades.
+      const nota = String(fila.NOTA_OBSERVACION)
+      expect(nota).toContain('106362')
+      expect(nota).toContain('R0000200006818')
+      expect(nota).toContain('20')
+      expect(nota).toContain('24')
+    })
+  })
+
+  it('no toca el comprobante cuando la factura coincide con el remito', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const diferencias = cotejarRenglones(
+        [{ lineaRemito: 1, descripcion: 'X', cantidad: '20', precioUnitario: '100' }],
+        LINEAS,
+      )
+      expect(diferencias).toEqual([])
+      expect(await observarDiferenciasEn(tx, id, diferencias)).toBe(false)
 
       const r = await tx.request().input('id', sql.Int, id)
         .query('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')

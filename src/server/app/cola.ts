@@ -5,9 +5,20 @@ import { extraerDePdf, type Extraccion } from '../ia/extraccion'
 import { buscarProveedoresPorCuit } from '../tango/proveedores'
 import { buscarConceptoProveedor } from '../tango/conceptos'
 import { buscarRemitoPorNumero } from '../tango/remitos'
+import { extraerRenglonesFacturados } from '../ia/renglones'
+import {
+  cotejarRenglones,
+  describirDiferencias,
+  type LineaRemito,
+  type RenglonFacturado,
+} from '@/lib/cotejo'
 import { normalizarCuit, parsearImporteONulo } from '@/lib/formato'
 import { tipoFacturaODefault, CLAVES_REMITO, type TipoFactura } from '@/lib/tipoFactura'
-import { MOTIVO_SIN_CONCEPTO, MOTIVO_REMITO_SIN_SALDO } from '@/lib/observacion'
+import {
+  MOTIVO_SIN_CONCEPTO,
+  MOTIVO_REMITO_SIN_SALDO,
+  MOTIVO_FACTURA_NO_COINCIDE,
+} from '@/lib/observacion'
 import { guardarExtraccionEn, guardarCampoEn, auditarEn } from './detalle'
 import { leerPdf } from './archivos'
 
@@ -277,91 +288,130 @@ export type CargaRemitos = {
 }
 
 /**
- * Trae de Tango los renglones de los remitos que la IA leyo en la factura y
- * los deja como renglones del comprobante, ya asociados a su renglon de
- * remito.
+ * Resuelve contra Tango los remitos que la IA leyo en la cabecera y
+ * devuelve sus renglones numerados, listos para que la segunda pasada de
+ * extraccion los empareje con los de la factura.
  *
- * La mercaderia no sale del PDF: sale de STA14/STA20, que es lo que dice
- * que entro de verdad al deposito. La IA solo aporta el NUMERO -- un dato
- * corto y facil de verificar contra el papel -- y el detalle lo pone Tango.
- * Transcribir veinte renglones de un PDF era pedirle al modelo que copie
- * lo que el ERP ya sabe, con el riesgo de que copie mal.
- *
- * Solo carga los renglones con saldo pendiente: los ya facturados de un
- * remito que sigue abierto no se proponen, o se facturaria dos veces la
- * misma mercaderia.
+ * No escribe nada: separar la lectura de Tango de la escritura permite
+ * hacer el llamado a la IA sin una transaccion abierta.
  */
-export async function cargarRenglonesDeRemitosEn(
-  e: Ejecutor,
-  id: number,
+export async function lineasDeRemitos(
   tipoFactura: TipoFactura,
   codProvee: string | null,
   valores: Record<string, string | null>,
-): Promise<CargaRemitos> {
-  const vacio: CargaRemitos = { renglones: 0, sinSaldo: [], noEncontrados: [] }
+): Promise<{ lineas: LineaRemito[]; origen: Map<number, OrigenRenglon>; carga: CargaRemitos }> {
+  const vacio = {
+    lineas: [] as LineaRemito[],
+    origen: new Map<number, OrigenRenglon>(),
+    carga: { renglones: 0, sinSaldo: [], noEncontrados: [] } as CargaRemitos,
+  }
   if (tipoFactura !== 'articulos' || !codProvee) return vacio
 
   const numeros = CLAVES_REMITO.map((k) => (valores[k] ?? '').trim()).filter((n) => n !== '')
   if (numeros.length === 0) return vacio
 
-  const salida: CargaRemitos = { renglones: 0, sinSaldo: [], noEncontrados: [] }
-  let orden = 0
+  const lineas: LineaRemito[] = []
+  const origen = new Map<number, OrigenRenglon>()
+  const carga: CargaRemitos = { renglones: 0, sinSaldo: [], noEncontrados: [] }
 
   for (const numero of numeros) {
     const r = await buscarRemitoPorNumero(codProvee, numero)
 
     if (r.estado === 'sin-saldo') {
-      salida.sinSaldo.push(numero)
+      carga.sinSaldo.push(numero)
       continue
     }
     if (r.estado === 'no-existe') {
-      salida.noEncontrados.push(numero)
+      carga.noEncontrados.push(numero)
       continue
     }
 
     for (const renglon of r.remito.renglones) {
-      orden += 1
-      await e
-        .request()
-        .input('id', sql.Int, id)
-        .input('orden', sql.Int, orden)
-        .input('codigo', sql.NVarChar(60), renglon.codArticulo)
-        .input('desc', sql.NVarChar(500), renglon.descripcion)
-        // La cantidad propuesta es la PENDIENTE, no la del remito: si la
-        // mitad ya se facturo, proponer el total duplicaria esa mitad.
-        .input('cant', sql.Decimal(19, 4), renglon.cantidadPendiente)
-        // El remito dice QUE entro y CUANTO, no a que precio: PRECIO esta
-        // en 0 en los 15.059 renglones de RP y PRECIO_REM en 3.927 de
-        // ellos. Cuando no hay precio va NULL y no 0 -- un 0 se lee como
-        // "sale cero", y lo que pasa es que el dato no esta y el operador
-        // tiene que sacarlo de la factura.
-        .input('pu', sql.Decimal(19, 4), renglon.precio || null)
-        .input(
-          'imp',
-          sql.Decimal(19, 4),
-          renglon.precio ? renglon.cantidadPendiente * renglon.precio : null,
-        )
-        .input('ncompInS', sql.VarChar(20), r.remito.numeroInterno)
-        .input('nRenglS', sql.Int, renglon.nRenglon)
-        .input('numero', sql.VarChar(20), r.remito.numero)
-        .query(`
-          INSERT INTO PHF_RENGLON
-            (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
-             CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA,
-             REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO)
-          VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS, @numero)
-        `)
-      salida.renglones += 1
+      // El indice es correlativo entre TODOS los remitos de la factura: la
+      // IA ve una sola lista, no una por remito.
+      const indice = lineas.length + 1
+      lineas.push({
+        indice,
+        codArticulo: renglon.codArticulo,
+        descripcion: renglon.descripcion,
+        // Se coteja contra la cantidad PENDIENTE: si parte del remito ya se
+        // facturo, lo que esta factura tiene que cobrar es el saldo.
+        cantidad: renglon.cantidadPendiente,
+        numeroRemito: r.remito.numero,
+      })
+      origen.set(indice, {
+        ncompInS: r.remito.numeroInterno,
+        nRenglon: renglon.nRenglon,
+        numero: r.remito.numero,
+      })
     }
-
-    await auditarEn(
-      e,
-      id,
-      `Renglones propuestos desde el remito ${r.remito.numero} — ${r.remito.renglones.length} artículo(s)`,
-    )
   }
 
-  return salida
+  return { lineas, origen, carga }
+}
+
+/** De qué renglón de Tango salió cada línea, para el join al registrar. */
+export type OrigenRenglon = { ncompInS: string; nRenglon: number; numero: string }
+
+/**
+ * Escribe los renglones de la factura en PHF_RENGLON.
+ *
+ * Lo que se guarda es lo que la FACTURA cobra -- cantidad y precio
+ * unitario --, no lo que dice el remito. El remito no es valorizado
+ * (decision del usuario, 2026-08-20): dice que entro y cuanto, y el precio
+ * sale de la factura. Cada renglon conserva el link al renglon del remito
+ * que le corresponde, que es la clave del join contra STA20 al registrar.
+ *
+ * Los renglones que la factura cobra y no estan en ningun remito se
+ * guardan igual, sin link: el operador tiene que verlos, y el cotejo ya los
+ * marco como diferencia.
+ */
+export async function guardarRenglonesFacturadosEn(
+  e: Ejecutor,
+  id: number,
+  facturados: RenglonFacturado[],
+  origen: Map<number, OrigenRenglon>,
+  lineas: LineaRemito[],
+): Promise<number> {
+  let orden = 0
+
+  for (const f of facturados) {
+    const linea = lineas.find((l) => l.indice === f.lineaRemito) ?? null
+    const o = linea ? (origen.get(linea.indice) ?? null) : null
+    orden += 1
+
+    const cantidad = parsearImporteONulo(f.cantidad)
+    const precio = parsearImporteONulo(f.precioUnitario)
+
+    await e
+      .request()
+      .input('id', sql.Int, id)
+      .input('orden', sql.Int, orden)
+      // El codigo es el NUESTRO cuando se pudo emparejar: es con el que se
+      // graba en Tango. La descripcion, en cambio, es la del proveedor, que
+      // es lo que el operador ve impreso en el papel.
+      .input('codigo', sql.NVarChar(60), linea ? linea.codArticulo : null)
+      .input('desc', sql.NVarChar(500), f.descripcion)
+      .input('cant', sql.Decimal(19, 4), cantidad)
+      .input('pu', sql.Decimal(19, 4), precio)
+      .input(
+        'imp',
+        sql.Decimal(19, 4),
+        cantidad !== null && precio !== null ? cantidad * precio : null,
+      )
+      .input('ncompInS', sql.VarChar(20), o ? o.ncompInS : null)
+      .input('nRenglS', sql.Int, o ? o.nRenglon : null)
+      .input('numero', sql.VarChar(20), o ? o.numero : null)
+      .query(`
+        INSERT INTO PHF_RENGLON
+          (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA,
+           CANTIDAD_IA, PRECIO_UNITARIO_IA, IMPORTE_IA,
+           REMITO_NCOMP_IN_S, REMITO_N_RENGL_S, REMITO_NUMERO)
+        VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @ncompInS, @nRenglS, @numero)
+      `)
+  }
+
+  return orden
 }
 
 /**
@@ -414,6 +464,48 @@ export async function observarRemitosEn(
   return true
 }
 
+/**
+ * Manda a observacion la factura de articulos que no coincide con su
+ * remito, con el detalle de las diferencias en la nota.
+ *
+ * La norma es igualdad estricta -- la factura cubre el remito entero --,
+ * asi que cualquier diferencia frena el comprobante. Va con el detalle
+ * escrito y no solo con el motivo porque el operador tiene que poder ir al
+ * papel a verificar cual de las dos partes se equivoco sin volver a abrir
+ * Tango.
+ */
+export async function observarDiferenciasEn(
+  e: Ejecutor,
+  id: number,
+  diferencias: ReturnType<typeof cotejarRenglones>,
+): Promise<boolean> {
+  if (diferencias.length === 0) return false
+
+  const detalle = describirDiferencias(diferencias)
+  const nota = `La factura no coincide con el remito: ${detalle.join(' ')}`
+
+  await e
+    .request()
+    .input('id', sql.Int, id)
+    .input('motivo', sql.NVarChar(60), MOTIVO_FACTURA_NO_COINCIDE)
+    .input('nota', sql.NVarChar(1000), nota.slice(0, 1000))
+    .query(`
+      UPDATE PHF_COMPROBANTE
+      SET ESTADO = 'observacion',
+          MOTIVO_OBSERVACION = @motivo,
+          NOTA_OBSERVACION = @nota,
+          FECHA_MODIF = SYSDATETIME()
+      WHERE ID = @id
+    `)
+
+  await auditarEn(
+    e,
+    id,
+    `En observación: ${MOTIVO_FACTURA_NO_COINCIDE} — ${diferencias.length} diferencia(s)`,
+  )
+  return true
+}
+
 /** Extrae un comprobante y deja el resultado en la base. No lanza. */
 export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise<void> {
   try {
@@ -425,7 +517,11 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       return
     }
 
-    await conTransaccion(async (tx) => {
+    const valores = Object.fromEntries(
+      Object.entries(r.extraccion.campos).map(([k, v]) => [k, v.valor]),
+    )
+
+    const codProvee = await conTransaccion(async (tx) => {
       const prom = await guardarExtraccionEn(tx, id, r.extraccion)
       // Despues de guardarExtraccionEn y no antes: esa funcion borra todos
       // los PHF_CAMPO del comprobante para reescribirlos, asi que el campo
@@ -448,19 +544,56 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
         })
       }
       await desnormalizarBandejaEn(tx, id, r.extraccion)
-      const codProvee = await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
+      const cod = await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
       const conValor = Object.values(r.extraccion.campos).filter((c) => c.valor !== null).length
       await marcarLeidoEn(tx, id, prom, r.ms, r.modelo, conValor)
-      await observarSinConceptoEn(tx, id, tipoFactura, codProvee)
+      await observarSinConceptoEn(tx, id, tipoFactura, cod)
+      return cod
+    })
 
-      // Los renglones de una factura de articulos salen del remito, no del
-      // PDF. Va despues de resolver el proveedor porque el remito se busca
-      // acotado a el.
-      const valores = Object.fromEntries(
-        Object.entries(r.extraccion.campos).map(([k, v]) => [k, v.valor]),
-      )
-      const carga = await cargarRenglonesDeRemitosEn(tx, id, tipoFactura, codProvee, valores)
-      await observarRemitosEn(tx, id, carga)
+    // Segunda pasada: los renglones. Va FUERA de la transaccion de arriba a
+    // proposito -- es otro llamado a la API, de unos diez segundos, y
+    // mantener una transaccion abierta mientras tanto dejaria tomados los
+    // locks del comprobante todo ese rato sin ninguna necesidad.
+    //
+    // Solo aplica a facturas de articulos con remito resuelto: en conceptos
+    // y tarjeta no hay renglones que cargar, y `lineasDeRemitos` devuelve
+    // vacio sin consultar nada.
+    const { lineas, origen, carga } = await lineasDeRemitos(tipoFactura, codProvee, valores)
+
+    let facturados: RenglonFacturado[] = []
+    let errorRenglones: string | null = null
+    if (lineas.length > 0) {
+      const segunda = await extraerRenglonesFacturados(pdf, lineas)
+      if (segunda.ok) facturados = segunda.renglones
+      else errorRenglones = segunda.error
+    }
+
+    await conTransaccion(async (tx) => {
+      carga.renglones = await guardarRenglonesFacturadosEn(tx, id, facturados, origen, lineas)
+
+      if (carga.renglones > 0) {
+        await auditarEn(
+          tx,
+          id,
+          `Renglones leídos de la factura y cotejados contra el remito — ${carga.renglones} línea(s)`,
+        )
+      }
+
+      // Un remito que no se pudo usar es un problema anterior al cotejo:
+      // sin remito no hay contra que cotejar, asi que ese mensaje gana.
+      const observado = await observarRemitosEn(tx, id, carga)
+      if (observado || lineas.length === 0) return
+
+      if (errorRenglones !== null) {
+        // La cabecera salio bien y los renglones no. No se marca el
+        // comprobante en error -- se puede revisar igual --, pero el cotejo
+        // no corrio y el operador tiene que saberlo.
+        await auditarEn(tx, id, `No se pudieron leer los renglones: ${errorRenglones.slice(0, 200)}`)
+        return
+      }
+
+      await observarDiferenciasEn(tx, id, cotejarRenglones(facturados, lineas))
     })
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : String(err)
