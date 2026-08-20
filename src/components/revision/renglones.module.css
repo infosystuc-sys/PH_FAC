@@ -26,7 +26,13 @@
 .header,
 .fila {
   display: grid;
-  grid-template-columns: 92px 70px 1fr 66px 76px 96px 104px;
+  /* El diseño original (design/README.md) preveía 5 columnas para esta
+     tarjeta: código 70px, descripción 1fr, cantidad 60px, precio 96px,
+     importe 104px. Cód. factura y Remito se sumaron despues para el
+     cotejo contra el remito y no estan alcanzados por esa medida --
+     achicadas a lo justo para que la descripcion, que es lo que el
+     operador necesita leer entero, se quede con el ancho que sobra. */
+  grid-template-columns: 64px 58px 1fr 46px 54px 84px 96px;
   gap: 8px;
   align-items: baseline;
 }
@@ -61,10 +67,12 @@
   min-width: 0;
 }
 
+/* Sin truncar: con el PDF visible el panel de renglones no tiene ancho de
+   sobra (llega a quedar en ~60px reales), asi que la unica forma de que la
+   descripcion entre entera es dejarla pasar a una segunda linea en vez de
+   cortarla con puntos suspensivos. */
 .descripcion {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 .remito {
@@ -134,12 +142,12 @@
 
 /* El codigo con el que el proveedor lo llama en SU factura. Atenuado
    respecto del nuestro: sirve para cotejar contra el papel, pero el que se
-   graba en Tango es el de al lado. */
+   graba en Tango es el de al lado. Sin truncar -- como .mono -- porque es
+   justamente el dato que el operador coteja contra el papel: cortarlo con
+   puntos suspensivos lo inutilizaría. */
 .codProveedor {
   color: var(--texto-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 /* Ultima fila, fuera de la grilla de renglones: solo dos datos, la
@@ -148,7 +156,7 @@
    columna que el resto de la tabla. */
 .filaSubtotal {
   display: grid;
-  grid-template-columns: 1fr 104px;
+  grid-template-columns: 1fr 96px;
   gap: 8px;
   align-items: baseline;
   padding: 10px 0 9px;
