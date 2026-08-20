@@ -98,7 +98,8 @@ export function Renglones({
       <h3 className={styles.titulo}>Renglones detectados</h3>
 
       <div className={styles.header}>
-        <span>Código</span>
+        <span>Cód. factura</span>
+        <span>Cód. Tango</span>
         <span>Descripción</span>
         <span className={styles.derecha}>Remito</span>
         <span className={styles.derecha}>Cant.</span>
@@ -116,6 +117,9 @@ export function Renglones({
 
         return (
           <div key={r.orden} className={styles.fila}>
+            <span className={`${styles.mono} ${styles.codProveedor}`}>
+              {r.codProveedor ?? '—'}
+            </span>
             <span className={styles.mono}>
               {codigo ?? '—'}
               {r.codigoFinal !== null && (
@@ -194,6 +198,7 @@ export function Renglones({
 
       {noFacturados.map(({ remito, rr }) => (
         <div key={`no-${remito.numeroInterno}-${rr.nRenglon}`} className={styles.fila}>
+          <span className={`${styles.mono} ${styles.fantasma}`}>—</span>
           <span className={`${styles.mono} ${styles.fantasma}`}>{rr.codArticulo}</span>
           <span className={styles.descripcionCol}>
             <span className={`${styles.descripcion} ${styles.fantasma}`}>

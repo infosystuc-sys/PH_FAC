@@ -21,7 +21,7 @@
 .header,
 .fila {
   display: grid;
-  grid-template-columns: 70px 1fr 66px 76px 96px 104px;
+  grid-template-columns: 92px 70px 1fr 66px 76px 96px 104px;
   gap: 8px;
   align-items: baseline;
 }
@@ -125,4 +125,14 @@
    que no se confunda con lo que el proveedor esta cobrando. */
 .fantasma {
   color: var(--texto-4);
+}
+
+/* El codigo con el que el proveedor lo llama en SU factura. Atenuado
+   respecto del nuestro: sirve para cotejar contra el papel, pero el que se
+   graba en Tango es el de al lado. */
+.codProveedor {
+  color: var(--texto-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
