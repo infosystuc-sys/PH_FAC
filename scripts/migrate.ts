@@ -122,6 +122,7 @@ const DEFINICIONES: Definicion[] = [
         REMITO_N_RENGL_S    INT            NULL,
         REMITO_NUMERO       VARCHAR(20)    NULL,
         CANTIDAD_REMITO     DECIMAL(19,4)  NULL,
+        CODIGO_FINAL        NVARCHAR(60)   NULL,
         CONSTRAINT PK_PHF_RENGLON PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_COMP FOREIGN KEY (COMPROBANTE_ID)
@@ -142,6 +143,11 @@ const DEFINICIONES: Definicion[] = [
       // consume del todo desaparece de la lista de pendientes, y despues de
       // registrar el dato quedaria huerfano.
       { nombre: 'CANTIDAD_REMITO', ddl: 'CANTIDAD_REMITO DECIMAL(19,4) NULL' },
+      // El articulo que el operador eligio a mano cuando el emparejamiento
+      // automatico se equivoco. Mismo criterio que VALOR_IA/VALOR_FINAL en
+      // PHF_CAMPO: CODIGO_IA guarda lo que resolvio el sistema y no se
+      // pisa, para no contaminar la medicion de que tan bien empareja.
+      { nombre: 'CODIGO_FINAL', ddl: 'CODIGO_FINAL NVARCHAR(60) NULL' },
     ],
   },
   {

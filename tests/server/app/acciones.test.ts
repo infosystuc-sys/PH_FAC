@@ -13,7 +13,7 @@ import {
   registrarComprobante as registrarComprobanteAccion,
   asignarRemitoEn,
 } from '@/server/app/acciones'
-import { eliminarComprobanteEn } from '@/server/app/acciones'
+import { eliminarComprobanteEn, elegirArticuloEn } from '@/server/app/acciones'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { obtenerDetalleEn, guardarCampoEn, auditarEn } from '@/server/app/detalle'
 import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
@@ -344,6 +344,56 @@ describe('eliminarComprobanteEn', () => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       await eliminarComprobanteEn(tx, id)
       await expect(eliminarComprobanteEn(tx, id)).rejects.toThrow(/no existe/i)
+    })
+  })
+})
+
+describe('elegirArticuloEn', () => {
+  it('guarda la correccion sin pisar lo que resolvio el sistema', async () => {
+    // Mismo criterio que VALOR_IA/VALOR_FINAL en PHF_CAMPO: CODIGO_IA queda
+    // intacto o se pierde la medicion de que tan bien empareja el modelo.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: 'MAL-EMPAREJADO', descripcion: 'X', cantidad: '1',
+        precioUnitario: '100', importe: '100',
+      })
+
+      await elegirArticuloEn(tx, renglonId, '27383  001 27')
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones[0].codigoFinal).toBe('27383  001 27')
+      expect(d.renglones[0].codigo).toBe('MAL-EMPAREJADO')
+    })
+  })
+
+  it('con null descarta la correccion y vuelve a lo automatico', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: 'AUTO', descripcion: 'X', cantidad: '1',
+        precioUnitario: '100', importe: '100',
+      })
+
+      await elegirArticuloEn(tx, renglonId, '27383  001 27')
+      await elegirArticuloEn(tx, renglonId, null)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones[0].codigoFinal).toBeNull()
+      expect(d.renglones[0].codigo).toBe('AUTO')
+    })
+  })
+
+  it('trata una cadena vacia como descarte, no como codigo vacio', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: 'AUTO', descripcion: 'X', cantidad: '1',
+        precioUnitario: '100', importe: '100',
+      })
+      await elegirArticuloEn(tx, renglonId, '   ')
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones[0].codigoFinal).toBeNull()
     })
   })
 })

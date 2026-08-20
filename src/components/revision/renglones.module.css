@@ -104,3 +104,11 @@
   font-family: var(--sans);
   font-size: 11px;
 }
+
+/* Marca discreta de que ese articulo lo eligio el operador, no el
+   emparejamiento automatico. */
+.corregido {
+  margin-left: 4px;
+  color: var(--alerta);
+  font-weight: 700;
+}

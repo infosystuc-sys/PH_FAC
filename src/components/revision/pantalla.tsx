@@ -122,7 +122,11 @@ export function Pantalla({
           alicuotasIva={alicuotasIva}
           concepto={concepto}
         />
-        <Renglones renglones={renglones} />
+        <Renglones
+          comprobanteId={comprobanteId}
+          renglones={renglones}
+          soloLectura={soloLectura}
+        />
         <RemitosPendientes comprobanteId={comprobanteId} renglones={renglones} remitos={remitosPendientes} />
         <Historial entradas={auditoria} />
       </div>

@@ -468,7 +468,11 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     if (cantidad <= 0) {
       throw new Error(`El renglón no tiene una cantidad válida para facturar contra el remito ${remitoNcompInS}.`)
     }
-    const codArticu = String(sta.COD_ARTICU).trim()
+    // El articulo sale del remito, salvo que el operador lo haya corregido a
+    // mano porque el emparejamiento automatico se equivoco. Sin esto, la
+    // correccion se veria en pantalla y no llegaria a Tango, que es peor que
+    // no ofrecerla: el operador creeria haberla arreglado.
+    const codArticu = renglon.codigoFinal?.trim() || String(sta.COD_ARTICU).trim()
     const codDeposi = String(sta.COD_DEPOSI ?? '').trim()
     const precio = Number(sta.PRECIO_REM)
     const importeNetoRenglon = Math.round(cantidad * precio * 100) / 100

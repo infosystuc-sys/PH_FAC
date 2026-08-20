@@ -1,5 +1,6 @@
 import type { RenglonGuardado } from '@/server/app/detalle'
 import { formatMoneda, formatCantidad } from '@/lib/formato'
+import { SelectorArticulo } from './selector-articulo'
 import styles from './renglones.module.css'
 
 /**
@@ -37,7 +38,16 @@ function cotejo(
   return Math.abs(facturada - remito) < 0.00005 ? 'coincide' : 'difiere'
 }
 
-export function Renglones({ renglones }: { renglones: RenglonGuardado[] }) {
+export function Renglones({
+  comprobanteId,
+  renglones,
+  soloLectura = false,
+}: {
+  comprobanteId: number
+  renglones: RenglonGuardado[]
+  /** Comprobante registrado: terminal, no se corrige nada. */
+  soloLectura?: boolean
+}) {
   // El 77% de los comprobantes vienen solo con cabecera: una tarjeta vacía
   // sería ruido permanente en la pantalla donde el operador pasa el 90%
   // del tiempo.
@@ -60,10 +70,20 @@ export function Renglones({ renglones }: { renglones: RenglonGuardado[] }) {
         const facturada = num(r.cantidad)
         const entregada = num(r.cantidadRemito)
         const estado = cotejo(facturada, entregada)
+        // La correccion manual gana sobre lo que resolvio el emparejamiento
+        // automatico, que es para lo que existe.
+        const codigo = r.codigoFinal ?? r.codigo
 
         return (
           <div key={r.orden} className={styles.fila}>
-            <span className={styles.mono}>{r.codigo ?? '—'}</span>
+            <span className={styles.mono}>
+              {codigo ?? '—'}
+              {r.codigoFinal !== null && (
+                <span className={styles.corregido} title="Artículo corregido a mano">
+                  ·
+                </span>
+              )}
+            </span>
             <span className={styles.descripcionCol}>
               <span className={styles.descripcion}>{r.descripcion ?? '—'}</span>
               {r.remitoNumero ? (
@@ -76,6 +96,14 @@ export function Renglones({ renglones }: { renglones: RenglonGuardado[] }) {
                 // del servidor ya lo mandó a observación; acá se nombra para
                 // que el operador sepa cuál de las filas es.
                 <span className={styles.sinRemito}>No figura en el remito</span>
+              )}
+              {!soloLectura && (
+                <SelectorArticulo
+                  comprobanteId={comprobanteId}
+                  renglonId={r.id}
+                  codigoActual={codigo}
+                  corregido={r.codigoFinal !== null}
+                />
               )}
             </span>
 

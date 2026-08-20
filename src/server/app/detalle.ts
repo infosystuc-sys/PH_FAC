@@ -27,6 +27,11 @@ export type RenglonGuardado = RenglonExtraido & {
    * que la factura cobra y no están en ningún remito.
    */
   cantidadRemito: string | null
+  /**
+   * El artículo que el operador eligió a mano. `null` mientras valga el
+   * que resolvió el emparejamiento automático (`codigo`).
+   */
+  codigoFinal: string | null
 }
 
 export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
@@ -114,7 +119,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
 
       SELECT ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
              PRECIO_UNITARIO_IA, IMPORTE_IA, REMITO_NCOMP_IN_S, REMITO_N_RENGL_S,
-             REMITO_NUMERO, CANTIDAD_REMITO
+             REMITO_NUMERO, CANTIDAD_REMITO, CODIGO_FINAL
       FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
       SELECT FECHA, TEXTO, USUARIO
@@ -143,6 +148,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       remitoNRenglS: x.REMITO_N_RENGL_S === null ? null : Number(x.REMITO_N_RENGL_S),
       remitoNumero: x.REMITO_NUMERO === null ? null : String(x.REMITO_NUMERO),
       cantidadRemito: x.CANTIDAD_REMITO === null ? null : String(x.CANTIDAD_REMITO),
+      codigoFinal: x.CODIGO_FINAL === null ? null : String(x.CODIGO_FINAL),
     })),
     auditoria: a.map((x) => ({
       fecha: new Date(x.FECHA as string),

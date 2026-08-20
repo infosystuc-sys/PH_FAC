@@ -18,6 +18,7 @@ import {
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
 import { registrarComprobante as registrarComprobanteTango } from '@/server/tango/comprobantes'
+import { buscarArticulos, type ArticuloTango } from '@/server/tango/articulos'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -305,6 +306,56 @@ export type ComprobanteEliminado = {
   estado: string
   /** El asiento que queda en Tango, si llegó a registrarse. */
   tangoNComp: string | null
+}
+
+/** Busca en el maestro de artículos de Tango, para corregir a mano. */
+export async function buscarArticulosTango(texto: string): Promise<ArticuloTango[]> {
+  return buscarArticulos(texto)
+}
+
+/**
+ * El operador corrige a mano el artículo de un renglón, porque el
+ * emparejamiento automático contra el remito se equivocó.
+ *
+ * Se escribe en CODIGO_FINAL y NO se pisa CODIGO_IA: el mismo criterio que
+ * VALOR_IA/VALOR_FINAL en PHF_CAMPO. Lo que resolvió el sistema queda
+ * intacto, o se perdería la medición de qué tan bien empareja -- que es
+ * justamente el dato que dice si hace falta mejorar el prompt.
+ *
+ * `null` borra la corrección y devuelve el renglón a lo automático.
+ */
+export async function elegirArticuloEn(
+  e: Ejecutor,
+  renglonId: number,
+  codArticu: string | null,
+): Promise<void> {
+  const cod = codArticu?.trim() || null
+  await e
+    .request()
+    .input('id', sql.Int, renglonId)
+    .input('cod', sql.NVarChar(60), cod)
+    .query('UPDATE PHF_RENGLON SET CODIGO_FINAL = @cod WHERE ID = @id')
+}
+
+export async function elegirArticulo(
+  comprobanteId: number,
+  renglonId: number,
+  codArticu: string | null,
+): Promise<void> {
+  const pool = await getPool()
+  await elegirArticuloEn(pool, renglonId, codArticu)
+
+  await conTransaccion((tx) =>
+    auditarEn(
+      tx,
+      comprobanteId,
+      codArticu
+        ? `Artículo corregido a mano en un renglón: ${codArticu}`
+        : 'Corrección de artículo descartada en un renglón',
+    ),
+  )
+
+  revalidatePath(`/comprobantes/${comprobanteId}`)
 }
 
 /**
