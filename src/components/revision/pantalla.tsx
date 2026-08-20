@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { Formulario, type ValorInicial } from './formulario'
 import { AvisoIA } from './aviso-ia'
@@ -29,6 +29,9 @@ import styles from './pantalla.module.css'
  * está escrito.
  */
 const Visor = dynamic(() => import('./visor').then((m) => m.Visor), { ssr: false })
+
+/** La preferencia vale para toda la sesión, no para un comprobante. */
+const CLAVE_PDF_OCULTO = 'phf.pdfOculto'
 
 /**
  * Contenedor cliente del cuerpo de dos paneles. Sostiene el estado del
@@ -103,10 +106,55 @@ export function Pantalla({
 }) {
   const [enfocado, setEnfocado] = useState<string | null>(null)
 
+  // Arranca SIEMPRE con el PDF visible y recien despues lee la preferencia,
+  // en un efecto: leer localStorage durante el render rompe la hidratacion
+  // (el servidor no lo tiene y pintaria distinto que el cliente).
+  const [pdfOculto, setPdfOculto] = useState(false)
+  useEffect(() => {
+    setPdfOculto(window.localStorage.getItem(CLAVE_PDF_OCULTO) === '1')
+  }, [])
+
+  // La preferencia se guarda porque el operador navega entre comprobantes
+  // con J/K todo el dia: si se reseteara en cada uno, esconder el PDF no
+  // serviria de nada.
+  const alternarPdf = useCallback(() => {
+    setPdfOculto((previo) => {
+      const siguiente = !previo
+      window.localStorage.setItem(CLAVE_PDF_OCULTO, siguiente ? '1' : '0')
+      return siguiente
+    })
+  }, [])
+
+  // Ctrl+P, con el mismo criterio que Ctrl+Enter y Ctrl+O (ver atajos.ts):
+  // sin guard de foco, porque el operador tiene el cursor en un campo casi
+  // todo el tiempo y Ctrl no escribe un caracter literal.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault()
+        alternarPdf()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [alternarPdf])
+
   return (
-    <div className={styles.cuerpo}>
-      <Visor id={comprobanteId} nombre={nombreArchivo} resaltar={enfocado} />
+    <div className={`${styles.cuerpo} ${pdfOculto ? styles.sinPdf : ''}`}>
+      {/* Desmontado y no escondido con CSS: el Visor carga pdf.js y renderiza
+          la pagina, trabajo que no tiene sentido hacer para algo invisible. */}
+      {!pdfOculto && <Visor id={comprobanteId} nombre={nombreArchivo} resaltar={enfocado} />}
       <div className={styles.derecha}>
+        <div className={styles.barraVista}>
+          <button
+            type="button"
+            className={styles.alternarPdf}
+            onClick={alternarPdf}
+            title="Ctrl+P"
+          >
+            {pdfOculto ? 'Mostrar PDF' : 'Ocultar PDF'}
+          </button>
+        </div>
         <PanelObservacion motivo={motivoObservacion} nota={notaObservacion} />
         <AvisoIA
           id={comprobanteId}
