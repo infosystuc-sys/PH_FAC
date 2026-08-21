@@ -88,7 +88,9 @@ export function ModalAsiento({
                 </div>
                 {!asiento.balanceado && (
                   <p className={styles.aviso}>
-                    El asiento no cierra: revisá los importes cargados.
+                    {asiento.lineasOmitidas > 0
+                      ? `El asiento no cierra. Hay ${asiento.lineasOmitidas} línea${asiento.lineasOmitidas > 1 ? 's' : ''} de impuestos sin código de Tango resuelto.`
+                      : 'El asiento no cierra: revisá los importes cargados.'}
                   </p>
                 )}
               </>

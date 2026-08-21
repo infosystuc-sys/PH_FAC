@@ -86,7 +86,7 @@ Pasos:
    - `resolverVarios(valores, await listarCodigosImpuesto())` → ídem, código = `codigo`.
    - `total` → `TO`.
 
-   A diferencia de `registrarComprobanteEn`, acá **no se bloquea** si alguna línea queda `sin-codigo`: es una vista previa, tiene que poder mostrarse aunque el comprobante todavía no esté listo para registrar. Una línea sin código resuelto se muestra igual, con la cuenta del modelo si el tipo contable en sí se resolvió, o se omite si ni eso.
+   A diferencia de `registrarComprobanteEn`, acá **no se bloquea** si alguna línea queda `sin-codigo`: es una vista previa, tiene que poder mostrarse aunque el comprobante todavía no esté listo para registrar. Una línea sin código resuelto se **omite** del asiento -- su importe sigue estando en el total de cabecera, así que el asiento puede salir desbalanceado; `AsientoPreview.lineasOmitidas` cuenta cuántas líneas se omitieron por esto, para que el aviso de "no cierra" pueda distinguirlo de un problema real de importes.
 
 4. **Resolver el reemplazo de cuenta de `SB`/`EX`** (`REEMPLAZA_CUENTA='S'`):
    - `tipoFactura IN ('conceptos','tarjeta')`: `conceptoDelComprobante(tipoFactura, codProvee)` (ya existe) da el concepto; se busca en `CONCEPTO_CP` por `ID_CPA45` (mismo `ID_CPA45` que ya resuelve `buscarConceptoProveedor`/`buscarConceptoTarjeta`) su `ID_CUENTA`. Un único concepto por comprobante (1:1 verificado), así que `SB` y `EX` van los dos a esa cuenta, sin split.

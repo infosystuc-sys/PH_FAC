@@ -116,7 +116,7 @@ export async function cuentasDeArticulos(codigos: string[]): Promise<Map<string,
   for (const codigo of codigos) {
     const r = await pool
       .request()
-      .input('cod', sql.VarChar(20), codigo)
+      .input('cod', sql.VarChar(15), codigo)
       .query<Record<string, unknown>>(`
         SELECT c.COD_CUENTA AS codCuenta, LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
         FROM ARTICULO_CUENTA ac
@@ -146,6 +146,11 @@ export type AsientoPreview = {
   totalDebe: number
   totalHaber: number
   balanceado: boolean
+  /** Cuantas lineas de impuestos no se pudieron mostrar por falta de un
+   * codigo de Tango resuelto (jurisdiccion no reconocida, codigo elegido
+   * que ya no existe). Sirve para que el modal no le eche la culpa del
+   * desbalance a "revisa los importes" cuando el problema es otro. */
+  lineasOmitidas: number
 }
 
 /**
@@ -164,7 +169,7 @@ async function agruparRenglonesPorCuenta(
   const codigos = [
     ...new Set(
       renglones
-        .map((r) => (r.codigoFinal ?? r.codigo)?.trim())
+        .map((r) => r.codigoFinal?.trim() || r.codigo?.trim())
         .filter((c): c is string => Boolean(c)),
     ),
   ]
@@ -173,7 +178,7 @@ async function agruparRenglonesPorCuenta(
 
   const porCuenta = new Map<string, { cuenta: CuentaContable; importe: number }>()
   for (const r of renglones) {
-    const codigo = (r.codigoFinal ?? r.codigo)?.trim()
+    const codigo = r.codigoFinal?.trim() || r.codigo?.trim()
     const importe = parsearImporte(r.importe)
     if (!codigo || importe <= 0) continue
 
@@ -185,6 +190,16 @@ async function agruparRenglonesPorCuenta(
     else porCuenta.set(cuenta.codCuenta, { cuenta, importe })
   }
   return [...porCuenta.values()]
+}
+
+/**
+ * La cuenta final para una linea de SB/EX: si el renglon del modelo no
+ * permite reemplazo (`REEMPLAZA_CUENTA = 'N'`), siempre gana la cuenta del
+ * modelo, sin importar lo que haya resuelto el concepto o los articulos.
+ */
+function cuentaFinal(renglon: RenglonModelo, override: CuentaContable | null): CuentaContable {
+  if (!renglon.reemplazaCuenta) return { codCuenta: renglon.codCuenta, descCuenta: renglon.descCuenta }
+  return override ?? { codCuenta: renglon.codCuenta, descCuenta: renglon.descCuenta }
 }
 
 /**
@@ -227,40 +242,61 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
   }
 
   if (sb && neto > 0) {
-    if (gruposArticulo.length > 1) {
-      // Una linea de Debe por cada cuenta distinta que aparece entre los
-      // articulos -- caso raro (1/9.060), pero es lo que Tango haria.
-      for (const g of gruposArticulo) {
-        lineas.push({ codCuenta: g.cuenta.codCuenta, descCuenta: g.cuenta.descCuenta, leyenda: sb.leyenda, debe: g.importe, haber: 0 })
-      }
+    if (sb.reemplazaCuenta && gruposArticulo.length > 0) {
+      // Se prorratea el neto de cabecera entre las cuentas distintas que
+      // resolvieron los renglones, en vez de sumar IMPORTE_IA directo: la
+      // suma de renglones puede no coincidir centavo a centavo con el neto
+      // (la tarjeta de renglones ya expone y tolera esa diferencia -- ver
+      // "Subtotal renglones" en renglones.tsx). Si el asiento usara la
+      // suma de renglones, "balanceado" terminaria comparando dos cosas
+      // distintas y diria "no cierra" para una factura que esta bien. El
+      // ultimo grupo absorbe el resto del redondeo para que la suma sea
+      // exacta.
+      const sumaGrupos = gruposArticulo.reduce((acc, g) => acc + g.importe, 0)
+      let acumulado = 0
+      gruposArticulo.forEach((g, i) => {
+        const esUltimo = i === gruposArticulo.length - 1
+        const parte = esUltimo
+          ? Math.round((neto - acumulado) * 100) / 100
+          : Math.round((neto * (g.importe / sumaGrupos)) * 100) / 100
+        acumulado = Math.round((acumulado + parte) * 100) / 100
+        lineas.push({ codCuenta: g.cuenta.codCuenta, descCuenta: g.cuenta.descCuenta, leyenda: sb.leyenda, debe: parte, haber: 0 })
+      })
     } else {
-      const cuenta = cuentaSubtotal ?? { codCuenta: sb.codCuenta, descCuenta: sb.descCuenta }
+      const cuenta = cuentaFinal(sb, cuentaSubtotal)
       lineas.push({ codCuenta: cuenta.codCuenta, descCuenta: cuenta.descCuenta, leyenda: sb.leyenda, debe: neto, haber: 0 })
     }
   }
   if (ex && exento > 0) {
-    const cuenta = cuentaSubtotal ?? { codCuenta: ex.codCuenta, descCuenta: ex.descCuenta }
+    const cuenta = cuentaFinal(ex, cuentaSubtotal)
     lineas.push({ codCuenta: cuenta.codCuenta, descCuenta: cuenta.descCuenta, leyenda: ex.leyenda, debe: exento, haber: 0 })
   }
 
   // --- IVA, percepciones IIBB, impuestos varios: cuenta fija del modelo. ---
   const [alicuotas, codigosImpuesto] = await Promise.all([listarAlicuotasIva(), listarCodigosImpuesto()])
   const genericas = new Map<string, number>()
+  let lineasOmitidas = 0
 
   for (const l of resolverAlicuotas(valores, alicuotas)) {
     if (l.estado === 'registra' && l.alicuota) {
       const cod = String(l.alicuota.codigo)
       genericas.set(cod, Math.round(((genericas.get(cod) ?? 0) + l.importe) * 100) / 100)
+    } else if (l.estado === 'sin-codigo') {
+      lineasOmitidas += 1
     }
   }
   for (const l of resolverPercepciones(valores, tipoFactura)) {
     if (l.estado === 'registra' && l.codigo) {
       genericas.set(l.codigo.codigo, Math.round(((genericas.get(l.codigo.codigo) ?? 0) + l.importe) * 100) / 100)
+    } else if (l.estado === 'sin-codigo') {
+      lineasOmitidas += 1
     }
   }
   for (const l of resolverVarios(valores, codigosImpuesto)) {
     if (l.estado === 'registra') {
       genericas.set(l.codigo, Math.round(((genericas.get(l.codigo) ?? 0) + l.importe) * 100) / 100)
+    } else if (l.estado === 'sin-codigo') {
+      lineasOmitidas += 1
     }
   }
 
@@ -291,6 +327,7 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
     totalDebe,
     totalHaber,
     balanceado: Math.abs(totalDebe - totalHaber) < 0.01,
+    lineasOmitidas,
   }
 }
 

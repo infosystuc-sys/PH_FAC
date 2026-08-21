@@ -1,5 +1,4 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import sql from 'mssql'
 import { cargarModeloAsiento, cuentaDelConcepto, cuentasDeArticulos, previsualizarAsientoEn } from '@/server/tango/asiento'
 import { cerrarPool } from '@/server/db/pool'
 import { conRollback } from '@/server/db/tx'
@@ -153,6 +152,86 @@ describe('previsualizarAsientoEn', () => {
       expect(asiento.totalDebe).toBe(0)
       expect(asiento.totalHaber).toBe(0)
       expect(asiento.balanceado).toBe(true)
+    })
+  })
+
+  it('factura de articulos con dos cuentas distintas: Subtotal gravado se prorratea, no se suma crudo', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
+      await guardarCampoEn(tx, id, 'neto', '100000,00')
+      await guardarCampoEn(tx, id, 'total', '100000,00')
+      await insertarRenglonPrueba(tx, id, {
+        codigo: '106817', descripcion: 'Microondas', cantidad: '1',
+        precioUnitario: '59999.99', importe: '59999.99',
+      })
+      await insertarRenglonPrueba(tx, id, {
+        codigo: '474575', descripcion: 'Articulo deportivo', cantidad: '1',
+        precioUnitario: '40000.02', importe: '40000.02',
+      })
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      const lineasSb = asiento.lineas.filter((l) => l.codCuenta === '14003' || l.codCuenta === '14007')
+      expect(lineasSb).toHaveLength(2)
+      // Las lineas de Subtotal gravado tienen que sumar EXACTO el neto de
+      // cabecera (100000), no la suma cruda de renglones (100000.01) --
+      // es justo lo que corrige el prorrateo.
+      const sumaSb = lineasSb.reduce((acc, l) => acc + l.debe, 0)
+      expect(Math.round(sumaSb * 100) / 100).toBe(100000)
+      expect(asiento.balanceado).toBe(true)
+    })
+  })
+
+  it('un articulo sin ARTICULO_CUENTA cae a la cuenta de Subtotal gravado del modelo', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
+      await guardarCampoEn(tx, id, 'neto', '5000,00')
+      await guardarCampoEn(tx, id, 'total', '5000,00')
+      await insertarRenglonPrueba(tx, id, {
+        codigo: 'no-existe-456', descripcion: 'Articulo sin cuenta configurada', cantidad: '1',
+        precioUnitario: '5000.00', importe: '5000.00',
+      })
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      const sb = asiento.lineas.find((l) => l.debe === 5000)
+      // 14003 es la cuenta del modelo para SB (ver el test de cargarModeloAsiento).
+      expect(sb).toMatchObject({ codCuenta: '14003', debe: 5000 })
+    })
+  })
+
+  it('Subtotal exento va a la misma cuenta que Subtotal gravado en conceptos', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+      await guardarCampoEn(tx, id, 'neto', '8000,00')
+      await guardarCampoEn(tx, id, 'exento', '2000,00')
+      await guardarCampoEn(tx, id, 'total', '10000,00')
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      const lineasCuenta51460 = asiento.lineas.filter((l) => l.codCuenta === '51460')
+      expect(lineasCuenta51460).toHaveLength(2)
+      expect(lineasCuenta51460.map((l) => l.debe).sort((a, b) => a - b)).toEqual([2000, 8000])
+    })
+  })
+
+  it('cuenta las lineas omitidas por falta de codigo, sin bloquear', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'neto', '1000,00')
+      await guardarCampoEn(tx, id, 'total', '1050,00')
+      // Jurisdiccion que no matchea ninguna de JURISDICCIONES_IIBB: sin-codigo.
+      await guardarCampoEn(tx, id, 'percep1', 'Jurisdiccion inventada que no existe')
+      await guardarCampoEn(tx, id, 'imppercep1', '50,00')
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      expect(asiento.lineasOmitidas).toBe(1)
+      expect(asiento.balanceado).toBe(false)
     })
   })
 })
