@@ -120,6 +120,49 @@ function agrupar(filas: Record<string, unknown>[]): RemitoPendiente[] {
 }
 
 /**
+ * Los renglones ACTUALES de un remito puntual, por su clave interna
+ * (`NCOMP_IN_S`). A diferencia de `buscarRemitosPendientes`, no filtra por
+ * saldo: sirve para refrescar un vínculo ya hecho aunque ese renglón del
+ * remito ya esté completamente facturado en Tango, caso en el que
+ * desaparecería de la lista de pendientes.
+ *
+ * No hace falta acotar por proveedor: `NCOMP_IN_S` ya identifica un remito
+ * puntual, viene de un vínculo que un renglón de esta app ya tiene guardado.
+ */
+export async function renglonesDelRemitoInterno(ncompInS: string): Promise<RenglonRemito[]> {
+  const pool = await getPool()
+  const r = await pool
+    .request()
+    .input('ncompInS', sql.VarChar(8), ncompInS)
+    .query<Record<string, unknown>>(`
+      SELECT
+        r.N_RENGL_S                           AS nRenglon,
+        LTRIM(RTRIM(r.COD_ARTICU))            AS codArticulo,
+        LTRIM(RTRIM(ISNULL(a.DESCRIPCIO,''))) AS descripcion,
+        LTRIM(RTRIM(ISNULL(r.COD_DEPOSI,''))) AS codDeposito,
+        r.CANTIDAD                            AS cantidad,
+        r.CANT_FACTU                          AS cantidadFacturada,
+        r.CANT_PEND                           AS cantidadPendiente,
+        r.PRECIO_REM                          AS precio
+      FROM STA20 r
+      LEFT JOIN STA11 a ON a.COD_ARTICU = r.COD_ARTICU
+      WHERE r.TCOMP_IN_S = 'RP' AND r.NCOMP_IN_S = @ncompInS
+      ORDER BY r.N_RENGL_S
+    `)
+
+  return r.recordset.map((f) => ({
+    nRenglon: Number(f.nRenglon),
+    codArticulo: String(f.codArticulo),
+    descripcion: f.descripcion ? String(f.descripcion) : null,
+    codDeposito: f.codDeposito ? String(f.codDeposito) : null,
+    cantidad: Number(f.cantidad),
+    cantidadFacturada: Number(f.cantidadFacturada),
+    cantidadPendiente: Number(f.cantidadPendiente),
+    precio: Number(f.precio),
+  }))
+}
+
+/**
  * El numero de remito tal como lo guarda Tango: `R` + punto de venta (5) +
  * numero (8), en CHAR(14). Ejemplo: "R0000100029869" es el 00001-00029869.
  *

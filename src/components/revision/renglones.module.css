@@ -12,15 +12,43 @@
   padding: 0 18px;
 }
 
-.titulo {
-  margin: 0;
+.encabezado {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   padding: 13px 0 10px;
   border-bottom: 1px solid var(--borde-sutil-3);
+}
+
+.titulo {
+  margin: 0;
   font-size: 11.5px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--texto-4);
+}
+
+.actualizarRemito {
+  padding: 3px 9px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--superficie);
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--texto-3);
+  cursor: pointer;
+}
+
+.actualizarRemito:hover:not(:disabled) {
+  background: var(--fondo-app);
+  color: var(--texto);
+}
+
+.actualizarRemito:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .header,

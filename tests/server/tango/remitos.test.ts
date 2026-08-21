@@ -3,6 +3,7 @@ import {
   buscarRemitosPendientes,
   buscarRemitoPorNumero,
   normalizarNumeroRemito,
+  renglonesDelRemitoInterno,
 } from '@/server/tango/remitos'
 import { getPool, cerrarPool } from '@/server/db/pool'
 
@@ -122,6 +123,25 @@ describe('buscarRemitosPendientes', () => {
     `)
     const facturados = new Set(r.recordset.map((x) => String(x.num)))
     expect(devuelto.filter((x) => facturados.has(x.numeroInterno))).toEqual([])
+  })
+})
+
+describe('renglonesDelRemitoInterno', () => {
+  // 00003805 renglon 1 (106817, microondas) esta con CANT_PEND=0 -- ya
+  // completamente facturado en Tango. buscarRemitosPendientes no lo trae
+  // por eso; esta funcion tiene que traerlo igual, porque sirve para
+  // refrescar un vinculo ya hecho, no para ofrecer mercaderia para asignar.
+  it('trae un renglon aunque ya este completamente facturado en Tango', async () => {
+    const renglones = await renglonesDelRemitoInterno('00003805')
+    const uno = renglones.find((r) => r.nRenglon === 1)
+    expect(uno).toBeDefined()
+    expect(uno?.codArticulo).toBe('106817')
+    expect(uno?.cantidadPendiente).toBe(0)
+  })
+
+  it('devuelve vacio para un interno que no existe', async () => {
+    const renglones = await renglonesDelRemitoInterno('99999999')
+    expect(renglones).toEqual([])
   })
 })
 

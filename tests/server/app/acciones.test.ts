@@ -12,6 +12,7 @@ import {
   marcarObservacion,
   registrarComprobante as registrarComprobanteAccion,
   asignarRemitoEn,
+  actualizarCantidadesRemitoEn,
 } from '@/server/app/acciones'
 import { eliminarComprobanteEn, elegirArticuloEn } from '@/server/app/acciones'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
@@ -276,6 +277,60 @@ describe('asignarRemitoEn', () => {
       expect(r.recordset[0].REMITO_NCOMP_IN_S).toBeNull()
       expect(r.recordset[0].REMITO_N_RENGL_S).toBeNull()
       expect(r.recordset[0].REMITO_NUMERO).toBeNull()
+    })
+  })
+})
+
+describe('actualizarCantidadesRemitoEn', () => {
+  // Remito real 00003805, renglón 1: 106817 (microondas), cantidad
+  // entregada 4 -- el mismo que usa 'asignarRemitoEn' arriba. Esta
+  // completamente facturado en Tango (CANT_PEND=0), a proposito: prueba
+  // que la funcion no se apoya en el filtro de saldo que usa
+  // buscarRemitosPendientes, que lo dejaria afuera.
+  it('corrige la cantidad guardada si Tango tiene otra hoy', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: '106817', descripcion: 'Articulo', cantidad: '4',
+        precioUnitario: '80745.57', importe: '322982.28',
+      })
+      // Se simula una desactualizacion: la foto guardada dice 999, Tango
+      // hoy dice 4 (verificado contra la base real antes de este test).
+      await asignarRemitoEn(tx, renglonId, '00003805', 1, 'R0000100029869', 999)
+
+      const actualizados = await actualizarCantidadesRemitoEn(tx, id)
+      expect(actualizados).toBe(1)
+
+      const r = await tx.request().input('id', sql.Int, renglonId)
+        .query('SELECT CANTIDAD_REMITO FROM PHF_RENGLON WHERE ID=@id')
+      expect(Number(r.recordset[0].CANTIDAD_REMITO)).toBe(4)
+    })
+  })
+
+  it('no cuenta ni toca un renglon que ya esta al dia', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: '106817', descripcion: 'Articulo', cantidad: '4',
+        precioUnitario: '80745.57', importe: '322982.28',
+      })
+      await asignarRemitoEn(tx, renglonId, '00003805', 1, 'R0000100029869', 4)
+
+      const actualizados = await actualizarCantidadesRemitoEn(tx, id)
+      expect(actualizados).toBe(0)
+    })
+  })
+
+  it('no hace nada si ningun renglon tiene remito asignado', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await insertarRenglonPrueba(tx, id, {
+        codigo: 'SRV', descripcion: 'Sin remito', cantidad: '1',
+        precioUnitario: '100.00', importe: '100.00',
+      })
+
+      const actualizados = await actualizarCantidadesRemitoEn(tx, id)
+      expect(actualizados).toBe(0)
     })
   })
 })

@@ -1,6 +1,7 @@
 import type { RenglonGuardado } from '@/server/app/detalle'
 import { formatMoneda, formatCantidad, parsearImporte } from '@/lib/formato'
 import { SelectorArticulo } from './selector-articulo'
+import { ActualizarRemito } from './actualizar-remito'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './renglones.module.css'
 
@@ -113,9 +114,16 @@ export function Renglones({
   const tolerancia = Math.max(0.05, renglones.length * 0.01)
   const cierraContraNeto = neto > 0 && Math.abs(subtotal - neto) < tolerancia
 
+  const hayRemitoAsignado = renglones.some((r) => r.remitoNcompInS !== null)
+
   return (
     <section className={styles.tarjeta}>
-      <h3 className={styles.titulo}>Renglones detectados</h3>
+      <div className={styles.encabezado}>
+        <h3 className={styles.titulo}>Renglones detectados</h3>
+        {!soloLectura && hayRemitoAsignado && (
+          <ActualizarRemito comprobanteId={comprobanteId} />
+        )}
+      </div>
 
       <div className={styles.header}>
         <span>Descripción</span>
