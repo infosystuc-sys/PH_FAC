@@ -171,6 +171,13 @@ Reglas:
    "027383 001". Es el código de ellos, no el nuestro. Si la línea no
    muestra ningún código, dejalo vacío.
 
+   Si desglosaste por talle (regla 2), agregale el talle al final, igual
+   que en descripcion: "027383 001 270", "027383 001 310", etc. Sin el
+   talle las seis líneas del ejemplo quedarían con el mismo código, y el
+   talle es justo lo que las distingue -- cada uno es un artículo nuestro
+   distinto (mismo criterio que usa Tango, que arma su propio código
+   agregándole el talle al final).
+
    Sirve para que la próxima factura de este proveedor se empareje sola: la
    app lo guarda asociado a nuestro artículo.
 
