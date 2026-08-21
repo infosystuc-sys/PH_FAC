@@ -8,6 +8,7 @@ import type { Estado } from '@/lib/estados'
 import { BadgeEstado } from '@/components/badge-estado'
 import { useToast } from '@/components/toast/toast-provider'
 import { ModalObservacion } from './modal-observacion'
+import { ModalAsiento } from './modal-asiento'
 import { ModalEliminar } from '@/components/modal-eliminar'
 import { useAtajos } from './atajos'
 import styles from './barra-acciones.module.css'
@@ -105,12 +106,14 @@ export function BarraAcciones({
 }) {
   const [modalAbierto, setModalAbierto] = useState(false)
   const [modalEliminar, setModalEliminar] = useState(false)
+  const [modalAsiento, setModalAsiento] = useState(false)
   const [pendiente, arrancar] = useTransition()
   const router = useRouter()
   const toast = useToast()
   const puedeObservar = estado === 'leido' || estado === 'observacion'
   const puedeConfirmar = puedeObservar && !bloqueante
   const puedeRegistrar = estado === 'confirmado' && !sinConexion && !bloqueanteRegistro
+  const puedeVerAsiento = estado === 'leido' || estado === 'observacion' || estado === 'confirmado'
 
   function confirmar() {
     if (!puedeConfirmar || pendiente) return
@@ -179,6 +182,15 @@ export function BarraAcciones({
         >
           Marcar en observación
         </button>
+        {puedeVerAsiento && (
+          <button
+            type="button"
+            className={styles.verAsiento}
+            onClick={() => setModalAsiento(true)}
+          >
+            Ver asiento
+          </button>
+        )}
         <BotonPrimario
           estado={estado}
           bloqueante={bloqueante}
@@ -190,6 +202,7 @@ export function BarraAcciones({
       </div>
 
       <ModalObservacion id={id} abierto={modalAbierto} onCerrar={() => setModalAbierto(false)} />
+      <ModalAsiento id={id} abierto={modalAsiento} onCerrar={() => setModalAsiento(false)} />
       <ModalEliminar
         id={id}
         abierto={modalEliminar}
