@@ -82,7 +82,7 @@ export async function cuentaDelConcepto(codConcepto: string): Promise<CuentaCont
   const pool = await getPool()
   const r = await pool
     .request()
-    .input('cod', sql.VarChar(20), cod)
+    .input('cod', sql.VarChar(3), cod)
     .query<Record<string, unknown>>(`
       SELECT c.COD_CUENTA AS codCuenta, LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
       FROM CPA45 cp45

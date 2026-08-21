@@ -53,7 +53,7 @@ describe('cuentaDelConcepto', () => {
   })
 
   it('devuelve null para un concepto que no existe', async () => {
-    const cuenta = await cuentaDelConcepto('999999')
+    const cuenta = await cuentaDelConcepto('999')
     expect(cuenta).toBeNull()
   })
 })
