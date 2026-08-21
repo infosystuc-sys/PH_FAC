@@ -65,3 +65,62 @@ export async function cargarModeloAsiento(): Promise<Map<string, RenglonModelo>>
   }
   return modelo
 }
+
+export type CuentaContable = { codCuenta: string; descCuenta: string }
+
+/**
+ * La cuenta que reemplaza a Subtotal gravado/exento cuando el comprobante
+ * es de conceptos o de tarjeta. `CPA45.COD_CONCEP` es el mismo codigo que
+ * ya resuelve `buscarConceptoProveedor`/`buscarConceptoTarjeta`
+ * (`src/server/tango/conceptos.ts`); el join a `CONCEPTO_CP` va por
+ * `ID_CPA45`, no por el codigo de texto.
+ */
+export async function cuentaDelConcepto(codConcepto: string): Promise<CuentaContable | null> {
+  const cod = codConcepto.trim()
+  if (!cod) return null
+
+  const pool = await getPool()
+  const r = await pool
+    .request()
+    .input('cod', sql.VarChar(20), cod)
+    .query<Record<string, unknown>>(`
+      SELECT c.COD_CUENTA AS codCuenta, LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
+      FROM CPA45 cp45
+      JOIN CONCEPTO_CP cc ON cc.ID_CPA45 = cp45.ID_CPA45
+      JOIN CUENTA c ON c.ID_CUENTA = cc.ID_CUENTA
+      WHERE LTRIM(RTRIM(cp45.COD_CONCEP)) = @cod
+    `)
+
+  if (r.recordset.length === 0) return null
+  const f = r.recordset[0]
+  return { codCuenta: String(f.codCuenta).trim(), descCuenta: String(f.descCuenta) }
+}
+
+/**
+ * La cuenta de compras de cada articulo, para reemplazar Subtotal gravado
+ * en facturas de articulos. Una query por codigo (la lista es a lo sumo
+ * los articulos distintos de un comprobante, tipicamente unos pocos) en
+ * vez de un IN dinamico: mas simple y sigue parametrizado.
+ */
+export async function cuentasDeArticulos(codigos: string[]): Promise<Map<string, CuentaContable>> {
+  const mapa = new Map<string, CuentaContable>()
+  if (codigos.length === 0) return mapa
+
+  const pool = await getPool()
+  for (const codigo of codigos) {
+    const r = await pool
+      .request()
+      .input('cod', sql.VarChar(20), codigo)
+      .query<Record<string, unknown>>(`
+        SELECT c.COD_CUENTA AS codCuenta, LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
+        FROM ARTICULO_CUENTA ac
+        JOIN CUENTA c ON c.ID_CUENTA = ac.ID_CUENTA_COMPRAS
+        WHERE LTRIM(RTRIM(ac.COD_STA11)) = @cod
+      `)
+    if (r.recordset.length > 0) {
+      const f = r.recordset[0]
+      mapa.set(codigo, { codCuenta: String(f.codCuenta).trim(), descCuenta: String(f.descCuenta) })
+    }
+  }
+  return mapa
+}

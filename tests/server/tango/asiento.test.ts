@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { cargarModeloAsiento } from '@/server/tango/asiento'
+import { cargarModeloAsiento, cuentaDelConcepto, cuentasDeArticulos } from '@/server/tango/asiento'
 import { cerrarPool } from '@/server/db/pool'
 
 afterAll(async () => {
@@ -43,5 +43,34 @@ describe('cargarModeloAsiento', () => {
     // 2026-08-21. Un numero muy distinto significa que cambio la
     // configuracion de Tango o el filtro de la query esta mal.
     expect(modelo.size).toBe(27)
+  })
+})
+
+describe('cuentaDelConcepto', () => {
+  it('resuelve la cuenta real del concepto 712 (TELEFONOS LOCALES)', async () => {
+    const cuenta = await cuentaDelConcepto('712')
+    expect(cuenta).toEqual({ codCuenta: '51460', descCuenta: 'TELEFONOS LOCALES' })
+  })
+
+  it('devuelve null para un concepto que no existe', async () => {
+    const cuenta = await cuentaDelConcepto('999999')
+    expect(cuenta).toBeNull()
+  })
+})
+
+describe('cuentasDeArticulos', () => {
+  it('resuelve la cuenta de compras real de un articulo conocido', async () => {
+    const cuentas = await cuentasDeArticulos(['106817'])
+    expect(cuentas.get('106817')).toEqual({ codCuenta: '14003', descCuenta: 'COMPRAS - MERCADERIA' })
+  })
+
+  it('no incluye un codigo que no tiene ARTICULO_CUENTA', async () => {
+    const cuentas = await cuentasDeArticulos(['no-existe-123'])
+    expect(cuentas.has('no-existe-123')).toBe(false)
+  })
+
+  it('devuelve un mapa vacio para una lista vacia', async () => {
+    const cuentas = await cuentasDeArticulos([])
+    expect(cuentas.size).toBe(0)
   })
 })
