@@ -24,6 +24,9 @@ import {
   type ArticuloTango,
 } from '@/server/tango/articulos'
 import { renglonesDelRemitoInterno } from '@/server/tango/remitos'
+import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
+
+export type { AsientoPreview, LineaAsiento } from '@/server/tango/asiento'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -590,4 +593,13 @@ export async function actualizarCantidadesRemito(comprobanteId: number): Promise
 
   revalidatePath(`/comprobantes/${comprobanteId}`)
   return actualizados
+}
+
+/**
+ * Vista previa de solo lectura del asiento contable. No escribe nada --
+ * a diferencia del resto de las acciones de este archivo, no hace falta
+ * revalidatePath ni entrada de auditoria.
+ */
+export async function verAsiento(comprobanteId: number): Promise<AsientoPreview> {
+  return previsualizarAsiento(comprobanteId)
 }
