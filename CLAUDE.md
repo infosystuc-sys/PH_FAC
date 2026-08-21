@@ -27,6 +27,7 @@ pnpm seed      # carga comprobantes de muestra
 - **Todas las tablas propias llevan prefijo `PHF_`.** Ninguna otra tabla se crea en la base. Nunca borres, alteres ni escribas sobre una tabla que no lleve ese prefijo.
 - **Solo `src/server/tango/` puede emitir SQL contra tablas del ERP** (`CPA*`, `STA*`, `GVA*`, `SBA*`). Es la frontera que acota el costo de un futuro cambio de versión de Tango. Ningún otro módulo las nombra.
 - **Solo se tocan tablas que figuren en la documentación oficial de Axoft**, por módulo: [Compras](https://ayudas.axoft.com/21ar/documentos/operacion/tablas_oper/tablascompras_oper/) y [Stock](https://ayudas.axoft.com/21ar/documentos/operacion/tablas_oper/tablastock_oper/). Las `CTA*` no figuran en ninguno: son el espejo de Tango Central para consolidación entre sucursales, no la fuente de verdad. No se leen ni se escriben.
+  **Excepción explícita (2026-08-20), decidida por el usuario:** `TIPO_CONTABLE`, `CUENTA` y `ASIENTO_MODELO_CP` tampoco figuran en Compras ni Stock (se revisó también Contabilidad, Procesos generales y Administrador), pero son tablas de configuración real del motor contable de Tango -- no espejos `CTA*` -- y hacen falta, de solo lectura, para la vista previa del asiento contable. Autorizadas para lectura únicamente.
 - Toda consulta va parametrizada con `.input(...)`. Nunca concatenes valores de usuario en el SQL.
 - Ninguna credencial en archivos trackeados.
 
