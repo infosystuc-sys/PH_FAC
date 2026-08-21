@@ -1,8 +1,37 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-19/20. "Renglones detectados" ahora muestra, por renglón, de qué remito y qué línea de Tango salió (ver sección abajo). `buscarRemitoPorNumero` ahora tolera que el primer dígito del número de remito no coincida con lo que imprime el proveedor (ver sección abajo). 2026-08-11: la IA ya no detecta renglones en comprobantes de servicios (ver sección abajo). Agregado el tercer valor de `tipoFactura` ("Liquidación de tarjeta"), bloqueado hasta que se implemente. Restricción de percepciones de IVA/IIBB completa. Todo en `master` directamente, sin rama propia. Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
+**Última actualización:** 2026-08-21. Nuevo botón "Ver asiento" en la revisión: vista previa de solo lectura del asiento contable que Tango generaría al registrar el comprobante (ver sección abajo). También en 2026-08-20/21: "Renglones detectados" unifica el código de Tango y el código de la factura en la descripción (antes cada uno tenía columna propia y se partían en dos líneas), se agregó un subtotal de renglones con cotejo contra el neto gravado, un botón para refrescar la cantidad del remito contra Tango en vivo, y un botón para vincular el código de proveedor a un artículo en CPA15 por renglón.
+**Anterior:** 2026-08-19/20. "Renglones detectados" ahora muestra, por renglón, de qué remito y qué línea de Tango salió (ver sección abajo). `buscarRemitoPorNumero` ahora tolera que el primer dígito del número de remito no coincida con lo que imprime el proveedor (ver sección abajo). 2026-08-11: la IA ya no detecta renglones en comprobantes de servicios (ver sección abajo). Agregado el tercer valor de `tipoFactura` ("Liquidación de tarjeta"), bloqueado hasta que se implemente. Restricción de percepciones de IVA/IIBB completa. Todo en `master` directamente, sin rama propia. Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
+
+---
+
+## Vista previa del asiento contable ("Ver asiento")
+
+Pedido directo del usuario: quería ver, durante la revisión, qué asiento contable generaría Tango al registrar el comprobante. Spec: `docs/superpowers/specs/2026-08-21-vista-previa-asiento-contable-design.md`. Plan: `docs/superpowers/plans/2026-08-21-vista-previa-asiento-contable.md`, ejecutado con `superpowers:subagent-driven-development` (6 tareas, un fix round en la Task 2). **451 tests en verde**, `tsc --noEmit` limpio.
+
+**Módulo nuevo de solo lectura** (`src/server/tango/asiento.ts`): simula el motor de asientos de Tango combinando `RENGLON_MODELO_CP`/`TIPO_CONTABLE`/`CUENTA` (el modelo `ID_ASIENTO_MODELO_CP=1`, "FACTURAS / NOTAS DE DEBITO") con `CONCEPTO_CP`/`ARTICULO_CUENTA` (para el reemplazo de cuenta del subtotal). No escribe nada — ni en `PHF_*` ni en el ERP; el asiento real lo sigue generando un proceso aparte de Tango cuando contabiliza (`CONTABILIZ` sigue en 0 después de registrar, decisión de Fase 4 que no cambió).
+
+**El hallazgo que simplificó todo:** los códigos de `TIPO_CONTABLE.COD_TIPO_CONTABLE` para IVA (`1`-`4`) y percepción IIBB (`60`,`61`,`62`,`68`, entre otros) son los MISMOS códigos de `CPA14` que ya usan `porciva1..5`/`percep1..4` en el formulario. `previsualizarAsientoEn` reutiliza sin modificar `resolverAlicuotas`/`resolverPercepciones`/`resolverVarios` (las mismas funciones que ya usa `registrarComprobanteEn`), así que la vista previa no puede divergir del registro real — solo cambia el destino (líneas de asiento en vez de `INSERT`s en `CPA04`/`CPA18`/`CPA63`).
+
+**Excepción a la regla de tablas documentadas**, ya reflejada en `CLAUDE.md`: `TIPO_CONTABLE`, `CUENTA` y `ASIENTO_MODELO_CP` no figuran en la documentación de Axoft para Compras ni Stock (se revisó también Contabilidad, Procesos generales y Administrador) — son tablas de configuración real del motor contable, no espejos `CTA*`, y quedaron autorizadas de solo lectura por decisión explícita del usuario.
+
+**Decisiones de scope tomadas con el usuario durante el brainstorming:**
+- Subtotal exento va a la MISMA cuenta que el gravado (no hay split propio, la app no distingue renglones exentos de gravados).
+- Si dos renglones de artículos resuelven a cuentas distintas (raro: 1/9.060 en la base real), se agrupan y se emite una línea de Debe por cada cuenta distinta.
+- Flete/Intereses/Bonificación (`FL`/`IN`/`BO` en el modelo) se omiten: la app no los captura como campo de cabecera.
+- La cuenta de "Total del comprobante" (Haber) siempre es la del modelo (20002 · PROVEEDORES) — no se encontró una tabla que vincule proveedor a una cuenta corriente específica.
+
+**Un desvío real encontrado en el fix loop (Task 2):** el brief original ensanchaba `VarChar(3)` a `VarChar(20)` en `cuentaDelConcepto` para acomodar un fixture de test mal elegido (`'999999'`, copiado de otro brief donde la columna real era más ancha). `CPA45.COD_CONCEP` es de 3 caracteres reales — corregido a `VarChar(3)` con el fixture del test ajustado a `'999'`, sin tocar el ancho de producción.
+
+**Verificado en vivo contra dos comprobantes reales**, sin usar datos de prueba:
+- Comprobante `8731` (TOPPER, factura de artículos, talles L/M/S/XL): Subtotal gravado a la cuenta `14007 · COMPRAS MERC. DEPORT.` (la cuenta específica del artículo, no la 14003 del modelo) por $238.072,11; IVA 21% a `13405`; dos percepciones IIBB (Tucumán y Salta) a `13411`; Total a `20002 · PROVEEDORES` por $298.304,36. **Balanceado**: Debe = Haber = $298.304,36.
+- Comprobante `4205` (AMX/Claro, proveedor `010151`, factura de conceptos): Subtotal gravado a `51460 · TELEFONOS LOCALES` (la cuenta del concepto `712`, no la 14003 del modelo) por $529.947,50; IVA 21% y 27% combinados correctamente (dos líneas, misma cuenta `13405`, distinto código); percepción R.G.3337 y percepción IIBB Tucumán. **Balanceado**: Debe = Haber = $690.983,02.
+
+Confirma que el reemplazo de cuenta por concepto/artículo funciona con datos reales (no solo en los tests de `conRollback`), que el asiento cierra en los dos caminos de negocio (conceptos y artículos), y que dos alícuotas de IVA que comparten cuenta se muestran como líneas separadas, no fusionadas.
+
+El botón "Ver asiento" vive en la barra de acciones, visible en `leido`/`observacion`/`confirmado` (no depende de que las validaciones estén en verde — es justamente para revisar antes de eso). Reusa el estilo `.verAsiento` ya existente del botón deshabilitado "Ver asiento en Tango" del estado `registrado` (ese sigue sin funcionalidad, decisión de Fase 4 que no cambió): nunca se muestran los dos a la vez.
 
 ---
 
