@@ -1,5 +1,17 @@
 # Estado del proyecto
 
+## Para retomar ahora (2026-08-21)
+
+**Único pendiente inmediato: pushear a `origin`.** `master` quedó **16 commits adelante de `origin/master`** (todo el trabajo de esta sesión, incluida la vista previa del asiento). El `git fetch origin` no respondió (timeout >2 min) al intentar cerrar la sesión — no se sabe todavía si es un problema de red puntual o algo más. Antes de seguir trabajando, probar:
+
+```bash
+cd /d/APP/PH_FAC && git fetch origin
+```
+
+Si responde, `git push origin master` (decisión del usuario, no automática) deja todo sincronizado. Si vuelve a colgarse, es un problema de conectividad a `github.com/infosystuc-sys/factura`, no del repo.
+
+No hay ninguna rama propia ni worktree pendiente de mergear — todo el trabajo reciente se hizo directo en `master`, con el consentimiento explícito del usuario en cada caso.
+
 **Última actualización:** 2026-08-21. Nuevo botón "Ver asiento" en la revisión: vista previa de solo lectura del asiento contable que Tango generaría al registrar el comprobante (ver sección abajo). También en 2026-08-20/21: "Renglones detectados" unifica el código de Tango y el código de la factura en la descripción (antes cada uno tenía columna propia y se partían en dos líneas), se agregó un subtotal de renglones con cotejo contra el neto gravado, un botón para refrescar la cantidad del remito contra Tango en vivo, y un botón para vincular el código de proveedor a un artículo en CPA15 por renglón.
 **Anterior:** 2026-08-19/20. "Renglones detectados" ahora muestra, por renglón, de qué remito y qué línea de Tango salió (ver sección abajo). `buscarRemitoPorNumero` ahora tolera que el primer dígito del número de remito no coincida con lo que imprime el proveedor (ver sección abajo). 2026-08-11: la IA ya no detecta renglones en comprobantes de servicios (ver sección abajo). Agregado el tercer valor de `tipoFactura` ("Liquidación de tarjeta"), bloqueado hasta que se implemente. Restricción de percepciones de IVA/IIBB completa. Todo en `master` directamente, sin rama propia. Registro por conceptos completo e integrado a `master`. Fase 4 completa e integrada a `master`.
 **Fase 3:** completa e integrada a `master`. Ver la sección "Fase 3" más abajo para el detalle.
@@ -9,7 +21,18 @@
 
 ## Vista previa del asiento contable ("Ver asiento")
 
-Pedido directo del usuario: quería ver, durante la revisión, qué asiento contable generaría Tango al registrar el comprobante. Spec: `docs/superpowers/specs/2026-08-21-vista-previa-asiento-contable-design.md`. Plan: `docs/superpowers/plans/2026-08-21-vista-previa-asiento-contable.md`, ejecutado con `superpowers:subagent-driven-development` (6 tareas, un fix round en la Task 2). **451 tests en verde**, `tsc --noEmit` limpio.
+Pedido directo del usuario: quería ver, durante la revisión, qué asiento contable generaría Tango al registrar el comprobante. Spec: `docs/superpowers/specs/2026-08-21-vista-previa-asiento-contable-design.md`. Plan: `docs/superpowers/plans/2026-08-21-vista-previa-asiento-contable.md`, ejecutado con `superpowers:subagent-driven-development` (7 tareas, un fix round en la Task 2, más un fix round de la revisión final de rama completa). **455 tests en verde**, `tsc --noEmit` limpio.
+
+**Revisión final de rama completa** (modelo `opus`, sobre los 8 commits de la feature): sin hallazgos Critical, 3 Important + 7 Minor, aprobada igual ("ready to merge, con fixes como seguimiento") pero el controller decidió aplicarlos todos en un fix wave antes de dar la feature por cerrada, no dejarlos como deuda:
+1. **El armado de "Subtotal gravado" para facturas de artículos con más de una cuenta distinta sumaba `IMPORTE_IA` crudo de los renglones en vez de prorratear el `neto` de cabecera** — podía marcar "el asiento no cierra" en una factura que en realidad estaba bien, porque la suma de renglones no siempre coincide centavo a centavo con el neto (la propia tarjeta de renglones ya expone y tolera esa diferencia). Corregido: se prorratea `neto` entre las cuentas, con el resto del redondeo en el último grupo.
+2. **Faltaban tests de las tres ramas más complejas** (multi-cuenta, fallback a la cuenta del modelo cuando el artículo no tiene `ARTICULO_CUENTA`, la línea de exento). Agregados los tres, con artículos reales (`106817`→cuenta `14003`, `474575`→cuenta `14007`).
+3. **Una línea de impuesto sin código de Tango resuelto (jurisdicción no reconocida, código elegido que ya no existe) desaparecía sin aviso**, y el mensaje de "no cierra" le echaba la culpa a los importes cuando el problema era otro. Se agregó `AsientoPreview.lineasOmitidas` (cuenta cuántas líneas se omitieron por esto) y el modal distingue los dos casos en el aviso. De paso se corrigió una contradicción real entre dos secciones del spec (una decía que esas líneas se muestran, otra que se omiten — el código siempre hizo lo segundo, que es lo correcto).
+4. Minor: `RENGLON_MODELO_CP.REEMPLAZA_CUENTA` se leía pero no se usaba — ahora el reemplazo de cuenta de Subtotal gravado/exento respeta la bandera en vez de aplicarse siempre.
+5. Minor: ancho de columna (`VarChar(20)`→`VarChar(15)`) para que coincida con `ARTICULO_CUENTA.COD_STA11` real, mismo criterio que ya usa `articulos.ts`.
+6. Minor: import sin usar en el test.
+7. Minor: `codigoFinal ?? codigo` → `codigoFinal?.trim() || codigo?.trim()`, mismo criterio que ya usa `registrarComprobanteEn` para no dejar que una corrección vacía gane por sobre un código válido.
+
+**Desvío no pedido, encontrado al escribir el test de multi-cuenta:** `insertarRenglonPrueba` (`src/server/app/comprobantes.ts`, helper de test compartido por toda la suite) tenía `ORDEN` fijo en `1` — rompía al insertar un segundo renglón para el mismo comprobante (viola `UQ_PHF_RENGLON`). Corregido a `ISNULL(MAX(ORDEN),0)+1`. Queda un hueco Minor parqueado a propósito: el cálculo no es atómico (sin `HOLDLOCK`), pero ningún test del repo inserta renglones en paralelo para el mismo comprobante, así que agregar locking ahí sería sobre-ingeniería para un problema que no existe hoy.
 
 **Módulo nuevo de solo lectura** (`src/server/tango/asiento.ts`): simula el motor de asientos de Tango combinando `RENGLON_MODELO_CP`/`TIPO_CONTABLE`/`CUENTA` (el modelo `ID_ASIENTO_MODELO_CP=1`, "FACTURAS / NOTAS DE DEBITO") con `CONCEPTO_CP`/`ARTICULO_CUENTA` (para el reemplazo de cuenta del subtotal). No escribe nada — ni en `PHF_*` ni en el ERP; el asiento real lo sigue generando un proceso aparte de Tango cuando contabiliza (`CONTABILIZ` sigue en 0 después de registrar, decisión de Fase 4 que no cambió).
 
