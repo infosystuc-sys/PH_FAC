@@ -1,5 +1,11 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { obtenerDetalleEn, type RenglonGuardado } from '@/server/app/detalle'
+import { resolverAlicuotas } from '@/lib/alicuotas'
+import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
+import { parsearImporte } from '@/lib/formato'
+import { listarAlicuotasIva, listarCodigosImpuesto } from './impuestos'
+import { conceptoDelComprobante } from './conceptos'
 
 /**
  * Simula, de solo lectura, el asiento contable que Tango generaria al
@@ -123,4 +129,171 @@ export async function cuentasDeArticulos(codigos: string[]): Promise<Map<string,
     }
   }
   return mapa
+}
+
+export type Ejecutor = { request(): sql.Request }
+
+export type LineaAsiento = {
+  codCuenta: string
+  descCuenta: string
+  leyenda: string
+  debe: number
+  haber: number
+}
+
+export type AsientoPreview = {
+  lineas: LineaAsiento[]
+  totalDebe: number
+  totalHaber: number
+  balanceado: boolean
+}
+
+/**
+ * Agrupa los renglones de una factura de articulos por la cuenta de
+ * compras que le resuelve ARTICULO_CUENTA, sumando el importe de cada
+ * grupo -- una linea de Debe por cada cuenta distinta que aparezca (caso
+ * dominante: un solo grupo, 9.059/9.060 articulos comparten la cuenta
+ * 120). Si un articulo no tiene ARTICULO_CUENTA cargada, cae a la cuenta
+ * de Subtotal gravado del modelo -- mejor mostrar el fallback que romper
+ * la vista previa.
+ */
+async function agruparRenglonesPorCuenta(
+  renglones: RenglonGuardado[],
+  sb: RenglonModelo | undefined,
+): Promise<{ cuenta: CuentaContable; importe: number }[]> {
+  const codigos = [
+    ...new Set(
+      renglones
+        .map((r) => (r.codigoFinal ?? r.codigo)?.trim())
+        .filter((c): c is string => Boolean(c)),
+    ),
+  ]
+  const cuentasPorArticulo = await cuentasDeArticulos(codigos)
+  const fallback: CuentaContable | null = sb ? { codCuenta: sb.codCuenta, descCuenta: sb.descCuenta } : null
+
+  const porCuenta = new Map<string, { cuenta: CuentaContable; importe: number }>()
+  for (const r of renglones) {
+    const codigo = (r.codigoFinal ?? r.codigo)?.trim()
+    const importe = parsearImporte(r.importe)
+    if (!codigo || importe <= 0) continue
+
+    const cuenta = cuentasPorArticulo.get(codigo) ?? fallback
+    if (!cuenta) continue
+
+    const acumulado = porCuenta.get(cuenta.codCuenta)
+    if (acumulado) acumulado.importe = Math.round((acumulado.importe + importe) * 100) / 100
+    else porCuenta.set(cuenta.codCuenta, { cuenta, importe })
+  }
+  return [...porCuenta.values()]
+}
+
+/**
+ * Arma la vista previa completa. No bloquea por datos faltantes o
+ * codigos sin resolver -- a diferencia de `registrarComprobanteEn`, que
+ * tiene que ser estricto porque escribe en Tango, esto es una vista
+ * previa: una linea que no se puede resolver simplemente no aparece.
+ */
+export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number): Promise<AsientoPreview> {
+  const [modelo, detalle] = await Promise.all([
+    cargarModeloAsiento(),
+    obtenerDetalleEn(e, comprobanteId),
+  ])
+
+  const valores: Record<string, string | null | undefined> = {}
+  for (const c of detalle.campos) valores[c.clave] = c.valorFinal
+
+  const tipoFactura = valores.tipoFactura ?? null
+  const codProvee = (valores.codprovee ?? '').trim() || null
+
+  const lineas: LineaAsiento[] = []
+
+  // --- Subtotal gravado (SB) y exento (EX): la cuenta se puede reemplazar. ---
+  const sb = modelo.get('SB')
+  const ex = modelo.get('EX')
+  const neto = parsearImporte(valores.neto)
+  const exento = parsearImporte(valores.exento)
+
+  let cuentaSubtotal: CuentaContable | null = null
+  let gruposArticulo: { cuenta: CuentaContable; importe: number }[] = []
+
+  if (tipoFactura === 'conceptos' || tipoFactura === 'tarjeta') {
+    const concepto = await conceptoDelComprobante(tipoFactura, codProvee)
+    cuentaSubtotal = concepto ? await cuentaDelConcepto(concepto.codConcepto) : null
+  } else if (tipoFactura === 'articulos') {
+    gruposArticulo = await agruparRenglonesPorCuenta(detalle.renglones, sb)
+    if (gruposArticulo.length > 0) {
+      cuentaSubtotal = gruposArticulo.reduce((a, b) => (b.importe > a.importe ? b : a)).cuenta
+    }
+  }
+
+  if (sb && neto > 0) {
+    if (gruposArticulo.length > 1) {
+      // Una linea de Debe por cada cuenta distinta que aparece entre los
+      // articulos -- caso raro (1/9.060), pero es lo que Tango haria.
+      for (const g of gruposArticulo) {
+        lineas.push({ codCuenta: g.cuenta.codCuenta, descCuenta: g.cuenta.descCuenta, leyenda: sb.leyenda, debe: g.importe, haber: 0 })
+      }
+    } else {
+      const cuenta = cuentaSubtotal ?? { codCuenta: sb.codCuenta, descCuenta: sb.descCuenta }
+      lineas.push({ codCuenta: cuenta.codCuenta, descCuenta: cuenta.descCuenta, leyenda: sb.leyenda, debe: neto, haber: 0 })
+    }
+  }
+  if (ex && exento > 0) {
+    const cuenta = cuentaSubtotal ?? { codCuenta: ex.codCuenta, descCuenta: ex.descCuenta }
+    lineas.push({ codCuenta: cuenta.codCuenta, descCuenta: cuenta.descCuenta, leyenda: ex.leyenda, debe: exento, haber: 0 })
+  }
+
+  // --- IVA, percepciones IIBB, impuestos varios: cuenta fija del modelo. ---
+  const [alicuotas, codigosImpuesto] = await Promise.all([listarAlicuotasIva(), listarCodigosImpuesto()])
+  const genericas = new Map<string, number>()
+
+  for (const l of resolverAlicuotas(valores, alicuotas)) {
+    if (l.estado === 'registra' && l.alicuota) {
+      const cod = String(l.alicuota.codigo)
+      genericas.set(cod, Math.round(((genericas.get(cod) ?? 0) + l.importe) * 100) / 100)
+    }
+  }
+  for (const l of resolverPercepciones(valores, tipoFactura)) {
+    if (l.estado === 'registra' && l.codigo) {
+      genericas.set(l.codigo.codigo, Math.round(((genericas.get(l.codigo.codigo) ?? 0) + l.importe) * 100) / 100)
+    }
+  }
+  for (const l of resolverVarios(valores, codigosImpuesto)) {
+    if (l.estado === 'registra') {
+      genericas.set(l.codigo, Math.round(((genericas.get(l.codigo) ?? 0) + l.importe) * 100) / 100)
+    }
+  }
+
+  for (const [codTipo, importe] of genericas) {
+    const renglon = modelo.get(codTipo)
+    if (!renglon || importe <= 0) continue
+    lineas.push({
+      codCuenta: renglon.codCuenta,
+      descCuenta: renglon.descCuenta,
+      leyenda: renglon.leyenda,
+      debe: renglon.dh === 'D' ? importe : 0,
+      haber: renglon.dh === 'H' ? importe : 0,
+    })
+  }
+
+  // --- Total del comprobante (TO): siempre Haber, cuenta del modelo. ---
+  const to = modelo.get('TO')
+  const total = parsearImporte(valores.total)
+  if (to && total > 0) {
+    lineas.push({ codCuenta: to.codCuenta, descCuenta: to.descCuenta, leyenda: to.leyenda, debe: 0, haber: total })
+  }
+
+  const totalDebe = Math.round(lineas.reduce((a, l) => a + l.debe, 0) * 100) / 100
+  const totalHaber = Math.round(lineas.reduce((a, l) => a + l.haber, 0) * 100) / 100
+
+  return {
+    lineas,
+    totalDebe,
+    totalHaber,
+    balanceado: Math.abs(totalDebe - totalHaber) < 0.01,
+  }
+}
+
+export async function previsualizarAsiento(comprobanteId: number): Promise<AsientoPreview> {
+  return previsualizarAsientoEn(await getPool(), comprobanteId)
 }

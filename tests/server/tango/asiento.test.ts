@@ -1,6 +1,10 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { cargarModeloAsiento, cuentaDelConcepto, cuentasDeArticulos } from '@/server/tango/asiento'
+import sql from 'mssql'
+import { cargarModeloAsiento, cuentaDelConcepto, cuentasDeArticulos, previsualizarAsientoEn } from '@/server/tango/asiento'
 import { cerrarPool } from '@/server/db/pool'
+import { conRollback } from '@/server/db/tx'
+import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
+import { guardarCampoEn } from '@/server/app/detalle'
 
 afterAll(async () => {
   await cerrarPool()
@@ -72,5 +76,83 @@ describe('cuentasDeArticulos', () => {
   it('devuelve un mapa vacio para una lista vacia', async () => {
     const cuentas = await cuentasDeArticulos([])
     expect(cuentas.size).toBe(0)
+  })
+})
+
+describe('previsualizarAsientoEn', () => {
+  it('factura de conceptos: Subtotal gravado va a la cuenta del concepto', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+      await guardarCampoEn(tx, id, 'neto', '10000,00')
+      await guardarCampoEn(tx, id, 'total', '12100,00')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '2100,00')
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      const sb = asiento.lineas.find((l) => l.descCuenta === 'TELEFONOS LOCALES')
+      expect(sb).toMatchObject({ codCuenta: '51460', debe: 10000, haber: 0 })
+
+      const iva = asiento.lineas.find((l) => l.codCuenta === '13405')
+      expect(iva).toMatchObject({ debe: 2100, haber: 0 })
+
+      const total = asiento.lineas.find((l) => l.codCuenta === '20002')
+      expect(total).toMatchObject({ debe: 0, haber: 12100 })
+
+      expect(asiento.totalDebe).toBe(12100)
+      expect(asiento.totalHaber).toBe(12100)
+      expect(asiento.balanceado).toBe(true)
+    })
+  })
+
+  it('factura de articulos: Subtotal gravado va a la cuenta del articulo', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
+      await guardarCampoEn(tx, id, 'neto', '80745,57')
+      await guardarCampoEn(tx, id, 'total', '80745,57')
+      await insertarRenglonPrueba(tx, id, {
+        codigo: '106817', descripcion: 'Microondas', cantidad: '1',
+        // PRECIO_UNITARIO_IA es DECIMAL(19,4) en PHF_RENGLON (scripts/migrate.ts) --
+        // el brief traia '80745,57' (coma) aca, que no convierte implicitamente a
+        // numeric. El resto del codebase pasa este campo con punto decimal
+        // (ver tests/server/app/acciones.test.ts, tests/server/tango/comprobantes.test.ts).
+        precioUnitario: '80745.57', importe: '80745.57',
+      })
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      const sb = asiento.lineas.find((l) => l.descCuenta === 'COMPRAS - MERCADERIA')
+      expect(sb).toMatchObject({ codCuenta: '14003', debe: 80745.57, haber: 0 })
+    })
+  })
+
+  it('percepcion IIBB Tucuman va a la cuenta del modelo', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'neto', '1000,00')
+      await guardarCampoEn(tx, id, 'total', '1025,00')
+      await guardarCampoEn(tx, id, 'percep1', 'Tucumán')
+      await guardarCampoEn(tx, id, 'codpercep1', '60')
+      await guardarCampoEn(tx, id, 'imppercep1', '25,00')
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      const percep = asiento.lineas.find((l) => l.codCuenta === '13411')
+      expect(percep).toMatchObject({ debe: 25, haber: 0 })
+    })
+  })
+
+  it('un comprobante sin campos no rompe: devuelve un asiento vacio', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      const asiento = await previsualizarAsientoEn(tx, id)
+      expect(asiento.lineas).toEqual([])
+      expect(asiento.totalDebe).toBe(0)
+      expect(asiento.totalHaber).toBe(0)
+      expect(asiento.balanceado).toBe(true)
+    })
   })
 })
