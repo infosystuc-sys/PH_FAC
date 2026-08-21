@@ -91,6 +91,32 @@
   min-width: 0;
 }
 
+/* Mismo estilo de link que "Cambiar artículo" (selector-articulo.module.css
+   .abrir): son dos acciones de la misma familia, una corrige este renglón
+   y la otra le enseña a Tango el código para los que vengan. */
+.vincular {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--acento);
+  cursor: pointer;
+}
+
+.vincular:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.vincular:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Sin truncar: con el PDF visible el panel de renglones no tiene ancho de
    sobra (llega a quedar en ~60px reales), asi que la unica forma de que la
    descripcion entre entera es dejarla pasar a una segunda linea en vez de

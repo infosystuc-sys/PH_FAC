@@ -2,6 +2,7 @@ import type { RenglonGuardado } from '@/server/app/detalle'
 import { formatMoneda, formatCantidad, parsearImporte } from '@/lib/formato'
 import { SelectorArticulo } from './selector-articulo'
 import { ActualizarRemito } from './actualizar-remito'
+import { VincularArticulo } from './vincular-articulo'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './renglones.module.css'
 
@@ -179,8 +180,14 @@ export function Renglones({
                       : null
                   }
                   codProvee={codProvee}
-                  codProveedorLeido={r.codProveedor}
-                  codArticuloActual={codigo}
+                />
+              )}
+              {!soloLectura && codProvee && codigo && r.codProveedor && (
+                <VincularArticulo
+                  comprobanteId={comprobanteId}
+                  codProvee={codProvee}
+                  codArticu={codigo}
+                  codSinoni={r.codProveedor}
                 />
               )}
             </span>

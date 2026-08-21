@@ -1,12 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef } from 'react'
-import {
-  buscarArticulosTango,
-  elegirArticulo,
-  asignarRemito,
-  asociarCodigoProveedor,
-} from '@/server/app/acciones'
+import { buscarArticulosTango, elegirArticulo, asignarRemito } from '@/server/app/acciones'
 import type { ArticuloTango } from '@/server/tango/articulos'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import { useToast } from '@/components/toast/toast-provider'
@@ -42,8 +37,6 @@ export function SelectorArticulo({
   yaAsignados,
   remitoActual,
   codProvee,
-  codProveedorLeido,
-  codArticuloActual,
 }: {
   comprobanteId: number
   renglonId: number
@@ -55,12 +48,8 @@ export function SelectorArticulo({
   yaAsignados: Set<string>
   /** La clave del renglón de remito al que apunta este, si apunta a alguno. */
   remitoActual: string | null
-  /** El proveedor del comprobante, para buscar y para asociar en CPA15. */
+  /** El proveedor del comprobante, para buscar artículos. */
   codProvee: string | null
-  /** El código que el proveedor imprime para este renglón, si se leyó. */
-  codProveedorLeido: string | null
-  /** Nuestro artículo, ya resuelto: el que se asociaría a ese código. */
-  codArticuloActual: string | null
 }) {
   const [abierto, setAbierto] = useState(false)
   const [query, setQuery] = useState('')
@@ -105,27 +94,6 @@ export function SelectorArticulo({
       }
     })
   }
-
-  function asociar() {
-    if (!codProvee || !codProveedorLeido || !codArticuloActual) return
-    arrancar(async () => {
-      try {
-        await asociarCodigoProveedor(
-          comprobanteId,
-          codProvee,
-          codArticuloActual,
-          codProveedorLeido,
-        )
-        toast(`Tango ya sabe que "${codProveedorLeido}" es ${codArticuloActual}.`)
-        setAbierto(false)
-      } catch (err) {
-        toast(err instanceof Error ? err.message : 'No se pudo asociar el código.')
-      }
-    })
-  }
-
-  const puedeAsociar =
-    codProvee !== null && codProveedorLeido !== null && codArticuloActual !== null
 
   function asignar(
     ncompInS: string | null,
@@ -248,12 +216,6 @@ export function SelectorArticulo({
             </li>
           ))}
         </ul>
-      )}
-
-      {puedeAsociar && (
-        <button type="button" className={styles.asociar} disabled={pendiente} onClick={asociar}>
-          Recordar en Tango que “{codProveedorLeido}” es {codArticuloActual}
-        </button>
       )}
 
       <div className={styles.acciones}>
