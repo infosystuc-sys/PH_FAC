@@ -1,6 +1,6 @@
 'use client'
 
-import { resolverCodigoIva, type AlicuotaTango } from '@/lib/alicuotas'
+import { resolverCodigoIva, CODIGO_IVA_PREFERIDO, type AlicuotaTango } from '@/lib/alicuotas'
 import { JURISDICCIONES_IIBB, resolverIibbPorTipo } from '@/lib/percepcionIibb'
 import { parsearImporte } from '@/lib/formato'
 import styles from './formulario.module.css'
@@ -93,6 +93,7 @@ export function CeldaAlicuotaTango({
   importe,
   correccion,
   alicuotas,
+  aprendidos,
   bloqueado,
   onCambio,
 }: {
@@ -100,6 +101,8 @@ export function CeldaAlicuotaTango({
   importe: string
   correccion: string
   alicuotas: AlicuotaTango[]
+  /** Lo que este proveedor ya enseñó para porcentajes que no resuelven solos. */
+  aprendidos: Record<string, string>
   bloqueado: boolean
   onCambio: (v: string) => void
 }) {
@@ -141,6 +144,26 @@ export function CeldaAlicuotaTango({
   const crudo = porcentaje.trim()
   const p = crudo === '' ? null : parsearImporte(crudo)
 
+  // Sin porcentaje impreso (no es 0%, es que no hay dato): casi siempre una
+  // percepcion de IVA sin tasa propia (ej. "Percepcion IVA RG 2408"), no una
+  // alicuota real. Se resuelve directo al codigo preferido, mismo criterio
+  // que el 3% ambiguo -- decision del usuario, 2026-08-21. Antes esto
+  // mostraba "—" sin resolver nada, y la linea quedaba omitida del registro
+  // salvo que el operador la corrigiera a mano cada vez.
+  if (p === null) {
+    const preferida = alicuotas.find((a) => a.codigo === CODIGO_IVA_PREFERIDO) ?? null
+    return (
+      <CeldaLista
+        opciones={opciones}
+        valor={preferida ? String(preferida.codigo) : ''}
+        placeholder="—"
+        tono={preferida ? 'ok' : 'vacio'}
+        bloqueado={bloqueado}
+        onCambio={onCambio}
+      />
+    )
+  }
+
   // Norma de registración: la alícuota 0% no se graba. Se avisa acá mismo
   // para que el operador no descubra el faltante al registrar.
   if (p === 0) {
@@ -156,13 +179,13 @@ export function CeldaAlicuotaTango({
     )
   }
 
-  const encontrada = p === null ? null : resolverCodigoIva(p, alicuotas)
+  const encontrada = resolverCodigoIva(p, alicuotas, aprendidos)
   return (
     <CeldaLista
       opciones={opciones}
       valor={encontrada ? String(encontrada.codigo) : ''}
-      placeholder={p === null ? '—' : 'Sin código en Tango'}
-      tono={encontrada ? 'ok' : p === null ? 'vacio' : 'error'}
+      placeholder="Sin código en Tango"
+      tono={encontrada ? 'ok' : 'error'}
       bloqueado={bloqueado}
       onCambio={onCambio}
     />
@@ -178,6 +201,7 @@ export function CeldaPercepcionTango({
   importe,
   correccion,
   tipoFactura,
+  aprendidos,
   bloqueado,
   onCambio,
 }: {
@@ -186,6 +210,8 @@ export function CeldaPercepcionTango({
   correccion: string
   /** En tarjeta el IIBB va al 64 aunque la jurisdiccion diga otra cosa. */
   tipoFactura: string
+  /** Lo que este proveedor ya enseñó para jurisdicciones no reconocidas. */
+  aprendidos: Record<string, string>
   bloqueado: boolean
   onCambio: (v: string) => void
 }) {
@@ -204,7 +230,7 @@ export function CeldaPercepcionTango({
   // haya ninguna linea, que se lee como si hubiera algo para registrar.
   const elegido = vacio
     ? ''
-    : correccion || resolverIibbPorTipo(jurisdiccion, tipoFactura)?.codigo || ''
+    : correccion || resolverIibbPorTipo(jurisdiccion, tipoFactura, aprendidos)?.codigo || ''
 
   return (
     <CeldaLista

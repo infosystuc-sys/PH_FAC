@@ -8,7 +8,7 @@ import {
   type GrupoCampo,
   type DefCampo,
 } from '@/lib/campos'
-import { guardarCampo } from '@/server/app/acciones'
+import { guardarCampo, aprenderImpuestoTango } from '@/server/app/acciones'
 import { totalImputado, formatMoneda } from '@/lib/formato'
 import { TIPOS_FACTURA, analizaCampo, spanDe, tipoFacturaODefault } from '@/lib/tipoFactura'
 import type { AlicuotaTango } from '@/lib/alicuotas'
@@ -56,6 +56,10 @@ const RE_SLOT_ALICUOTA = /^(?:porciva|impiva)([1-5])$/
 const RE_PORC_ALICUOTA = /^porciva([1-5])$/
 const RE_PERCEP = /^percep([1-4])$/
 const RE_VARIOS = /^varios[12]$/
+/** La corrección a mano de cada familia -- si el operador la completa,
+ *  eso es lo que se aprende para el proveedor. */
+const RE_CORRECCION_IVA = /^codiva([1-5])$/
+const RE_CORRECCION_PERCEP = /^codpercep([1-4])$/
 
 type Opcion = { valor: string; label: string }
 
@@ -127,6 +131,8 @@ export function Formulario({
   codigosImpuesto,
   alicuotasIva,
   concepto,
+  aprendidosIva,
+  aprendidosPercepcion,
 }: {
   comprobanteId: number
   iniciales: Record<string, ValorInicial>
@@ -149,6 +155,11 @@ export function Formulario({
   // servidor porque depende de codprovee, que cambia con router.refresh
   // cuando el operador elige otro proveedor.
   concepto: { codConcepto: string; descripcion: string } | null
+  // Lo que este proveedor ya le enseñó a la app para IVA e IIBB, para que
+  // las celdas "En Tango" propongan en vivo el mismo código que va a
+  // resolver el registro real. Ver aprendizajeImpuestos.ts.
+  aprendidosIva: Record<string, string>
+  aprendidosPercepcion: Record<string, string>
 }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(iniciales).map(([k, v]) => [k, v.valor])),
@@ -190,9 +201,29 @@ export function Formulario({
       const perc = RE_PERCEP.exec(clave)
       if (perc) limpiarCorreccion(`codpercep${perc[1]}`)
 
+      // El operador corrigió a qué código de Tango va un porcentaje o una
+      // jurisdicción que no se resolvió solo: se aprende para este
+      // proveedor, así la próxima factura con el mismo texto ya no va a
+      // necesitar la corrección de nuevo.
+      const codProvee = (valores.codprovee ?? '').trim()
+      if (codProvee && v.trim() !== '') {
+        const correccionIva = RE_CORRECCION_IVA.exec(clave)
+        if (correccionIva) {
+          const porcentaje = (valores[`porciva${correccionIva[1]}`] ?? '').trim()
+          if (porcentaje) void aprenderImpuestoTango(comprobanteId, codProvee, 'iva', porcentaje, v.trim())
+        }
+        const correccionPercep = RE_CORRECCION_PERCEP.exec(clave)
+        if (correccionPercep) {
+          const jurisdiccion = (valores[`percep${correccionPercep[1]}`] ?? '').trim()
+          if (jurisdiccion) {
+            void aprenderImpuestoTango(comprobanteId, codProvee, 'percepcion', jurisdiccion, v.trim())
+          }
+        }
+      }
+
       void guardarCampo(comprobanteId, clave, v)
     },
-    [comprobanteId, limpiarCorreccion],
+    [comprobanteId, limpiarCorreccion, valores],
   )
 
   return (
@@ -267,6 +298,7 @@ export function Formulario({
                       importe={valores[`impiva${slotIva[1]}`] ?? ''}
                       correccion={valores[correccion] ?? ''}
                       alicuotas={alicuotasIva}
+                      aprendidos={aprendidosIva}
                       bloqueado={soloLectura}
                       onCambio={(v) => cambiar(correccion, v)}
                     />,
@@ -284,6 +316,7 @@ export function Formulario({
                       importe={valores[`imppercep${slotPercep[1]}`] ?? ''}
                       correccion={valores[correccion] ?? ''}
                       tipoFactura={valores.tipoFactura ?? ''}
+                      aprendidos={aprendidosPercepcion}
                       bloqueado={soloLectura}
                       onCambio={(v) => cambiar(correccion, v)}
                     />,

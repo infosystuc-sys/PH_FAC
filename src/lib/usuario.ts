@@ -16,3 +16,18 @@ export function usuarioActual(): string {
     return 'desconocido'
   }
 }
+
+/**
+ * Nombre de la PC para la auditoria. Misma limitacion que usuarioActual:
+ * si la app se sirve desde un servidor, es el hostname del servidor, no el
+ * de la PC del operador. PHF_TERMINAL permite forzar el valor.
+ */
+export function terminalActual(): string {
+  const forzado = process.env.PHF_TERMINAL?.trim()
+  if (forzado) return forzado
+  try {
+    return os.hostname()
+  } catch {
+    return 'desconocido'
+  }
+}

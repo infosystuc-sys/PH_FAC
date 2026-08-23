@@ -6,6 +6,7 @@ import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
 import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impuestos'
 import { buscarRemitosPendientes } from '@/server/tango/remitos'
 import { conceptoDelComprobante } from '@/server/tango/conceptos'
+import { cargarAprendidos } from '@/server/app/aprendizajeImpuestos'
 import { probarConexion } from '@/server/db/pool'
 import { leerFiltro } from '@/lib/estados'
 import { Pantalla } from '@/components/revision/pantalla'
@@ -107,6 +108,19 @@ export default async function RevisionPage({
     ? await conceptoDelComprobante(tipoFacturaValor, codProveeCampo)
     : null
 
+  // Lo que este proveedor ya le enseñó a la app para IVA e IIBB (ver
+  // aprendizajeImpuestos.ts), para que las celdas de "En Tango" del
+  // formulario propongan en vivo lo mismo que va a resolver el registro
+  // real -- sin esto, una celda podía mostrar "Sin código en Tango" en
+  // rojo para algo que el registro iba a resolver solo.
+  const [aprendidosIva, aprendidosPercepcion] =
+    mostrarRevision && codProveeCampo
+      ? await Promise.all([
+          cargarAprendidos(codProveeCampo, 'iva'),
+          cargarAprendidos(codProveeCampo, 'percepcion'),
+        ])
+      : [{}, {}]
+
   return (
     <div className={styles.pantalla}>
       <BarraAcciones
@@ -156,6 +170,8 @@ export default async function RevisionPage({
           codigosImpuesto={codigosImpuesto}
           alicuotasIva={alicuotasIva}
           concepto={concepto}
+          aprendidosIva={aprendidosIva}
+          aprendidosPercepcion={aprendidosPercepcion}
           remitosPendientes={remitosPendientes}
           codProvee={codProveeCampo}
           motivoObservacion={

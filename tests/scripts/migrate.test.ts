@@ -3,7 +3,13 @@ import sql from 'mssql'
 import { migrar, migrarDefiniciones } from '../../scripts/migrate'
 import { getPool, cerrarPool } from '@/server/db/pool'
 
-const TABLAS = ['PHF_COMPROBANTE', 'PHF_CAMPO', 'PHF_RENGLON', 'PHF_AUDITORIA']
+const TABLAS = [
+  'PHF_COMPROBANTE',
+  'PHF_CAMPO',
+  'PHF_RENGLON',
+  'PHF_AUDITORIA',
+  'PHF_ALICUOTA_PROVEEDOR',
+]
 
 async function columnas(pool: sql.ConnectionPool, tabla: string): Promise<string[]> {
   const r = await pool
@@ -18,8 +24,9 @@ async function columnas(pool: sql.ConnectionPool, tabla: string): Promise<string
 }
 
 async function limpiarPrefijo(pool: sql.ConnectionPool, prefijo: string): Promise<void> {
-  // Orden inverso al de creacion por las FK.
-  for (const t of ['AUDITORIA', 'RENGLON', 'CAMPO', 'COMPROBANTE']) {
+  // Orden inverso al de creacion por las FK. ALICUOTA_PROVEEDOR no tiene
+  // FK a ninguna otra tabla propia, asi que su lugar en el orden no importa.
+  for (const t of ['AUDITORIA', 'RENGLON', 'CAMPO', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR']) {
     await pool.request().batch(`DROP TABLE IF EXISTS ${prefijo}${t}`)
   }
 }
@@ -29,7 +36,7 @@ describe('migracion del esquema propio', () => {
     await cerrarPool()
   })
 
-  it('crea las cuatro tablas PHF_', async () => {
+  it('crea las tablas PHF_', async () => {
     await migrar()
     const pool = await getPool()
     const r = await pool
@@ -80,7 +87,7 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
       const pool = await getPool()
       // Los hijos (FK con ON DELETE CASCADE) tienen que caer antes que
       // PHF_COMPROBANTE, que es la tabla referenciada.
-      const sufijosEnOrden = ['CAMPO', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ROTA']
+      const sufijosEnOrden = ['CAMPO', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'ROTA']
       for (const prefijo of prefijosUsados) {
         for (const sufijo of sufijosEnOrden) {
           const tabla = `${prefijo}${sufijo}`

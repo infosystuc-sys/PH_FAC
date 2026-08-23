@@ -1,4 +1,4 @@
-import { parsearImporte } from './formato'
+import { parsearImporte, parsearImporteONulo } from './formato'
 
 export const MAX_SLOTS_IVA = 5
 
@@ -31,15 +31,29 @@ export type LineaAlicuota = {
   alicuota: AlicuotaTango | null
 }
 
-/** Resuelve un porcentaje leído del comprobante al COD_IVA de CPA14. */
+/**
+ * Resuelve un porcentaje leído del comprobante al COD_IVA de CPA14.
+ *
+ * `aprendidos` es lo que un proveedor puntual ya le enseñó a la app
+ * (`PHF_ALICUOTA_PROVEEDOR`): un porcentaje que hoy no tiene alícuota en
+ * CPA14, o que tiene más de una sin que `CODIGO_IVA_PREFERIDO` desempate,
+ * corregido una vez a mano. Se consulta último -- si el porcentaje ya
+ * resuelve solo, gana eso, nunca lo aprendido.
+ */
 export function resolverCodigoIva(
   porcentaje: number,
   alicuotas: AlicuotaTango[],
+  aprendidos?: Record<string, string>,
 ): AlicuotaTango | null {
   const candidatos = alicuotas.filter((a) => a.porcentaje === porcentaje)
-  if (candidatos.length === 0) return null
   if (candidatos.length === 1) return candidatos[0]
-  return candidatos.find((a) => a.codigo === CODIGO_IVA_PREFERIDO) ?? null
+  if (candidatos.length > 1) {
+    const preferida = candidatos.find((a) => a.codigo === CODIGO_IVA_PREFERIDO)
+    if (preferida) return preferida
+  }
+
+  const aprendido = aprendidos?.[String(porcentaje)]
+  return aprendido ? (alicuotas.find((a) => String(a.codigo) === aprendido) ?? null) : null
 }
 
 /**
@@ -57,6 +71,7 @@ export function resolverCodigoIva(
 export function resolverAlicuotas(
   valores: Record<string, string | null | undefined>,
   alicuotas: AlicuotaTango[],
+  aprendidos?: Record<string, string>,
 ): LineaAlicuota[] {
   const lineas: LineaAlicuota[] = []
 
@@ -64,7 +79,14 @@ export function resolverAlicuotas(
     const importe = parsearImporte(valores[`impiva${slot}`])
     if (importe <= 0) continue
 
-    const porcentaje = parsearImporte(valores[`porciva${slot}`])
+    // Se distingue "0%" (texto "0", una alicuota real de tasa cero) de "sin
+    // porcentaje" (texto vacio: el comprobante no imprime ninguna tasa para
+    // esta linea). parsearImporte por si sola no puede -- las dos dan 0 --
+    // y esa mezcla era un bug real: una percepcion de IVA sin tasa propia
+    // (ej. "Percepcion IVA RG 2408", con importe > 0) caia en la regla del
+    // 0% y quedaba omitida en vez de registrarse.
+    const porcentajeLeido = parsearImporteONulo(valores[`porciva${slot}`])
+    const porcentaje = porcentajeLeido ?? 0
 
     // El codigo corregido a mano gana sobre lo que resuelve el porcentaje:
     // existe justamente para los casos en que la resolucion automatica no
@@ -84,12 +106,30 @@ export function resolverAlicuotas(
       continue
     }
 
+    // Sin porcentaje impreso (no es 0%, es que no hay dato): casi siempre
+    // una percepcion de IVA sin tasa propia, no una alicuota real. Se
+    // resuelve directo al codigo preferido (15), mismo criterio que ya usa
+    // el 3% ambiguo -- decision del usuario, 2026-08-21. El porcentaje que
+    // se graba es el que ese codigo tiene en Tango (CPA14), no un valor
+    // inventado.
+    if (porcentajeLeido === null) {
+      const preferida = alicuotas.find((a) => a.codigo === CODIGO_IVA_PREFERIDO) ?? null
+      lineas.push({
+        slot,
+        porcentaje: preferida?.porcentaje ?? 0,
+        importe,
+        estado: preferida ? 'registra' : 'sin-codigo',
+        alicuota: preferida,
+      })
+      continue
+    }
+
     if (porcentaje === 0) {
       lineas.push({ slot, porcentaje, importe, estado: 'omitida', alicuota: null })
       continue
     }
 
-    const alicuota = resolverCodigoIva(porcentaje, alicuotas)
+    const alicuota = resolverCodigoIva(porcentaje, alicuotas, aprendidos)
     lineas.push({
       slot,
       porcentaje,

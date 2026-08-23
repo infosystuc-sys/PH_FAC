@@ -28,6 +28,20 @@ describe('resolverCodigoIva', () => {
   it('devuelve null para un porcentaje que Tango no tiene', () => {
     expect(resolverCodigoIva(5, CPA14)).toBeNull()
   })
+
+  it('usa lo aprendido cuando el porcentaje no resuelve solo', () => {
+    expect(resolverCodigoIva(5, CPA14, { '5': '1' })?.codigo).toBe(1)
+  })
+
+  it('lo aprendido no gana sobre un porcentaje que ya resuelve solo', () => {
+    // El proveedor no puede "desaprender" el 21% -> 1 con una fila vieja
+    // o mal cargada para otro porcentaje.
+    expect(resolverCodigoIva(21, CPA14, { '21': '999' })?.codigo).toBe(1)
+  })
+
+  it('sin aprendizaje para ese porcentaje, sigue devolviendo null', () => {
+    expect(resolverCodigoIva(5, CPA14, { '7': '1' })).toBeNull()
+  })
 })
 
 describe('resolverAlicuotas', () => {
@@ -61,6 +75,12 @@ describe('resolverAlicuotas', () => {
   it('marca sin-codigo un porcentaje que Tango no tiene', () => {
     const r = resolverAlicuotas({ porciva1: '5', impiva1: '500,00' }, CPA14)
     expect(r[0].estado).toBe('sin-codigo')
+  })
+
+  it('resuelve con lo aprendido un porcentaje que Tango no tiene', () => {
+    const r = resolverAlicuotas({ porciva1: '5', impiva1: '500,00' }, CPA14, { '5': '4' })
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].alicuota?.codigo).toBe(4)
   })
 
   it('lee el porcentaje con coma decimal', () => {
@@ -152,6 +172,45 @@ describe('validarAlicuotas', () => {
       resolverAlicuotas({ porciva1: '2,5', impiva1: '10,00' }, CPA14),
     )
     expect(conDecimal.mensaje).toContain('2,5%')
+  })
+})
+
+describe('linea sin porcentaje impreso', () => {
+  // Caso real (Banco Macro, resumen NaranjaX/VISA): "Percepción IVA RG 2408"
+  // trae un importe ($ 147.092,39) pero ningun porcentaje en ningun lado
+  // del PDF -- a diferencia de las alicuotas reales, que si imprimen
+  // "Tasa 21,00%"/"Tasa 10,50%". Antes del fix esto caia en la regla del
+  // 0% (parsearImporte('') tambien da 0) y quedaba omitida del registro.
+  it('sin porcentaje pero con importe, resuelve directo al codigo preferido (15)', () => {
+    const r = resolverAlicuotas({ porciva3: undefined, impiva3: '147.092,39' }, CPA14)
+    expect(r).toHaveLength(1)
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].alicuota?.codigo).toBe(15)
+    // El porcentaje que se graba es el que Tango define para el 15 (3%),
+    // no un 0% inventado.
+    expect(r[0].porcentaje).toBe(3)
+  })
+
+  it('un string vacio de porcentaje se trata igual que ausente', () => {
+    const r = resolverAlicuotas({ porciva1: '', impiva1: '500,00' }, CPA14)
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].alicuota?.codigo).toBe(15)
+  })
+
+  it('la correccion manual sigue ganando aunque no haya porcentaje', () => {
+    const r = resolverAlicuotas(
+      { porciva1: undefined, impiva1: '500,00', codiva1: '17' },
+      CPA14,
+    )
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].alicuota?.codigo).toBe(17)
+  })
+
+  it('un "0" explicito sigue siendo 0% real, distinto de sin dato', () => {
+    // No hay que confundir el fix: "0" (texto) sigue omitiendose, solo lo
+    // ausente (undefined/'') cae en el codigo preferido.
+    const r = resolverAlicuotas({ porciva1: '0', impiva1: '500,00' }, CPA14)
+    expect(r[0].estado).toBe('omitida')
   })
 })
 

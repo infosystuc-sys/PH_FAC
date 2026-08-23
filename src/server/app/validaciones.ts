@@ -24,6 +24,7 @@ import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impues
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
 import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
+import { cargarAprendidosEn } from './aprendizajeImpuestos'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -137,8 +138,8 @@ export async function validarComprobanteEn(
   const duplicado: ResultadoValidacion = duplicadoNoVerificado
     ? { estado: 'advertencia', mensaje: duplicadoNoVerificado }
     : validarDuplicado(hayDuplicado, referenciaDuplicado)
-  const totales = validarTotales(valores)
   const tipoFactura = tipoFacturaODefault(valores.tipoFactura)
+  const totales = validarTotales(valores, tipoFactura)
   const cae = analizaCampo(tipoFactura, 'cae')
     ? validarCae(valores.cae, valores.vtocae, new Date())
     : null
@@ -182,9 +183,24 @@ export async function validarListoParaRegistrarEn(
   const detalle = detallePrevio ?? (await obtenerDetalleEn(e, id))
   const valores: Record<string, string | null | undefined> = {}
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
+  const codProvee = (valores.codprovee ?? '').trim()
+
+  // Lo que este proveedor ya le enseñó a la app para IVA e IIBB (ver
+  // aprendizajeImpuestos.ts): se consulta acá para que "listo para
+  // registrar" no pueda decir bloqueante algo que el registro real (que
+  // usa la misma fuente) va a resolver solo.
+  //
+  // Secuencial y no Promise.all: `e` puede ser una sql.Transaction, y dos
+  // pedidos en vuelo sobre la misma cuelgan la conexión en vez de fallar
+  // -- ver el mismo comentario en asiento.ts, donde se reprodujo el
+  // cuelgue corriendo la suite de tests.
+  const aprendidosIva = await cargarAprendidosEn(e, codProvee, 'iva')
+  const aprendidosPercep = await cargarAprendidosEn(e, codProvee, 'percepcion')
 
   const condCompra = validarCondCompra(valores.condcompra)
-  const percepcionIibb = validarPercepciones(resolverPercepciones(valores, valores.tipoFactura))
+  const percepcionIibb = validarPercepciones(
+    resolverPercepciones(valores, valores.tipoFactura, aprendidosPercep),
+  )
   const varios = validarVarios(resolverVarios(valores, await listarCodigosImpuesto()))
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)
@@ -194,7 +210,6 @@ export async function validarListoParaRegistrarEn(
   // renglon: ahi no hay concepto y el item dice "No aplica".
   let concepto: ResultadoValidacion = { estado: 'ok', mensaje: 'No aplica.' }
   if (valores.tipoFactura === 'conceptos' || valores.tipoFactura === 'tarjeta') {
-    const codProvee = (valores.codprovee ?? '').trim()
     const encontrado = await conceptoDelComprobante(valores.tipoFactura, codProvee || null)
     concepto = encontrado
       ? { estado: 'ok', mensaje: `Concepto: ${encontrado.codConcepto} — ${encontrado.descripcion}.` }
@@ -211,7 +226,9 @@ export async function validarListoParaRegistrarEn(
   // que usa el armado real de la cabecera, asi el operador ve en la
   // revision a que alicuota de Tango va cada linea -- y si alguna no
   // existe, se entera antes de apretar "Registrar en Tango" y no despues.
-  const alicuotas = validarAlicuotas(resolverAlicuotas(valores, await listarAlicuotasIva()))
+  const alicuotas = validarAlicuotas(
+    resolverAlicuotas(valores, await listarAlicuotasIva(), aprendidosIva),
+  )
 
   const bloqueante = [
     condCompra,

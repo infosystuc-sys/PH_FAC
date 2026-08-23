@@ -31,6 +31,78 @@ export async function buscarConceptoProveedor(codProvee: string): Promise<Concep
 }
 
 /**
+ * Todo el maestro de conceptos, para que el operador elija uno a mano
+ * cuando el proveedor no tiene ninguno asociado. Solo código y descripción
+ * -- el resto de CPA45 (IVA, costo, clasificación SIAP) es configuración
+ * interna de Tango que no le compete elegir desde acá.
+ *
+ * Se trae completo (89 filas hoy) en vez de con búsqueda server-side como
+ * `buscarArticulos`: a esta escala un filtro en el cliente alcanza y evita
+ * un round-trip por cada letra que el operador tipea.
+ */
+export async function listarConceptos(): Promise<ConceptoProveedor[]> {
+  const pool = await getPool()
+  const r = await pool.request().query(`
+    SELECT LTRIM(RTRIM(COD_CONCEP)) AS codConcepto,
+           LTRIM(RTRIM(ISNULL(DESC_CONCE,''))) AS descripcion
+    FROM CPA45
+    WHERE ISNULL(INHABILITA,0) = 0
+    ORDER BY DESC_CONCE
+  `)
+  return r.recordset.map((x) => ({
+    codConcepto: String(x.codConcepto),
+    descripcion: String(x.descripcion),
+  }))
+}
+
+/**
+ * El operador asocia a mano un concepto al proveedor, cuando la ficha no
+ * trae ninguno. Escribe `CPA_CONCEPTOS_PROVEEDOR` -- la misma tabla que lee
+ * `buscarConceptoProveedor` -- para que la próxima factura de este
+ * proveedor ya lo encuentre resuelto.
+ *
+ * MERGE por `COD_PROVEE` solo, no por `(COD_PROVEE, COD_CONCEPT)` -- que es
+ * lo que permite el índice único de la tabla --: la app entera asume una
+ * relación 1:1 por proveedor (verificado contra la base real, ningún
+ * `COD_PROVEE` tiene hoy más de una fila), así que elegir un concepto
+ * distinto reemplaza al anterior en vez de agregar una segunda fila que
+ * dejaría a `buscarConceptoProveedor` con un resultado ambiguo.
+ *
+ * `ID_CPA_CONCEPTOS_PROVEEDOR` se omite del INSERT a propósito, mismo
+ * criterio que `ID_CPA15` en `asociarArticuloProveedor`: su default es
+ * `NEXT VALUE FOR [SEQUENCE_CPA_CONCEPTOS_PROVEEDOR]`.
+ */
+export async function asignarConceptoProveedor(
+  codProvee: string,
+  codConcepto: string,
+): Promise<void> {
+  const prov = codProvee.trim()
+  const concepto = codConcepto.trim()
+  if (!prov || !concepto) return
+
+  const pool = await getPool()
+  await pool
+    .request()
+    .input('prov', sql.VarChar(6), prov)
+    .input('concepto', sql.VarChar(3), concepto)
+    .query(`
+      MERGE CPA_CONCEPTOS_PROVEEDOR WITH (HOLDLOCK) AS destino
+      USING (SELECT @prov AS COD_PROVEE) AS origen
+        ON LTRIM(RTRIM(destino.COD_PROVEE)) = origen.COD_PROVEE
+      WHEN MATCHED THEN
+        UPDATE SET COD_CONCEPT = @concepto,
+                   ID_CPA45 = (SELECT ID_CPA45 FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @concepto)
+      WHEN NOT MATCHED THEN
+        INSERT (COD_PROVEE, COD_CONCEPT, ID_CPA45, ID_CPA01)
+        VALUES (
+          @prov, @concepto,
+          (SELECT ID_CPA45 FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @concepto),
+          (SELECT ID_CPA01 FROM CPA01 WHERE COD_PROVEE = @prov)
+        );
+    `)
+}
+
+/**
  * El concepto al que van TODAS las liquidaciones de tarjeta: 406,
  * "COMISIONES TARJETAS DE CREDITO" (decision del usuario, 2026-08-16).
  *

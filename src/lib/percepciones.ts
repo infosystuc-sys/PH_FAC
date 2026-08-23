@@ -68,6 +68,7 @@ export function codigosVarios<T extends { codigo: number }>(codigosImpuesto: T[]
 export function resolverPercepciones(
   valores: Record<string, string | null | undefined>,
   tipoFactura?: string | null,
+  aprendidos?: Record<string, string>,
 ): LineaPercepcion[] {
   const lineas: LineaPercepcion[] = []
 
@@ -81,7 +82,7 @@ export function resolverPercepciones(
     const correccion = (valores[`codpercep${slot}`] ?? '').trim()
     const codigo = correccion
       ? (JURISDICCIONES_IIBB.find((j) => j.codigo === correccion) ?? null)
-      : resolverIibbPorTipo(texto, tipoFactura ?? valores.tipoFactura)
+      : resolverIibbPorTipo(texto, tipoFactura ?? valores.tipoFactura, aprendidos)
     lineas.push({
       slot,
       texto,

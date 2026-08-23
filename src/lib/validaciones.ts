@@ -53,14 +53,40 @@ export function validarDuplicado(hayDuplicado: boolean, referencia: string | nul
 
 const TOLERANCIA_CENTAVOS = 0.01
 
-export function validarTotales(valores: Record<string, string | null | undefined>): ResultadoValidacion {
+/**
+ * En una liquidación de tarjeta el "total" impreso en el resumen sale por
+ * diferencia -- arrastra saldo anterior, pagos y otros movimientos que la
+ * app no captura -- así que no sirve como total del comprobante. Se
+ * registra siempre el subtotal (el monto del concepto) más IVA más
+ * impuestos, calculado por `totalImputado`. Esta validación nunca compara
+ * contra `valores.total` en tarjeta: lo dice en vez de advertir sobre una
+ * diferencia esperada. Mismo criterio y misma función usa
+ * `registrarComprobanteEn` (`src/server/tango/comprobantes.ts`) y
+ * `previsualizarAsientoEn` (`src/server/tango/asiento.ts`) para el importe
+ * que de verdad se graba, así que este mensaje nunca puede divergir de lo
+ * que termina en Tango.
+ */
+export function validarTotales(
+  valores: Record<string, string | null | undefined>,
+  tipoFactura?: string | null,
+): ResultadoValidacion {
   const imputado = totalImputado(valores)
+  const fmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  if (tipoFactura === 'tarjeta') {
+    return {
+      estado: 'ok',
+      mensaje:
+        `Total del comprobante: $ ${fmt.format(imputado)} (subtotal + IVA + impuestos -- ` +
+        `no el importe leído del resumen, que sale por diferencia).`,
+    }
+  }
+
   const total = parsearImporte(valores.total)
   const diferencia = Math.abs(imputado - total)
   if (diferencia <= TOLERANCIA_CENTAVOS) {
     return { estado: 'ok', mensaje: 'Los importes cierran contra el total.' }
   }
-  const fmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return {
     estado: 'advertencia',
     mensaje: `La suma de los importes difiere en $ ${fmt.format(diferencia)} del total leído.`,

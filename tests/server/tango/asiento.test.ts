@@ -1,9 +1,16 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { cargarModeloAsiento, cuentaDelConcepto, cuentasDeArticulos, previsualizarAsientoEn } from '@/server/tango/asiento'
+import {
+  cargarModeloAsiento,
+  cuentaDelConcepto,
+  cuentasDeArticulos,
+  previsualizarAsientoEn,
+  escribirAsientoEn,
+} from '@/server/tango/asiento'
 import { cerrarPool } from '@/server/db/pool'
 import { conRollback } from '@/server/db/tx'
 import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
+import { terminalActual } from '@/lib/usuario'
 
 afterAll(async () => {
   await cerrarPool()
@@ -52,7 +59,7 @@ describe('cargarModeloAsiento', () => {
 describe('cuentaDelConcepto', () => {
   it('resuelve la cuenta real del concepto 712 (TELEFONOS LOCALES)', async () => {
     const cuenta = await cuentaDelConcepto('712')
-    expect(cuenta).toEqual({ codCuenta: '51460', descCuenta: 'TELEFONOS LOCALES' })
+    expect(cuenta).toEqual({ idCuenta: 382, codCuenta: '51460', descCuenta: 'TELEFONOS LOCALES' })
   })
 
   it('devuelve null para un concepto que no existe', async () => {
@@ -64,7 +71,7 @@ describe('cuentaDelConcepto', () => {
 describe('cuentasDeArticulos', () => {
   it('resuelve la cuenta de compras real de un articulo conocido', async () => {
     const cuentas = await cuentasDeArticulos(['106817'])
-    expect(cuentas.get('106817')).toEqual({ codCuenta: '14003', descCuenta: 'COMPRAS - MERCADERIA' })
+    expect(cuentas.get('106817')).toEqual({ idCuenta: 120, codCuenta: '14003', descCuenta: 'COMPRAS - MERCADERIA' })
   })
 
   it('no incluye un codigo que no tiene ARTICULO_CUENTA', async () => {
@@ -219,6 +226,28 @@ describe('previsualizarAsientoEn', () => {
     })
   })
 
+  it('liquidacion de tarjeta: Total del comprobante es subtotal + IVA, no el importe leido', async () => {
+    // El total impreso de un resumen de tarjeta sale por diferencia (saldo
+    // anterior, pagos, intereses que la app no captura) -- decision del
+    // usuario, 2026-08-21. Se fuerza un "total" leido bien distinto para
+    // probar que se ignora.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'tarjeta')
+      await guardarCampoEn(tx, id, 'neto', '10000,00')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '2100,00')
+      await guardarCampoEn(tx, id, 'total', '999999,99')
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      const total = asiento.lineas.find((l) => l.codCuenta === '20002')
+      expect(total).toMatchObject({ debe: 0, haber: 12100 })
+      expect(asiento.totalHaber).toBe(12100)
+      expect(asiento.balanceado).toBe(true)
+    })
+  })
+
   it('cuenta las lineas omitidas por falta de codigo, sin bloquear', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
@@ -232,6 +261,110 @@ describe('previsualizarAsientoEn', () => {
 
       expect(asiento.lineasOmitidas).toBe(1)
       expect(asiento.balanceado).toBe(false)
+    })
+  })
+})
+
+describe('escribirAsientoEn', () => {
+  /** Un NCOMP_IN_C que no puede colisionar con ninguno real. */
+  function ncompFalso(offset: number): number {
+    return 900000000 + (Date.now() % 100000) + offset
+  }
+
+  it('arma el encabezado y los renglones en las tablas de staging, ya contabilizado', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+      await guardarCampoEn(tx, id, 'neto', '10000,00')
+      await guardarCampoEn(tx, id, 'total', '12100,00')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '2100,00')
+
+      const ncompInC = ncompFalso(0)
+      const fechaFactura = new Date('2026-06-19T00:00:00Z')
+      await escribirAsientoEn(tx, id, ncompInC, fechaFactura)
+
+      const header = await tx.request().input('n', ncompInC).query(`
+        SELECT * FROM ASIENTO_COMPROBANTE_CP WHERE NCOMP_IN_C = @n
+      `)
+      expect(header.recordset).toHaveLength(1)
+      // Contabilizado al grabar -- decision del usuario, 2026-08-22. La
+      // transferencia a Contabilidad ("pasar a contabilidad") sigue siendo
+      // un proceso propio de Tango que corre el usuario desde el ERP.
+      expect(header.recordset[0].ASIENTO_ANULACION).toBe('N')
+      expect(header.recordset[0].CONTABILIZADO).toBe('S')
+      expect(header.recordset[0].USUARIO_CONTABILIZACION).toBe('PHF_WEB')
+      expect(new Date(header.recordset[0].FECHA_CONTABILIZACION).toISOString()).toBe(fechaFactura.toISOString())
+      expect(header.recordset[0].TERMINAL_CONTABILIZACION).toBe(terminalActual())
+      expect(header.recordset[0].TRANSFERIDO_CN).toBe('N')
+
+      const idHeader = header.recordset[0].ID_ASIENTO_COMPROBANTE_CP
+      const lineas = await tx.request().input('id', idHeader).query(`
+        SELECT ac.NRO_RENGLON_ASIENTO_CP, ac.D_H, ac.IMPORTE_RENGLON_BASE_CP, ac.IMPORTE_RENGLON_ALTER_CP,
+               ac.DESC_LEYENDA, ac.EDITA_CUENTA, c.COD_CUENTA
+        FROM ASIENTO_CP ac JOIN CUENTA c ON c.ID_CUENTA = ac.ID_CUENTA
+        WHERE ac.ID_ASIENTO_COMPROBANTE_CP = @id ORDER BY ac.NRO_RENGLON_ASIENTO_CP
+      `)
+      expect(lineas.recordset).toHaveLength(3) // Subtotal (concepto), IVA, Total.
+      expect(lineas.recordset.map((l: { NRO_RENGLON_ASIENTO_CP: number }) => l.NRO_RENGLON_ASIENTO_CP)).toEqual([1, 2, 3])
+
+      const filas = lineas.recordset as {
+        D_H: string; IMPORTE_RENGLON_BASE_CP: string; IMPORTE_RENGLON_ALTER_CP: string
+        EDITA_CUENTA: string; COD_CUENTA: string
+      }[]
+
+      const sb = filas.find((l) => l.COD_CUENTA === '51460') // TELEFONOS LOCALES, concepto de 010151.
+      expect(sb).toMatchObject({ D_H: 'D', EDITA_CUENTA: 'S' })
+      expect(Number(sb!.IMPORTE_RENGLON_BASE_CP)).toBe(10000)
+      // Sin ajuste por inflacion: se graba igual al importe base -- decision
+      // del usuario, 2026-08-22.
+      expect(Number(sb!.IMPORTE_RENGLON_ALTER_CP)).toBe(10000)
+
+      const iva = filas.find((l) => l.COD_CUENTA === '13405')
+      expect(iva).toMatchObject({ D_H: 'D', EDITA_CUENTA: 'N' })
+      expect(Number(iva!.IMPORTE_RENGLON_BASE_CP)).toBe(2100)
+
+      const total = filas.find((l) => l.COD_CUENTA === '20002')
+      expect(total).toMatchObject({ D_H: 'H', EDITA_CUENTA: 'S' })
+      expect(Number(total!.IMPORTE_RENGLON_BASE_CP)).toBe(12100)
+
+      const totalDebe = filas.filter((l) => l.D_H === 'D').reduce((a, l) => a + Number(l.IMPORTE_RENGLON_BASE_CP), 0)
+      const totalHaber = filas.filter((l) => l.D_H === 'H').reduce((a, l) => a + Number(l.IMPORTE_RENGLON_BASE_CP), 0)
+      expect(totalDebe).toBe(totalHaber)
+    })
+  })
+
+  it('no arma nada si el asiento no cierra', async () => {
+    // Mismo fixture que "cuenta las lineas omitidas por falta de codigo":
+    // una percepcion sin codigo deja el asiento desbalanceado.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'neto', '1000,00')
+      await guardarCampoEn(tx, id, 'total', '1050,00')
+      await guardarCampoEn(tx, id, 'percep1', 'Jurisdiccion inventada que no existe')
+      await guardarCampoEn(tx, id, 'imppercep1', '50,00')
+
+      const ncompInC = ncompFalso(1)
+      await expect(escribirAsientoEn(tx, id, ncompInC, new Date('2026-06-19T00:00:00Z'))).rejects.toThrow(/no cierra/)
+
+      const header = await tx.request().input('n', ncompInC).query(`
+        SELECT COUNT(*) AS n FROM ASIENTO_COMPROBANTE_CP WHERE NCOMP_IN_C = @n
+      `)
+      expect(Number(header.recordset[0].n)).toBe(0)
+    })
+  })
+
+  it('no escribe nada si el comprobante no tiene ninguna linea que armar', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      const ncompInC = ncompFalso(2)
+      await escribirAsientoEn(tx, id, ncompInC, new Date('2026-06-19T00:00:00Z'))
+
+      const header = await tx.request().input('n', ncompInC).query(`
+        SELECT COUNT(*) AS n FROM ASIENTO_COMPROBANTE_CP WHERE NCOMP_IN_C = @n
+      `)
+      expect(Number(header.recordset[0].n)).toBe(0)
     })
   })
 })

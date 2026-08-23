@@ -66,6 +66,8 @@ export function Pantalla({
   codigosImpuesto,
   alicuotasIva,
   concepto,
+  aprendidosIva,
+  aprendidosPercepcion,
   remitosPendientes,
   codProvee,
   motivoObservacion,
@@ -88,6 +90,13 @@ export function Pantalla({
   codigosImpuesto: CodigoImpuesto[]
   alicuotasIva: AlicuotaTango[]
   concepto: { codConcepto: string; descripcion: string } | null
+  /**
+   * Lo que este proveedor ya le enseñó a la app para IVA e IIBB (ver
+   * aprendizajeImpuestos.ts), para que las celdas "En Tango" propongan en
+   * vivo el mismo código que va a resolver el registro real.
+   */
+  aprendidosIva: Record<string, string>
+  aprendidosPercepcion: Record<string, string>
   /**
    * Los remitos con saldo del proveedor. Los usa la tarjeta de renglones
    * para ofrecer, en cada uno, a qué renglón de remito reapuntarlo.
@@ -165,7 +174,14 @@ export function Pantalla({
           hayCorrecciones={hayCorrecciones}
         />
         <PanelValidaciones comprobanteId={comprobanteId} validaciones={validaciones} />
-        {listoParaRegistrar && <ListoParaRegistrar resultado={listoParaRegistrar} />}
+        {listoParaRegistrar && (
+          <ListoParaRegistrar
+            comprobanteId={comprobanteId}
+            resultado={listoParaRegistrar}
+            tipoFactura={iniciales.tipoFactura?.valor || null}
+            codProvee={codProvee}
+          />
+        )}
         <Formulario
           comprobanteId={comprobanteId}
           iniciales={iniciales}
@@ -175,6 +191,8 @@ export function Pantalla({
           codigosImpuesto={codigosImpuesto}
           alicuotasIva={alicuotasIva}
           concepto={concepto}
+          aprendidosIva={aprendidosIva}
+          aprendidosPercepcion={aprendidosPercepcion}
         />
         <Renglones
           comprobanteId={comprobanteId}

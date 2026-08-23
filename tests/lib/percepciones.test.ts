@@ -64,6 +64,16 @@ describe('resolverPercepciones', () => {
     expect(r[0].codigo).toBeNull()
   })
 
+  it('resuelve con lo aprendido una jurisdiccion que no esta en la norma', () => {
+    const r = resolverPercepciones(
+      { percep1: 'Córdoba', imppercep1: '500,00' },
+      null,
+      { cordoba: '62' },
+    )
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].codigo?.codigo).toBe('62')
+  })
+
   it('un importe sin jurisdiccion tambien queda sin-codigo, no se ignora', () => {
     // Si se ignorara, el importe contaria en el total imputado pero no se
     // grabaria en CPA18: el comprobante entraria a Tango por menos.

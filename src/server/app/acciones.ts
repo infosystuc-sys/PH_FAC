@@ -23,10 +23,18 @@ import {
   asociarArticuloProveedor,
   type ArticuloTango,
 } from '@/server/tango/articulos'
+import {
+  listarConceptos,
+  asignarConceptoProveedor,
+  type ConceptoProveedor,
+} from '@/server/tango/conceptos'
 import { renglonesDelRemitoInterno } from '@/server/tango/remitos'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
+import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
+import { aprenderImpuesto, type TipoAprendizaje } from './aprendizajeImpuestos'
 
 export type { AsientoPreview, LineaAsiento } from '@/server/tango/asiento'
+export type { CuotasPreview, CuotaPreview } from '@/server/tango/cuotas'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -355,6 +363,69 @@ export async function asociarCodigoProveedor(
 }
 
 /**
+ * El operador corrige a mano a qué código de Tango va un porcentaje de IVA
+ * o una jurisdicción de IIBB que no se pudo resolver solo, y esa
+ * corrección se aprende para este proveedor (`PHF_ALICUOTA_PROVEEDOR`): la
+ * próxima factura con el mismo texto ya no va a necesitar la corrección de
+ * nuevo. `descripcion` es el dato crudo tal como lo leyó la IA (el
+ * porcentaje o la jurisdicción) -- `aprenderImpuesto` lo normaliza antes
+ * de guardarlo.
+ *
+ * A propósito sin `revalidatePath`: se dispara en cada corrección, igual
+ * que `guardarCampo`, y la celda ya refleja el código elegido con el
+ * estado local del formulario -- forzar un refresh acá interrumpiría al
+ * operador si está editando otro campo al mismo tiempo.
+ */
+export async function aprenderImpuestoTango(
+  comprobanteId: number,
+  codProvee: string,
+  tipo: TipoAprendizaje,
+  descripcion: string,
+  codTango: string,
+): Promise<void> {
+  await aprenderImpuesto(codProvee, tipo, descripcion, codTango)
+
+  const etiqueta = tipo === 'iva' ? `IVA ${descripcion}%` : `IIBB "${descripcion}"`
+  await conTransaccion((tx) =>
+    auditarEn(tx, comprobanteId, `Impuesto aprendido para el proveedor: ${etiqueta} → código ${codTango}`),
+  )
+}
+
+/** Todo el maestro de conceptos, para que el operador elija uno a mano. */
+export async function listarConceptosTango(): Promise<ConceptoProveedor[]> {
+  return listarConceptos()
+}
+
+/**
+ * El operador asocia a mano el concepto de un proveedor que no tenía
+ * ninguno, para no tener que salir a Tango a cargarlo. Mismo criterio que
+ * `asociarCodigoProveedor`: es una escritura sobre dato maestro del ERP, no
+ * sobre el comprobante, así que va explícita y la decide el operador.
+ *
+ * No toca el estado del comprobante: si estaba en observación por falta de
+ * concepto, sigue así hasta que el operador confirme -- mismo criterio que
+ * `elegirProveedor`, que tampoco saca de observación por su cuenta.
+ */
+export async function asignarConcepto(
+  comprobanteId: number,
+  codProvee: string,
+  codConcepto: string,
+  descripcion: string,
+): Promise<void> {
+  await asignarConceptoProveedor(codProvee, codConcepto)
+
+  await conTransaccion((tx) =>
+    auditarEn(
+      tx,
+      comprobanteId,
+      `Concepto asociado al proveedor en Tango: ${codConcepto} — ${descripcion}`,
+    ),
+  )
+
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+}
+
+/**
  * El operador corrige a mano el artículo de un renglón, porque el
  * emparejamiento automático contra el remito se equivocó.
  *
@@ -602,4 +673,13 @@ export async function actualizarCantidadesRemito(comprobanteId: number): Promise
  */
 export async function verAsiento(comprobanteId: number): Promise<AsientoPreview> {
   return previsualizarAsiento(comprobanteId)
+}
+
+/**
+ * Vista previa de solo lectura de las cuotas de la cuenta corriente
+ * (CPA54) que se grabarian segun la condicion de compra. Mismo criterio
+ * que verAsiento: no escribe nada.
+ */
+export async function verCuotas(comprobanteId: number): Promise<CuotasPreview> {
+  return previsualizarCuotas(comprobanteId)
 }

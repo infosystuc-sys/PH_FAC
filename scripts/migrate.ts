@@ -177,6 +177,42 @@ const DEFINICIONES: Definicion[] = [
     `,
     indices: [{ nombre: 'IX_PHF_AUD_COMP', ddl: 'CREATE INDEX IX_PHF_AUD_COMP ON PHF_AUDITORIA (COMPROBANTE_ID, FECHA);' }],
   },
+  {
+    tabla: 'PHF_ALICUOTA_PROVEEDOR',
+    ddlTabla: `
+      CREATE TABLE PHF_ALICUOTA_PROVEEDOR (
+        ID              INT IDENTITY(1,1) NOT NULL,
+        COD_PROVEE      VARCHAR(20)    NOT NULL,
+        -- 'iva' | 'percepcion'. Sin CHECK: agregar un tercer tipo (por
+        -- ejemplo impuestos varios, cuando la IA capture su texto) no debe
+        -- pedir una migracion aparte.
+        TIPO            VARCHAR(20)    NOT NULL,
+        -- Como se identifica el impuesto en la factura de este proveedor,
+        -- ya normalizado (ver aprendizajeImpuestos.ts): en 'iva' es el
+        -- porcentaje ("21", "10.5"); en 'percepcion' es la jurisdiccion sin
+        -- acentos ni mayusculas ("tucuman"). Se guarda normalizado -- no la
+        -- grafia exacta de esa factura puntual -- para que dos facturas del
+        -- mismo proveedor con distinto casing/acentuacion sigan pegando en
+        -- la misma fila.
+        DESCRIPCION     NVARCHAR(200)  NOT NULL,
+        COD_TANGO       VARCHAR(10)    NOT NULL,
+        FECHA_ALTA      DATETIME2      NOT NULL CONSTRAINT DF_PHF_ALIPROV_ALTA DEFAULT SYSDATETIME(),
+        FECHA_MODIF     DATETIME2      NULL,
+        USUARIO         NVARCHAR(60)   NOT NULL,
+        CONSTRAINT PK_PHF_ALICUOTA_PROVEEDOR PRIMARY KEY (ID),
+        -- Un proveedor no puede tener dos codigos distintos aprendidos para
+        -- el mismo texto: la ultima correccion del operador reemplaza a la
+        -- anterior (MERGE en aprenderImpuestoEn), no se acumulan filas.
+        CONSTRAINT UQ_PHF_ALIPROV UNIQUE (COD_PROVEE, TIPO, DESCRIPCION)
+      );
+    `,
+    indices: [
+      {
+        nombre: 'IX_PHF_ALIPROV_LOOKUP',
+        ddl: 'CREATE INDEX IX_PHF_ALIPROV_LOOKUP ON PHF_ALICUOTA_PROVEEDOR (COD_PROVEE, TIPO);',
+      },
+    ],
+  },
 ]
 
 /**

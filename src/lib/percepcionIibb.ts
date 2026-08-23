@@ -69,8 +69,13 @@ export const JURISDICCIONES_IIBB: CodigoIibb[] = [
   },
 ]
 
-/** Sin acentos y en minúsculas, para comparar lo del PDF contra los alias. */
-function normalizar(texto: string): string {
+/**
+ * Sin acentos y en minúsculas, para comparar lo del PDF contra los alias.
+ * Exportada porque `aprendizajeImpuestos.ts` la usa para guardar la
+ * jurisdicción con la misma normalización con la que después se busca --
+ * si no coincidieran, una fila aprendida nunca haría match.
+ */
+export function normalizar(texto: string): string {
   return texto
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -85,8 +90,18 @@ function normalizar(texto: string): string {
  * ese orden, un "Ret. IIBB SIRCREB bancaria" caería en el 64. El orden
  * del array ya lo garantiza (el 66 va antes que el 64), y este comentario
  * está para que nadie lo reordene por prolijidad.
+ *
+ * `aprendidos` es lo que un proveedor puntual ya le enseñó a la app
+ * (`PHF_ALICUOTA_PROVEEDOR`, vía `aprendizajeImpuestos.ts`): un texto que
+ * la lista fija de jurisdicciones no reconoce, corregido una vez a mano.
+ * Se consulta último, nunca antes que la lista fija -- una jurisdicción
+ * real (Tucumán, CABA...) siempre tiene que resolver por su cuenta, sin
+ * depender de que alguna vez se haya aprendido algo para este proveedor.
  */
-export function resolverPercepcionIibb(texto: string | null | undefined): CodigoIibb | null {
+export function resolverPercepcionIibb(
+  texto: string | null | undefined,
+  aprendidos?: Record<string, string>,
+): CodigoIibb | null {
   const t = normalizar(texto ?? '')
   if (t === '') return null
 
@@ -95,7 +110,11 @@ export function resolverPercepcionIibb(texto: string | null | undefined): Codigo
   const porCodigo = JURISDICCIONES_IIBB.find((j) => j.codigo === t)
   if (porCodigo) return porCodigo
 
-  return JURISDICCIONES_IIBB.find((j) => j.alias.some((a) => t.includes(a))) ?? null
+  const porAlias = JURISDICCIONES_IIBB.find((j) => j.alias.some((a) => t.includes(a)))
+  if (porAlias) return porAlias
+
+  const aprendido = aprendidos?.[t]
+  return aprendido ? (JURISDICCIONES_IIBB.find((j) => j.codigo === aprendido) ?? null) : null
 }
 
 /**
@@ -122,8 +141,9 @@ const COD_IIBB_SIRCREB = '66'
 export function resolverIibbPorTipo(
   texto: string,
   tipoFactura: string | null | undefined,
+  aprendidos?: Record<string, string>,
 ): CodigoIibb | null {
-  const porTexto = resolverPercepcionIibb(texto)
+  const porTexto = resolverPercepcionIibb(texto, aprendidos)
   if (tipoFactura !== 'tarjeta') return porTexto
 
   // SIRCREB se reconoce por el texto y se queda con el suyo.

@@ -79,6 +79,17 @@ describe('validarTotales', () => {
     expect(r.estado).toBe('advertencia')
     expect(r.mensaje).toContain('12.480,00')
   })
+
+  it('en tarjeta siempre ok con el total imputado, ignora el importe leido', () => {
+    // El total impreso de un resumen de tarjeta sale por diferencia y no es
+    // confiable -- el chequeo no lo compara, muestra directamente lo que se
+    // va a grabar.
+    const v = { neto: '10.000,00', porciva1: '21', impiva1: '2.100,00', total: '999.999,99' }
+    const r = validarTotales(v, 'tarjeta')
+    expect(r.estado).toBe('ok')
+    expect(r.mensaje).toContain('12.100,00')
+    expect(r.mensaje).not.toContain('999.999,99')
+  })
 })
 
 describe('validarCae', () => {

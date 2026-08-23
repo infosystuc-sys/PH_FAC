@@ -3,28 +3,32 @@ import { getPool } from '../db/pool'
 import { obtenerDetalleEn, type RenglonGuardado } from '@/server/app/detalle'
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
-import { parsearImporte } from '@/lib/formato'
+import { parsearImporte, totalImputado } from '@/lib/formato'
 import { listarAlicuotasIva, listarCodigosImpuesto } from './impuestos'
 import { conceptoDelComprobante } from './conceptos'
+import { cargarAprendidosEn } from '@/server/app/aprendizajeImpuestos'
+import { terminalActual } from '@/lib/usuario'
 
 /**
- * Simula, de solo lectura, el asiento contable que Tango generaria al
- * registrar un comprobante -- sin escribir nada, ni en PHF_* ni en el ERP.
- * El asiento real lo genera un proceso aparte de Tango cuando contabiliza
- * (`ASIENTO_COMPROBANTE_CP`, fuera de alcance -- ver el spec original §2);
- * esto es una vista previa para el operador, calculada desde las tablas de
- * configuracion del motor de asientos.
+ * Simula el asiento contable que Tango generaria al registrar un
+ * comprobante, y lo deja armado en las tablas de staging que el propio
+ * Tango lee para "pasar a contabilidad" (`escribirAsientoEn`, mas abajo).
+ * No contabiliza: eso sigue siendo un proceso propio de Tango que corre el
+ * usuario dentro del ERP -- esta app arma el asiento, no lo postea.
  *
- * Excepcion documentada en CLAUDE.md (2026-08-20/21): TIPO_CONTABLE, CUENTA
- * y ASIENTO_MODELO_CP no figuran en la documentacion de Axoft para Compras
- * ni Stock, pero son tablas de configuracion real -- no espejos CTA* -- y
- * estan autorizadas de solo lectura.
+ * Excepcion documentada en CLAUDE.md: TIPO_CONTABLE, CUENTA,
+ * ASIENTO_MODELO_CP, RENGLON_MODELO_CP y CONCEPTO_CP (2026-08-20/21, solo
+ * lectura) mas ASIENTO_COMPROBANTE_CP y ASIENTO_CP (2026-08-22, lectura y
+ * escritura) no figuran en la documentacion de Axoft para Compras ni
+ * Stock, pero son tablas reales del motor contable -- no espejos CTA* --
+ * y estan autorizadas por decision explicita del usuario.
  */
 
 /** El unico modelo que pidio el usuario: "FACTURAS / NOTAS DE DEBITO". */
 const ID_ASIENTO_MODELO_CP = 1
 
 export type RenglonModelo = {
+  idCuenta: number
   codCuenta: string
   descCuenta: string
   leyenda: string
@@ -48,6 +52,7 @@ export async function cargarModeloAsiento(): Promise<Map<string, RenglonModelo>>
     .query<Record<string, unknown>>(`
       SELECT
         t.COD_TIPO_CONTABLE                                     AS codTipoContable,
+        c.ID_CUENTA                                              AS idCuenta,
         c.COD_CUENTA                                             AS codCuenta,
         LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,'')))                   AS descCuenta,
         LTRIM(RTRIM(ISNULL(r.DESC_LEYENDA_RENGLON, t.DESC_TIPO_CONTABLE))) AS leyenda,
@@ -62,6 +67,7 @@ export async function cargarModeloAsiento(): Promise<Map<string, RenglonModelo>>
   const modelo = new Map<string, RenglonModelo>()
   for (const f of r.recordset) {
     modelo.set(String(f.codTipoContable).trim(), {
+      idCuenta: Number(f.idCuenta),
       codCuenta: String(f.codCuenta).trim(),
       descCuenta: String(f.descCuenta),
       leyenda: String(f.leyenda),
@@ -72,7 +78,7 @@ export async function cargarModeloAsiento(): Promise<Map<string, RenglonModelo>>
   return modelo
 }
 
-export type CuentaContable = { codCuenta: string; descCuenta: string }
+export type CuentaContable = { idCuenta: number; codCuenta: string; descCuenta: string }
 
 /**
  * La cuenta que reemplaza a Subtotal gravado/exento cuando el comprobante
@@ -90,7 +96,8 @@ export async function cuentaDelConcepto(codConcepto: string): Promise<CuentaCont
     .request()
     .input('cod', sql.VarChar(3), cod)
     .query<Record<string, unknown>>(`
-      SELECT c.COD_CUENTA AS codCuenta, LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
+      SELECT c.ID_CUENTA AS idCuenta, c.COD_CUENTA AS codCuenta,
+             LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
       FROM CPA45 cp45
       JOIN CONCEPTO_CP cc ON cc.ID_CPA45 = cp45.ID_CPA45
       JOIN CUENTA c ON c.ID_CUENTA = cc.ID_CUENTA
@@ -99,7 +106,7 @@ export async function cuentaDelConcepto(codConcepto: string): Promise<CuentaCont
 
   if (r.recordset.length === 0) return null
   const f = r.recordset[0]
-  return { codCuenta: String(f.codCuenta).trim(), descCuenta: String(f.descCuenta) }
+  return { idCuenta: Number(f.idCuenta), codCuenta: String(f.codCuenta).trim(), descCuenta: String(f.descCuenta) }
 }
 
 /**
@@ -118,14 +125,19 @@ export async function cuentasDeArticulos(codigos: string[]): Promise<Map<string,
       .request()
       .input('cod', sql.VarChar(15), codigo)
       .query<Record<string, unknown>>(`
-        SELECT c.COD_CUENTA AS codCuenta, LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
+        SELECT c.ID_CUENTA AS idCuenta, c.COD_CUENTA AS codCuenta,
+               LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
         FROM ARTICULO_CUENTA ac
         JOIN CUENTA c ON c.ID_CUENTA = ac.ID_CUENTA_COMPRAS
         WHERE LTRIM(RTRIM(ac.COD_STA11)) = @cod
       `)
     if (r.recordset.length > 0) {
       const f = r.recordset[0]
-      mapa.set(codigo, { codCuenta: String(f.codCuenta).trim(), descCuenta: String(f.descCuenta) })
+      mapa.set(codigo, {
+        idCuenta: Number(f.idCuenta),
+        codCuenta: String(f.codCuenta).trim(),
+        descCuenta: String(f.descCuenta),
+      })
     }
   }
   return mapa
@@ -134,11 +146,16 @@ export async function cuentasDeArticulos(codigos: string[]): Promise<Map<string,
 export type Ejecutor = { request(): sql.Request }
 
 export type LineaAsiento = {
+  idCuenta: number
   codCuenta: string
   descCuenta: string
   leyenda: string
   debe: number
   haber: number
+  /** Si la cuenta de esta linea admite reemplazo (por concepto o articulo)
+   *  en el modelo de Tango -- lo mismo que graba ASIENTO_CP.EDITA_CUENTA,
+   *  no si en este comprobante puntual se reemplazo de verdad. */
+  editaCuenta: boolean
 }
 
 export type AsientoPreview = {
@@ -174,7 +191,9 @@ async function agruparRenglonesPorCuenta(
     ),
   ]
   const cuentasPorArticulo = await cuentasDeArticulos(codigos)
-  const fallback: CuentaContable | null = sb ? { codCuenta: sb.codCuenta, descCuenta: sb.descCuenta } : null
+  const fallback: CuentaContable | null = sb
+    ? { idCuenta: sb.idCuenta, codCuenta: sb.codCuenta, descCuenta: sb.descCuenta }
+    : null
 
   const porCuenta = new Map<string, { cuenta: CuentaContable; importe: number }>()
   for (const r of renglones) {
@@ -198,8 +217,9 @@ async function agruparRenglonesPorCuenta(
  * modelo, sin importar lo que haya resuelto el concepto o los articulos.
  */
 function cuentaFinal(renglon: RenglonModelo, override: CuentaContable | null): CuentaContable {
-  if (!renglon.reemplazaCuenta) return { codCuenta: renglon.codCuenta, descCuenta: renglon.descCuenta }
-  return override ?? { codCuenta: renglon.codCuenta, descCuenta: renglon.descCuenta }
+  const propia = { idCuenta: renglon.idCuenta, codCuenta: renglon.codCuenta, descCuenta: renglon.descCuenta }
+  if (!renglon.reemplazaCuenta) return propia
+  return override ?? propia
 }
 
 /**
@@ -219,6 +239,19 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
 
   const tipoFactura = valores.tipoFactura ?? null
   const codProvee = (valores.codprovee ?? '').trim() || null
+
+  // Lo que este proveedor ya le enseñó a la app para IVA e IIBB -- mismo
+  // criterio que "listo para registrar" y el registro real, para que la
+  // vista previa nunca resuelva distinto.
+  //
+  // Secuencial y no Promise.all: `e` puede ser una sql.Transaction (lo es
+  // acá, dentro de conRollback), y mssql no soporta dos pedidos en vuelo
+  // sobre la misma transacción -- lanzarlos en paralelo cuelga la conexión
+  // en vez de fallar, y arrastra a cualquier otra sesión que espere un
+  // lock de esta misma transacción. Se reprodujo en vivo corriendo la
+  // suite de tests.
+  const aprendidosIva = codProvee ? await cargarAprendidosEn(e, codProvee, 'iva') : {}
+  const aprendidosPercep = codProvee ? await cargarAprendidosEn(e, codProvee, 'percepcion') : {}
 
   const lineas: LineaAsiento[] = []
 
@@ -260,16 +293,40 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
           ? Math.round((neto - acumulado) * 100) / 100
           : Math.round((neto * (g.importe / sumaGrupos)) * 100) / 100
         acumulado = Math.round((acumulado + parte) * 100) / 100
-        lineas.push({ codCuenta: g.cuenta.codCuenta, descCuenta: g.cuenta.descCuenta, leyenda: sb.leyenda, debe: parte, haber: 0 })
+        lineas.push({
+          idCuenta: g.cuenta.idCuenta,
+          codCuenta: g.cuenta.codCuenta,
+          descCuenta: g.cuenta.descCuenta,
+          leyenda: sb.leyenda,
+          debe: parte,
+          haber: 0,
+          editaCuenta: sb.reemplazaCuenta,
+        })
       })
     } else {
       const cuenta = cuentaFinal(sb, cuentaSubtotal)
-      lineas.push({ codCuenta: cuenta.codCuenta, descCuenta: cuenta.descCuenta, leyenda: sb.leyenda, debe: neto, haber: 0 })
+      lineas.push({
+        idCuenta: cuenta.idCuenta,
+        codCuenta: cuenta.codCuenta,
+        descCuenta: cuenta.descCuenta,
+        leyenda: sb.leyenda,
+        debe: neto,
+        haber: 0,
+        editaCuenta: sb.reemplazaCuenta,
+      })
     }
   }
   if (ex && exento > 0) {
     const cuenta = cuentaFinal(ex, cuentaSubtotal)
-    lineas.push({ codCuenta: cuenta.codCuenta, descCuenta: cuenta.descCuenta, leyenda: ex.leyenda, debe: exento, haber: 0 })
+    lineas.push({
+      idCuenta: cuenta.idCuenta,
+      codCuenta: cuenta.codCuenta,
+      descCuenta: cuenta.descCuenta,
+      leyenda: ex.leyenda,
+      debe: exento,
+      haber: 0,
+      editaCuenta: ex.reemplazaCuenta,
+    })
   }
 
   // --- IVA, percepciones IIBB, impuestos varios: cuenta fija del modelo. ---
@@ -277,7 +334,7 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
   const genericas = new Map<string, number>()
   let lineasOmitidas = 0
 
-  for (const l of resolverAlicuotas(valores, alicuotas)) {
+  for (const l of resolverAlicuotas(valores, alicuotas, aprendidosIva)) {
     if (l.estado === 'registra' && l.alicuota) {
       const cod = String(l.alicuota.codigo)
       genericas.set(cod, Math.round(((genericas.get(cod) ?? 0) + l.importe) * 100) / 100)
@@ -285,7 +342,7 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
       lineasOmitidas += 1
     }
   }
-  for (const l of resolverPercepciones(valores, tipoFactura)) {
+  for (const l of resolverPercepciones(valores, tipoFactura, aprendidosPercep)) {
     if (l.estado === 'registra' && l.codigo) {
       genericas.set(l.codigo.codigo, Math.round(((genericas.get(l.codigo.codigo) ?? 0) + l.importe) * 100) / 100)
     } else if (l.estado === 'sin-codigo') {
@@ -304,19 +361,32 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
     const renglon = modelo.get(codTipo)
     if (!renglon || importe <= 0) continue
     lineas.push({
+      idCuenta: renglon.idCuenta,
       codCuenta: renglon.codCuenta,
       descCuenta: renglon.descCuenta,
       leyenda: renglon.leyenda,
       debe: renglon.dh === 'D' ? importe : 0,
       haber: renglon.dh === 'H' ? importe : 0,
+      editaCuenta: renglon.reemplazaCuenta,
     })
   }
 
   // --- Total del comprobante (TO): siempre Haber, cuenta del modelo. ---
   const to = modelo.get('TO')
-  const total = parsearImporte(valores.total)
+  // En tarjeta el total impreso sale por diferencia y no es confiable --
+  // mismo criterio y misma funcion que registrarComprobanteEn, para que la
+  // vista previa nunca pueda mostrar un total distinto del que se graba.
+  const total = tipoFactura === 'tarjeta' ? totalImputado(valores) : parsearImporte(valores.total)
   if (to && total > 0) {
-    lineas.push({ codCuenta: to.codCuenta, descCuenta: to.descCuenta, leyenda: to.leyenda, debe: 0, haber: total })
+    lineas.push({
+      idCuenta: to.idCuenta,
+      codCuenta: to.codCuenta,
+      descCuenta: to.descCuenta,
+      leyenda: to.leyenda,
+      debe: 0,
+      haber: total,
+      editaCuenta: to.reemplazaCuenta,
+    })
   }
 
   const totalDebe = Math.round(lineas.reduce((a, l) => a + l.debe, 0) * 100) / 100
@@ -333,4 +403,90 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
 
 export async function previsualizarAsiento(comprobanteId: number): Promise<AsientoPreview> {
   return previsualizarAsientoEn(await getPool(), comprobanteId)
+}
+
+/**
+ * Arma el asiento real en las tablas de staging que Tango lee para "pasar
+ * a contabilidad": `ASIENTO_COMPROBANTE_CP` (encabezado, uno por
+ * comprobante) y `ASIENTO_CP` (un renglon por linea de Debe/Haber).
+ *
+ * Queda contabilizado (`CONTABILIZADO='S'`) al momento de grabarse --
+ * decision explicita del usuario, 2026-08-22. `USUARIO_CONTABILIZACION`
+ * queda en `'PHF_WEB'`, `FECHA_CONTABILIZACION` es la fecha de la factura
+ * (no la de hoy) y `TERMINAL_CONTABILIZACION` es el hostname real de la PC
+ * que graba (`terminalActual()`, mismo patron que `usuarioActual()`).
+ * `ASIENTO_ANULACION`/`TRANSFERIDO_CN` quedan en `'N'`: no es una anulacion,
+ * y la transferencia a Contabilidad ("pasar a contabilidad") sigue siendo
+ * un proceso propio de Tango que corre el usuario dentro del ERP.
+ *
+ * Reutiliza `previsualizarAsientoEn` para calcular las lineas -- la vista
+ * previa ("Ver asiento") y lo que se graba acá son literalmente el mismo
+ * calculo, nunca pueden divergir.
+ *
+ * `IMPORTE_RENGLON_ALTER_CP` se graba igual a `IMPORTE_RENGLON_BASE_CP`
+ * (sin ajuste). Verificado contra la base real: de 63.598 filas
+ * existentes, solo 5 tienen ese valor igual al importe base -- en el resto
+ * es el importe re-expresado por el modulo de Ajuste por Inflacion propio
+ * de Tango (`INDICE`/`INDICE_VALOR`/`TMP_AJUSTE_INFLACION`), que esta app
+ * no reproduce. Decision del usuario: que el proceso de ajuste de Tango lo
+ * recalcule despues, igual que con cualquier asiento cargado por fuera de
+ * ese modulo.
+ *
+ * No hace falta un chequeo de idempotencia propio: `registrarComprobanteEn`
+ * ya vuelve temprano si el comprobante tiene `TANGO_NCOMP_IN_C`, asi que
+ * esta funcion nunca corre dos veces para el mismo comprobante en el
+ * camino normal. Si se llamara dos veces igual, `ASIENTO_COMPROBANTE_CP`
+ * tiene un indice unico en `NCOMP_IN_C` -- la segunda vez falla con un
+ * error de SQL claro en vez de duplicar un asiento en silencio, que para
+ * un dato contable es el fallo mas seguro de los dos.
+ */
+export async function escribirAsientoEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  ncompInC: number,
+  fechaFactura: Date,
+): Promise<void> {
+  const asiento = await previsualizarAsientoEn(e, comprobanteId)
+  if (!asiento.balanceado) {
+    throw new Error(
+      `El asiento no cierra (Debe $ ${asiento.totalDebe} vs Haber $ ${asiento.totalHaber}): no se puede contabilizar.`,
+    )
+  }
+  if (asiento.lineas.length === 0) return
+
+  const header = await e
+    .request()
+    .input('ncompInC', sql.Float, ncompInC)
+    .input('usuario', sql.VarChar(120), 'PHF_WEB')
+    .input('fechaContab', sql.DateTime, fechaFactura)
+    .input('terminal', sql.VarChar(255), terminalActual())
+    .query<Record<string, unknown>>(`
+      INSERT INTO ASIENTO_COMPROBANTE_CP
+        (NCOMP_IN_C, ASIENTO_ANULACION, CONTABILIZADO, USUARIO_CONTABILIZACION,
+         FECHA_CONTABILIZACION, TERMINAL_CONTABILIZACION, TRANSFERIDO_CN)
+      OUTPUT INSERTED.ID_ASIENTO_COMPROBANTE_CP
+      VALUES (@ncompInC, 'N', 'S', @usuario, @fechaContab, @terminal, 'N')
+    `)
+  const idAsientoComprobante = Number(header.recordset[0].ID_ASIENTO_COMPROBANTE_CP)
+
+  let nroRenglon = 0
+  for (const l of asiento.lineas) {
+    nroRenglon += 1
+    const importe = l.debe > 0 ? l.debe : l.haber
+    await e
+      .request()
+      .input('idComp', sql.Int, idAsientoComprobante)
+      .input('nro', sql.Int, nroRenglon)
+      .input('idCuenta', sql.Int, l.idCuenta)
+      .input('dh', sql.Char(1), l.debe > 0 ? 'D' : 'H')
+      .input('importe', sql.Decimal(19, 4), importe)
+      .input('leyenda', sql.VarChar(100), l.leyenda.slice(0, 100))
+      .input('edita', sql.Char(1), l.editaCuenta ? 'S' : 'N')
+      .query(`
+        INSERT INTO ASIENTO_CP
+          (ID_ASIENTO_COMPROBANTE_CP, NRO_RENGLON_ASIENTO_CP, ID_CUENTA, D_H,
+           IMPORTE_RENGLON_BASE_CP, IMPORTE_RENGLON_ALTER_CP, DESC_LEYENDA, EDITA_CUENTA)
+        VALUES (@idComp, @nro, @idCuenta, @dh, @importe, @importe, @leyenda, @edita)
+      `)
+  }
 }

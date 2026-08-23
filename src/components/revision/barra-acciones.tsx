@@ -9,6 +9,7 @@ import { BadgeEstado } from '@/components/badge-estado'
 import { useToast } from '@/components/toast/toast-provider'
 import { ModalObservacion } from './modal-observacion'
 import { ModalAsiento } from './modal-asiento'
+import { ModalCuotas } from './modal-cuotas'
 import { ModalEliminar } from '@/components/modal-eliminar'
 import { useAtajos } from './atajos'
 import styles from './barra-acciones.module.css'
@@ -107,13 +108,14 @@ export function BarraAcciones({
   const [modalAbierto, setModalAbierto] = useState(false)
   const [modalEliminar, setModalEliminar] = useState(false)
   const [modalAsiento, setModalAsiento] = useState(false)
+  const [modalCuotas, setModalCuotas] = useState(false)
   const [pendiente, arrancar] = useTransition()
   const router = useRouter()
   const toast = useToast()
   const puedeObservar = estado === 'leido' || estado === 'observacion'
   const puedeConfirmar = puedeObservar && !bloqueante
   const puedeRegistrar = estado === 'confirmado' && !sinConexion && !bloqueanteRegistro
-  const puedeVerAsiento = estado === 'leido' || estado === 'observacion' || estado === 'confirmado'
+  const puedeVerPrevias = estado === 'leido' || estado === 'observacion' || estado === 'confirmado'
 
   function confirmar() {
     if (!puedeConfirmar || pendiente) return
@@ -182,13 +184,22 @@ export function BarraAcciones({
         >
           Marcar en observación
         </button>
-        {puedeVerAsiento && (
+        {puedeVerPrevias && (
           <button
             type="button"
             className={styles.verAsiento}
             onClick={() => setModalAsiento(true)}
           >
             Ver asiento
+          </button>
+        )}
+        {puedeVerPrevias && (
+          <button
+            type="button"
+            className={styles.verAsiento}
+            onClick={() => setModalCuotas(true)}
+          >
+            Ver cuotas
           </button>
         )}
         <BotonPrimario
@@ -203,6 +214,7 @@ export function BarraAcciones({
 
       <ModalObservacion id={id} abierto={modalAbierto} onCerrar={() => setModalAbierto(false)} />
       <ModalAsiento id={id} abierto={modalAsiento} onCerrar={() => setModalAsiento(false)} />
+      <ModalCuotas id={id} abierto={modalCuotas} onCerrar={() => setModalCuotas(false)} />
       <ModalEliminar
         id={id}
         abierto={modalEliminar}

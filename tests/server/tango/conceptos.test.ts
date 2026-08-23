@@ -1,9 +1,11 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { cerrarPool, getPool } from '@/server/db/pool'
+import { conRollback } from '@/server/db/tx'
 import {
   buscarConceptoProveedor,
   buscarConceptoTarjeta,
   conceptoDelComprobante,
+  listarConceptos,
   COD_CONCEPTO_TARJETA,
 } from '@/server/tango/conceptos'
 
@@ -45,6 +47,103 @@ describe('buscarConceptoTarjeta', () => {
       `SELECT LTRIM(RTRIM(ISNULL(DESC_CONCE,''))) AS d FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @c`,
     )
     expect(r!.descripcion).toBe(String(q.recordset[0].d))
+  })
+})
+
+describe('listarConceptos', () => {
+  it('trae el maestro completo con codigo y descripcion', async () => {
+    const r = await listarConceptos()
+    expect(r.length).toBeGreaterThan(0)
+    // Mismo concepto real que usan los tests de arriba: si aparece con la
+    // misma descripcion, el mapeo de columnas es correcto.
+    const telefonos = r.find((c) => c.codConcepto === '712')
+    expect(telefonos?.descripcion).toBe('TELEFONOS LOCALES')
+  })
+
+  it('no repite codigos', async () => {
+    const r = await listarConceptos()
+    expect(new Set(r.map((c) => c.codConcepto)).size).toBe(r.length)
+  })
+
+  it('viene ordenado por descripcion', async () => {
+    const r = await listarConceptos()
+    const descripciones = r.map((c) => c.descripcion)
+    expect(descripciones).toEqual([...descripciones].sort((a, b) => a.localeCompare(b)))
+  })
+})
+
+describe('asignarConceptoProveedor (MERGE verificado contra la base real)', () => {
+  // asignarConceptoProveedor escribe con getPool() directo, sin executor
+  // inyectable -- mismo motivo que asociarArticuloProveedor en
+  // articulos.test.ts: es una escritura sobre dato maestro del ERP, y la
+  // suite no puede dejarla tocada. Se replica el MERGE dentro de
+  // conRollback para probarlo contra datos reales sin comitear nada.
+  async function proveedorSinConcepto() {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(p.COD_PROVEE)) AS prov
+      FROM CPA01 p
+      LEFT JOIN CPA_CONCEPTOS_PROVEEDOR cp ON LTRIM(RTRIM(cp.COD_PROVEE)) = LTRIM(RTRIM(p.COD_PROVEE))
+      WHERE cp.COD_PROVEE IS NULL
+      ORDER BY p.COD_PROVEE
+    `)
+    return r.recordset.length ? String(r.recordset[0].prov) : null
+  }
+
+  async function merge(tx: import('mssql').Transaction, prov: string, concepto: string) {
+    await tx.request()
+      .input('prov', prov)
+      .input('concepto', concepto)
+      .query(`
+        MERGE CPA_CONCEPTOS_PROVEEDOR WITH (HOLDLOCK) AS destino
+        USING (SELECT @prov AS COD_PROVEE) AS origen
+          ON LTRIM(RTRIM(destino.COD_PROVEE)) = origen.COD_PROVEE
+        WHEN MATCHED THEN
+          UPDATE SET COD_CONCEPT = @concepto,
+                     ID_CPA45 = (SELECT ID_CPA45 FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @concepto)
+        WHEN NOT MATCHED THEN
+          INSERT (COD_PROVEE, COD_CONCEPT, ID_CPA45, ID_CPA01)
+          VALUES (
+            @prov, @concepto,
+            (SELECT ID_CPA45 FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @concepto),
+            (SELECT ID_CPA01 FROM CPA01 WHERE COD_PROVEE = @prov)
+          );
+      `)
+  }
+
+  it('inserta la relacion con los IDs reales resueltos', async () => {
+    const prov = await proveedorSinConcepto()
+    if (!prov) return
+
+    await conRollback(async (tx) => {
+      await merge(tx, prov, '712')
+
+      const q = await tx.request().input('prov', prov).query(`
+        SELECT LTRIM(RTRIM(COD_CONCEPT)) AS concepto, ID_CPA45, ID_CPA01
+        FROM CPA_CONCEPTOS_PROVEEDOR WHERE LTRIM(RTRIM(COD_PROVEE)) = @prov
+      `)
+      expect(q.recordset).toHaveLength(1)
+      expect(q.recordset[0].concepto).toBe('712')
+      expect(Number(q.recordset[0].ID_CPA45)).toBeGreaterThan(0)
+      expect(Number(q.recordset[0].ID_CPA01)).toBeGreaterThan(0)
+    })
+  })
+
+  it('un segundo concepto reemplaza al primero en vez de agregar una fila', async () => {
+    const prov = await proveedorSinConcepto()
+    if (!prov) return
+
+    await conRollback(async (tx) => {
+      await merge(tx, prov, '712')
+      await merge(tx, prov, '001')
+
+      const q = await tx.request().input('prov', prov).query(`
+        SELECT LTRIM(RTRIM(COD_CONCEPT)) AS concepto
+        FROM CPA_CONCEPTOS_PROVEEDOR WHERE LTRIM(RTRIM(COD_PROVEE)) = @prov
+      `)
+      expect(q.recordset).toHaveLength(1)
+      expect(q.recordset[0].concepto).toBe('001')
+    })
   })
 })
 

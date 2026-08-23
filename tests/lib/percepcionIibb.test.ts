@@ -60,4 +60,18 @@ describe('resolverPercepcionIibb', () => {
     // solo trae el numero no puede resolverse a ningun codigo.
     expect(resolverPercepcionIibb('2,5%')).toBeNull()
   })
+
+  it('usa lo aprendido cuando la jurisdiccion no esta en la lista fija', () => {
+    // La clave del mapa va normalizada: sin acentos ni mayusculas, igual
+    // que la comparacion contra los alias.
+    expect(resolverPercepcionIibb('Córdoba', { cordoba: '62' })?.codigo).toBe('62')
+  })
+
+  it('lo aprendido no gana sobre una jurisdiccion que ya resuelve por alias', () => {
+    expect(resolverPercepcionIibb('Tucumán', { tucuman: '61' })?.codigo).toBe('60')
+  })
+
+  it('sin aprendizaje para ese texto, sigue devolviendo null', () => {
+    expect(resolverPercepcionIibb('Córdoba', { 'santa fe': '62' })).toBeNull()
+  })
 })

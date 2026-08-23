@@ -58,3 +58,32 @@ export async function buscarCondicionCompra(codigo: number): Promise<CondicionCo
 
   return r.recordset.length ? aCondicion(r.recordset[0]) : null
 }
+
+export type RenglonCondicionCompra = {
+  nRenglon: number
+  diasVencimiento: number
+  porcentaje: number
+}
+
+/**
+ * Los renglones de cuotas de una condicion (vista CPA49), en el orden en
+ * que Tango los imprime. Verificado contra la base real: en esta
+ * instalacion, `CANT_CUOTA` es siempre 1 y `DIA_MES` siempre 'D' -- ningun
+ * renglon repite cuotas ni vence en un dia fijo del mes, cada cuota es su
+ * propia fila con el porcentaje y los dias ya resueltos. Por eso esta
+ * funcion no lee esas dos columnas: agregarlas sin un caso real que las
+ * necesite seria simular una funcionalidad que esta empresa no usa.
+ */
+export async function renglonesCondicionCompra(codigo: number): Promise<RenglonCondicionCompra[]> {
+  const pool = await getPool()
+  const r = await pool
+    .request()
+    .input('cod', sql.SmallInt, codigo)
+    .query(`SELECT N_RENGLON, A_VENCER, PORC_MONTO FROM CPA49 WHERE COD_CONDIC = @cod ORDER BY N_RENGLON`)
+
+  return r.recordset.map((row) => ({
+    nRenglon: Number(row.N_RENGLON),
+    diasVencimiento: Number(row.A_VENCER),
+    porcentaje: Number(row.PORC_MONTO),
+  }))
+}
