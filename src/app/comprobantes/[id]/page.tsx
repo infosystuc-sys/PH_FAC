@@ -178,13 +178,13 @@ export default async function RevisionPage({
             encabezado.estado === 'observacion' ? encabezado.motivoObservacion : null
           }
           notaObservacion={encabezado.estado === 'observacion' ? encabezado.notaObservacion : null}
-          // `registrado` es terminal e inmutable (mismo criterio que ya
-          // aplica BarraAcciones deshabilitando "Ver asiento en Tango"). El
-          // backend ya bloquea la escritura en guardarCampoEn con un no-op
-          // silencioso; sin esto la UI seguía mostrando el campo como
-          // editable y el operador nunca se enteraba de que su corrección
-          // no se guardó.
-          soloLectura={encabezado.estado === 'registrado'}
+          // `registrado` y `existente` son terminales e inmutables (mismo
+          // criterio que ya aplica BarraAcciones deshabilitando "Ver
+          // asiento en Tango"). El backend ya bloquea la escritura en
+          // guardarCampoEn con un no-op silencioso para los dos; sin esto
+          // la UI seguía mostrando el campo como editable y el operador
+          // nunca se enteraba de que su corrección no se guardó.
+          soloLectura={encabezado.estado === 'registrado' || encabezado.estado === 'existente'}
         />
       )}
     </div>

@@ -43,6 +43,7 @@ export function ModalEliminar({
   if (!abierto) return null
 
   const registrado = estado === 'registrado'
+  const existente = estado === 'existente'
 
   function eliminar() {
     arrancar(async () => {
@@ -90,6 +91,16 @@ export function ModalEliminar({
               : sigue en Tango con su imputación y su cuenta corriente. Si hay que anularlo, se hace
               desde Tango. Lo que desaparece acá es el registro de trabajo, y con él la trazabilidad
               de qué leyó la IA y qué corrigió el operador.
+            </p>
+          </div>
+        )}
+
+        {existente && (
+          <div className={styles.advertencia}>
+            <p className={styles.advertenciaTitulo}>Este comprobante ya existía en Tango.</p>
+            <p>
+              No lo registró esta app: ya estaba cargado de antes, con otro número interno. Eliminarlo
+              acá solo borra este registro de trabajo -- no toca lo que ya existe en Tango.
             </p>
           </div>
         )}

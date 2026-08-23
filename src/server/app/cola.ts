@@ -24,6 +24,8 @@ import { guardarExtraccionEn, guardarCampoEn, auditarEn, obtenerDetalleEn } from
 import { leerPdf } from './archivos'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 import { normalizarTextoCondicion } from '@/server/tango/condicionesCompra'
+import { buscarFacturaEnCpa04 } from '@/server/tango/comprobantes'
+import { letraComprobante, nComp as armarNComp } from '@/lib/validaciones'
 
 export const MAX_INTENTOS = 3
 export const MINUTOS_REPESCA = 10
@@ -255,6 +257,58 @@ export async function resolverCondicionCompraEn(
 
   await guardarCampoEn(e, id, 'condcompra', cod, { corregidoPorUsuario: false })
   await auditarEn(e, id, `Condición de compra aprendida para el proveedor: "${texto}" → código ${cod}`)
+}
+
+/**
+ * Si esta factura ya existe registrada en Tango (mismo proveedor y mismo
+ * número de comprobante en CPA04), la pasa al estado `'existente'` en vez
+ * de dejarla como una más para revisar -- decisión del usuario: no tiene
+ * sentido pedirle al operador que revise ni que intente registrar algo
+ * que ya está cargado, y menos que llegue a intentar el registro real y
+ * lo bloquee recién ahí. Mismo criterio de "clasificar sola en la
+ * importación" que `observarSinConceptoEn`, con la misma fuente
+ * (`buscarFacturaEnCpa04`) que ya usaba la validación de Fase 3 para
+ * avisar de un duplicado -- acá se actúa temprano en vez de solo avisar
+ * tarde.
+ *
+ * No confundir con un duplicado *dentro de esta app* (la misma factura
+ * importada dos veces, todavía sin registrar en Tango): ese caso sigue
+ * siendo un error de Fase 3 que el operador tiene que notar y resolver
+ * borrando uno de los dos, no algo que se pueda auto-clasificar como "ya
+ * existe en Tango" porque sería falso.
+ */
+export async function marcarExistenteEnTangoEn(
+  e: Ejecutor,
+  id: number,
+  codProvee: string | null,
+  valores: Record<string, string | null | undefined>,
+): Promise<boolean> {
+  if (!codProvee) return false
+
+  const letra = letraComprobante(valores.tipo ?? '')
+  const ptovta = (valores.ptovta ?? '').trim()
+  const nro = (valores.nro ?? '').trim()
+  if (!letra || !ptovta || !nro) return false
+
+  const nComprobante = armarNComp(letra, ptovta, nro)
+  const enTango = await buscarFacturaEnCpa04(codProvee, nComprobante)
+  if (!enTango) return false
+
+  await e
+    .request()
+    .input('id', sql.Int, id)
+    .query(`
+      UPDATE PHF_COMPROBANTE
+      SET ESTADO = 'existente', FECHA_MODIF = SYSDATETIME()
+      WHERE ID = @id
+    `)
+
+  await auditarEn(
+    e,
+    id,
+    `Ya existe en Tango: factura ${enTango.nComp} (proveedor ${enTango.codProvee}) — no se puede volver a registrar`,
+  )
+  return true
 }
 
 /**
@@ -584,7 +638,7 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       Object.entries(r.extraccion.campos).map(([k, v]) => [k, v.valor]),
     )
 
-    const codProvee = await conTransaccion(async (tx) => {
+    const { codProvee, yaExisteEnTango } = await conTransaccion(async (tx) => {
       const prom = await guardarExtraccionEn(tx, id, r.extraccion)
       // Despues de guardarExtraccionEn y no antes: esa funcion borra todos
       // los PHF_CAMPO del comprobante para reescribirlos, asi que el campo
@@ -611,9 +665,16 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       await resolverCondicionCompraEn(tx, id, cod, r.extraccion.campos.condpago?.valor ?? null)
       const conValor = Object.values(r.extraccion.campos).filter((c) => c.valor !== null).length
       await marcarLeidoEn(tx, id, prom, r.ms, r.modelo, conValor)
-      await observarSinConceptoEn(tx, id, tipoFactura, cod)
-      return cod
+
+      // Si ya existe en Tango no hay nada mas que evaluar: ni concepto, ni
+      // remitos, ni la segunda pasada de renglones de abajo -- por eso el
+      // corte temprano, no solo el cambio de estado.
+      const existe = await marcarExistenteEnTangoEn(tx, id, cod, valores)
+      if (!existe) await observarSinConceptoEn(tx, id, tipoFactura, cod)
+      return { codProvee: cod, yaExisteEnTango: existe }
     })
+
+    if (yaExisteEnTango) return
 
     // Segunda pasada: los renglones. Va FUERA de la transaccion de arriba a
     // proposito -- es otro llamado a la API, de unos diez segundos, y

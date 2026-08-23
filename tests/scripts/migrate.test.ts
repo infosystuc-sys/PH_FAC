@@ -217,6 +217,61 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
     expect(segunda).toEqual([])
   })
 
+  it('repara un CHECK constraint viejo: lo reemplaza por el nuevo sin dejar los dos activos', async () => {
+    const prefijo = prefijoUnico()
+    await migrar(prefijo)
+
+    const pool = await getPool()
+    const tabla = `${prefijo}COMPROBANTE`
+    const nuevo = 'CK_PHF_COMP_ESTADO_V2'.replace('PHF_', prefijo)
+    const viejo = 'CK_PHF_COMP_ESTADO'.replace('PHF_', prefijo)
+
+    try {
+      // Simula una base que quedo en la version anterior del constraint:
+      // se saca el V2 y se pone el viejo, sin 'existente' en la lista.
+      await pool.request().batch(`
+        ALTER TABLE ${tabla} DROP CONSTRAINT ${nuevo};
+        ALTER TABLE ${tabla} ADD CONSTRAINT ${viejo} CHECK (ESTADO IN
+          ('procesando','leido','observacion','confirmado','registrado','error'));
+      `)
+
+      await expect(
+        pool.request().batch(`
+          INSERT INTO ${tabla} (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, USUARIO_ALTA)
+          VALUES ('x.pdf', 'x', REPLICATE('0', 64), 'existente', 'test')
+        `),
+      ).rejects.toThrow()
+
+      await migrar(prefijo)
+
+      // El viejo constraint tiene que haber desaparecido: si quedara activo
+      // junto al nuevo, el INSERT de abajo seguiria rechazado -- SQL Server
+      // exige todos los CHECK de una columna, no el ultimo que se agrego.
+      const constraints = await pool
+        .request()
+        .input('t', tabla)
+        .query(`
+          SELECT cc.name FROM sys.check_constraints cc
+          JOIN sys.tables t ON t.object_id = cc.parent_object_id
+          WHERE t.name = @t
+        `)
+      expect(constraints.recordset.map((r: { name: string }) => r.name)).toEqual([nuevo])
+
+      await expect(
+        pool.request().batch(`
+          INSERT INTO ${tabla} (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, USUARIO_ALTA)
+          VALUES ('x.pdf', 'x', REPLICATE('0', 64), 'existente', 'test')
+        `),
+      ).resolves.not.toThrow()
+
+      // Correr de nuevo no debe fallar ni volver a tocar nada.
+      const segunda = await migrar(prefijo)
+      expect(segunda).toEqual([])
+    } finally {
+      await limpiarPrefijo(pool, prefijo)
+    }
+  })
+
   it('agrega una columna que falta sin tocar el resto de la tabla', async () => {
     const prefijo = prefijoUnico()
     const pool = await getPool()

@@ -9,6 +9,7 @@ import {
   marcarFalloEn,
   resolverProveedorEn,
   resolverCondicionCompraEn,
+  marcarExistenteEnTangoEn,
   observarSinConceptoEn,
   lineasDeRemitos,
   guardarRenglonesFacturadosEn,
@@ -372,6 +373,82 @@ describe('resolverCondicionCompraEn', () => {
 
       const d = await obtenerDetalleEn(tx, id)
       expect(d.campos.find((c) => c.clave === 'condcompra')).toBeUndefined()
+    })
+  })
+})
+
+describe('marcarExistenteEnTangoEn', () => {
+  it('pasa a existente una factura que ya esta en CPA04, con el N_COMP real', async () => {
+    const pool = await getPool()
+    const real = await pool.request().query(`
+      SELECT TOP 1 COD_PROVEE, N_COMP FROM CPA04 WHERE T_COMP = 'FAC' ORDER BY NCOMP_IN_C DESC
+    `)
+    const codProvee = String(real.recordset[0].COD_PROVEE).trim()
+    const nComp = String(real.recordset[0].N_COMP).trim()
+    const letra = nComp.slice(0, 1)
+    const ptovta = nComp.slice(1, 6)
+    const nro = nComp.slice(6)
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const valores = { tipo: `FAC ${letra}`, ptovta, nro }
+      const existe = await marcarExistenteEnTangoEn(tx, id, codProvee, valores)
+      expect(existe).toBe(true)
+
+      const r = await tx.request().input('id', sql.Int, id).query(`
+        SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id
+      `)
+      expect(r.recordset[0].ESTADO).toBe('existente')
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.auditoria.some((a) => a.texto.includes('Ya existe en Tango'))).toBe(true)
+    })
+  })
+
+  it('no toca nada si el N_COMP no existe en CPA04', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const valores = { tipo: 'FAC A', ptovta: '9999', nro: '99999999' }
+      const existe = await marcarExistenteEnTangoEn(tx, id, '999999', valores)
+      expect(existe).toBe(false)
+
+      const r = await tx.request().input('id', sql.Int, id).query(`
+        SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id
+      `)
+      expect(r.recordset[0].ESTADO).toBe('leido')
+    })
+  })
+
+  it('no hace nada sin proveedor, o sin tipo/ptovta/nro', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      expect(await marcarExistenteEnTangoEn(tx, id, null, { tipo: 'FAC A', ptovta: '1', nro: '1' })).toBe(
+        false,
+      )
+      expect(await marcarExistenteEnTangoEn(tx, id, '999999', { tipo: 'FAC A', ptovta: '', nro: '1' })).toBe(
+        false,
+      )
+    })
+  })
+
+  it('una vez existente, guardarCampoEn no escribe nada (mismo freno que registrado)', async () => {
+    const pool = await getPool()
+    const real = await pool.request().query(`
+      SELECT TOP 1 COD_PROVEE, N_COMP FROM CPA04 WHERE T_COMP = 'FAC' ORDER BY NCOMP_IN_C DESC
+    `)
+    const codProvee = String(real.recordset[0].COD_PROVEE).trim()
+    const nComp = String(real.recordset[0].N_COMP).trim()
+    const letra = nComp.slice(0, 1)
+    const ptovta = nComp.slice(1, 6)
+    const nro = nComp.slice(6)
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await marcarExistenteEnTangoEn(tx, id, codProvee, { tipo: `FAC ${letra}`, ptovta, nro })
+
+      await guardarCampoEn(tx, id, 'total', '999,00')
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'total')).toBeUndefined()
     })
   })
 })

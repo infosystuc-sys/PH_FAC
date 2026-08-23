@@ -145,6 +145,7 @@ export async function contarPorEstadoEn(e: Ejecutor, query: string): Promise<Con
     observacion: 0,
     confirmado: 0,
     registrado: 0,
+    existente: 0,
     error: 0,
   }
   for (const row of r.recordset) {

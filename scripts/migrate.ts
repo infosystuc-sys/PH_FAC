@@ -9,6 +9,14 @@ cargarEnv({ path: '.env.local' })
 
 type IndiceDef = { nombre: string; ddl: string }
 type ColumnaDef = { nombre: string; ddl: string }
+/**
+ * A diferencia de una columna o un indice, un CHECK no se amplia con
+ * ALTER...ADD: si el cuerpo cambia, hay que crear uno con nombre nuevo y
+ * tirar el viejo, o los dos quedan activos a la vez y el viejo sigue
+ * rechazando lo que el nuevo permitiria. `reemplazaA` nombra los
+ * constraints que hay que dropear (si existen) antes de agregar este.
+ */
+type CheckDef = { nombre: string; ddl: string; reemplazaA?: string[] }
 // `ddlTabla` es solo el CREATE TABLE (sin los indices), para que el camino
 // de reparacion -- tabla existente a la que le falta un indice -- pueda
 // emitir unicamente los CREATE INDEX que faltan sin volver a tocar la
@@ -26,6 +34,9 @@ type Definicion = {
    * declaraciones no se separen.
    */
   columnas?: ColumnaDef[]
+  /** Mismo criterio que `columnas`: version inicial del CHECK ya esta en
+   *  `ddlTabla`, esta lista es solo el camino de reparacion. */
+  checks?: CheckDef[]
 }
 
 const DEFINICIONES: Definicion[] = [
@@ -63,8 +74,10 @@ const DEFINICIONES: Definicion[] = [
         FECHA_MODIF         DATETIME2      NULL,
         USUARIO_MODIF       NVARCHAR(60)   NULL,
         CONSTRAINT PK_PHF_COMPROBANTE PRIMARY KEY (ID),
-        CONSTRAINT CK_PHF_COMP_ESTADO CHECK (ESTADO IN
-          ('procesando','leido','observacion','confirmado','registrado','error'))
+        -- V2: agrega 'existente' (2026-08-23, ver CHECKS mas abajo para el
+        -- camino de reparacion de una base que ya tenia la V1).
+        CONSTRAINT CK_PHF_COMP_ESTADO_V2 CHECK (ESTADO IN
+          ('procesando','leido','observacion','confirmado','registrado','error','existente'))
       );
     `,
     indices: [
@@ -74,6 +87,21 @@ const DEFINICIONES: Definicion[] = [
         ddl: 'CREATE INDEX IX_PHF_COMP_DUP ON PHF_COMPROBANTE (COD_PROVEE, TIPO, NUMERO);',
       },
       { nombre: 'IX_PHF_COMP_CUIT', ddl: 'CREATE INDEX IX_PHF_COMP_CUIT ON PHF_COMPROBANTE (CUIT);' },
+    ],
+    // Un CHECK constraint no se agrega con ALTER...ADD como una columna: si
+    // su cuerpo cambia (un valor mas para ESTADO) hay que reemplazarlo
+    // entero, no ampliarlo. `reemplazaA` nombra los constraints viejos que
+    // hay que tirar antes de crear este -- si se dejaran los dos activos,
+    // el viejo (que no conoce 'existente') seguiria rechazando esa fila
+    // aunque el nuevo la permita: SQL Server exige TODOS los CHECK de una
+    // columna, no el ultimo que se agrego.
+    checks: [
+      {
+        nombre: 'CK_PHF_COMP_ESTADO_V2',
+        ddl: `ALTER TABLE PHF_COMPROBANTE ADD CONSTRAINT CK_PHF_COMP_ESTADO_V2 CHECK (ESTADO IN
+          ('procesando','leido','observacion','confirmado','registrado','error','existente'));`,
+        reemplazaA: ['CK_PHF_COMP_ESTADO'],
+      },
     ],
     columnas: [
       { nombre: 'INTENTOS', ddl: 'INTENTOS INT NOT NULL CONSTRAINT DF_PHF_COMP_INTENTOS DEFAULT 0' },
@@ -284,18 +312,43 @@ async function columnasFaltantes(
   return columnasEsperadas.filter((n) => !presentes.has(n))
 }
 
+/** Nombres, de entre `checksEsperados`, que no existen todavia en `tabla`. */
+async function checksFaltantes(
+  pool: sql.ConnectionPool,
+  tabla: string,
+  checksEsperados: string[],
+): Promise<string[]> {
+  if (checksEsperados.length === 0) return []
+
+  const req = pool.request().input('t', tabla)
+  const placeholders = checksEsperados.map((nombre, i) => {
+    req.input(`k${i}`, nombre)
+    return `@k${i}`
+  })
+  const r = await req.query(`
+    SELECT cc.name AS nombre
+    FROM sys.check_constraints cc
+    JOIN sys.tables t ON t.object_id = cc.parent_object_id
+    WHERE t.name = @t AND cc.name IN (${placeholders.join(', ')})
+  `)
+  const presentes = new Set(r.recordset.map((row: { nombre: string }) => row.nombre))
+  return checksEsperados.filter((n) => !presentes.has(n))
+}
+
 /**
- * Crea las tablas que falten y repara, en las que ya existen, las columnas
- * y los indices que falten. Para una tabla ausente, CREATE TABLE + todos
- * sus CREATE INDEX corren en una sola transaccion: si el CREATE TABLE pasa
- * pero un CREATE INDEX del mismo batch falla, el rollback se lleva puesta
- * tambien la tabla, para que la proxima corrida la vuelva a intentar
- * completa en vez de saltearla para siempre por el chequeo de idempotencia.
- * Para una tabla que ya existe pero le faltan columnas y/o indices, nunca
- * se reintenta el CREATE TABLE -- se emiten *solo* los ALTER TABLE ADD y
- * los CREATE INDEX faltantes, primero las columnas y despues los indices,
- * porque un indice futuro podria apoyarse en una columna nueva. Devuelve
- * los nombres de las tablas creadas (no las reparadas).
+ * Crea las tablas que falten y repara, en las que ya existen, las columnas,
+ * los indices y los CHECK constraints que falten. Para una tabla ausente,
+ * CREATE TABLE + todos sus CREATE INDEX corren en una sola transaccion: si
+ * el CREATE TABLE pasa pero un CREATE INDEX del mismo batch falla, el
+ * rollback se lleva puesta tambien la tabla, para que la proxima corrida
+ * la vuelva a intentar completa en vez de saltearla para siempre por el
+ * chequeo de idempotencia.
+ * Para una tabla que ya existe pero le faltan columnas, indices y/o
+ * checks, nunca se reintenta el CREATE TABLE -- se emiten *solo* los
+ * ALTER TABLE ADD, CREATE INDEX y ALTER TABLE ADD CONSTRAINT faltantes,
+ * en ese orden (columnas primero, porque un indice o un check futuro
+ * podria apoyarse en una columna nueva). Devuelve los nombres de las
+ * tablas creadas (no las reparadas).
  */
 export async function migrarDefiniciones(
   definiciones: Definicion[],
@@ -304,7 +357,7 @@ export async function migrarDefiniciones(
   const pool = await getPool()
   const creadas: string[] = []
 
-  for (const { tabla: tablaBase, ddlTabla, indices, columnas } of definiciones) {
+  for (const { tabla: tablaBase, ddlTabla, indices, columnas, checks } of definiciones) {
     const tabla = conPrefijo(tablaBase, prefijo)
     const indicesDef = (indices ?? []).map((i) => ({
       nombre: conPrefijo(i.nombre, prefijo),
@@ -349,15 +402,40 @@ export async function migrarDefiniciones(
       tabla,
       indicesDef.map((i) => i.nombre),
     )
-    if (faltantes.length === 0) continue
+    if (faltantes.length > 0) {
+      await conTransaccion(async (tx) => {
+        const ddlIndicesFaltantes = indicesDef
+          .filter((i) => faltantes.includes(i.nombre))
+          .map((i) => i.ddl)
+          .join('\n')
+        await tx.request().batch(ddlIndicesFaltantes)
+      })
+    }
 
-    await conTransaccion(async (tx) => {
-      const ddlIndicesFaltantes = indicesDef
-        .filter((i) => faltantes.includes(i.nombre))
-        .map((i) => i.ddl)
-        .join('\n')
-      await tx.request().batch(ddlIndicesFaltantes)
-    })
+    const checksDef = (checks ?? []).map((c) => ({
+      nombre: conPrefijo(c.nombre, prefijo),
+      ddl: conPrefijo(c.ddl, prefijo),
+      reemplazaA: (c.reemplazaA ?? []).map((n) => conPrefijo(n, prefijo)),
+    }))
+    const checksQueFaltan = await checksFaltantes(
+      pool,
+      tabla,
+      checksDef.map((c) => c.nombre),
+    )
+    if (checksQueFaltan.length > 0) {
+      await conTransaccion(async (tx) => {
+        for (const c of checksDef) {
+          if (!checksQueFaltan.includes(c.nombre)) continue
+          for (const viejo of c.reemplazaA) {
+            await tx.request().batch(`
+              IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = '${viejo}')
+                ALTER TABLE ${tabla} DROP CONSTRAINT ${viejo};
+            `)
+          }
+          await tx.request().batch(c.ddl)
+        }
+      })
+    }
   }
 
   return creadas

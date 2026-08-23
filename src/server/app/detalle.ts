@@ -183,13 +183,15 @@ export async function obtenerDetalle(comprobanteId: number): Promise<Detalle> {
  * `{ corregidoPorUsuario: false }`: si no, se contamina esa métrica con
  * algo que ningún humano tocó.
  *
- * `registrado` es terminal e inmutable (design/README.md §2): nada se
- * edita después de grabar en Tango. Formulario no conoce el estado del
+ * `registrado` y `existente` son terminales e inmutables (design/README.md
+ * §2 para `registrado`; `existente` es el mismo criterio -- ver
+ * `marcarExistenteEnTangoEn` en cola.ts -- porque no hay nada que corregir
+ * en una factura que ya está en Tango). Formulario no conoce el estado del
  * comprobante -- no se toca, está revisado y aprobado de una tarea
  * anterior -- así que el freno tiene que vivir en la escritura, no en el
- * input: si el comprobante está `registrado`, el `USING` no devuelve
- * ninguna fila y el MERGE completo queda en un no-op, de forma atómica
- * (sin la ventana de carrera de un SELECT previo).
+ * input: si el comprobante está en cualquiera de los dos, el `USING` no
+ * devuelve ninguna fila y el MERGE completo queda en un no-op, de forma
+ * atómica (sin la ventana de carrera de un SELECT previo).
  */
 export async function guardarCampoEn(
   e: Ejecutor,
@@ -213,7 +215,7 @@ export async function guardarCampoEn(
       USING (
         SELECT @id AS COMPROBANTE_ID, @clave AS CLAVE
         FROM PHF_COMPROBANTE
-        WHERE ID = @id AND ESTADO <> 'registrado'
+        WHERE ID = @id AND ESTADO NOT IN ('registrado', 'existente')
       ) AS origen
         ON destino.COMPROBANTE_ID = origen.COMPROBANTE_ID AND destino.CLAVE = origen.CLAVE
       WHEN MATCHED THEN
