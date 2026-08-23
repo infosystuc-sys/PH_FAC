@@ -179,7 +179,14 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     )
   }
 
-  const fechaEmision = parsearFechaArg((valores.fecha ?? '').trim()) ?? new Date()
+  // Bug real, encontrado registrando un comprobante real: esto hacia
+  // `?? new Date()` -- una fecha que no parseaba (ver el comentario en
+  // parsearFechaArg) grababa la factura en Tango con la fecha de HOY, en
+  // silencio, sin ningun error. Ahora falla temprano en vez de adivinar.
+  const fechaEmision = parsearFechaArg((valores.fecha ?? '').trim())
+  if (!fechaEmision) {
+    throw new Error(`No se pudo interpretar la fecha de emisión "${valores.fecha ?? ''}".`)
+  }
   const neto = parsearImporte(valores.neto)
   const exento = parsearImporte(valores.exento)
   // En una liquidacion de tarjeta el total impreso en el resumen sale por

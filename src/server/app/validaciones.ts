@@ -11,6 +11,7 @@ import {
   validarTotales,
   validarCae,
   validarFormatoNComp,
+  validarFecha,
   validarCondCompra,
   validarPercepciones,
   validarVarios,
@@ -162,6 +163,7 @@ export type ResultadoListoParaRegistrar = {
   condCompra: ResultadoValidacion
   percepcionIibb: ResultadoValidacion
   formatoComp: ResultadoValidacion
+  fecha: ResultadoValidacion
   tipoFactura: ResultadoValidacion
   concepto: ResultadoValidacion
   alicuotas: ResultadoValidacion
@@ -203,6 +205,7 @@ export async function validarListoParaRegistrarEn(
   )
   const varios = validarVarios(resolverVarios(valores, await listarCodigosImpuesto()))
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
+  const fecha = validarFecha(valores.fecha)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)
 
   // El concepto aplica en conceptos (sale de la ficha del proveedor) y en
@@ -235,6 +238,7 @@ export async function validarListoParaRegistrarEn(
     percepcionIibb,
     varios,
     formatoComp,
+    fecha,
     tipoFactura,
     concepto,
     alicuotas,
@@ -245,6 +249,7 @@ export async function validarListoParaRegistrarEn(
     percepcionIibb,
     varios,
     formatoComp,
+    fecha,
     tipoFactura,
     concepto,
     alicuotas,

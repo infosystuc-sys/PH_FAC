@@ -8,8 +8,10 @@ import {
   validarProveedor,
   validarDuplicado,
   validarFormatoNComp,
+  validarFecha,
   validarCondCompra,
   validarTipoFactura,
+  parsearFechaArg,
 } from '@/lib/validaciones'
 
 describe('letraComprobante', () => {
@@ -135,6 +137,39 @@ describe('validarFormatoNComp', () => {
   it('error si falta ptovta o nro', () => {
     expect(validarFormatoNComp(null, '576').estado).toBe('error')
     expect(validarFormatoNComp('0011', undefined).estado).toBe('error')
+  })
+})
+
+describe('parsearFechaArg', () => {
+  it('acepta barra, punto y guion como separador', () => {
+    expect(parsearFechaArg('30/07/2026')).toEqual(new Date(2026, 6, 30))
+    expect(parsearFechaArg('30.07.2026')).toEqual(new Date(2026, 6, 30))
+    expect(parsearFechaArg('30-07-2026')).toEqual(new Date(2026, 6, 30))
+  })
+  it('rechaza un mes o dia fuera de rango', () => {
+    expect(parsearFechaArg('32/07/2026')).toBeNull()
+    expect(parsearFechaArg('30/13/2026')).toBeNull()
+  })
+  it('rechaza un dia que no existe en ese mes en vez de reindexar al siguiente', () => {
+    // 31 de febrero: new Date(2026,1,31) reindexaria a marzo si no se
+    // detectara -- este es justo el caso que rompia en silencio antes.
+    expect(parsearFechaArg('31/02/2026')).toBeNull()
+  })
+  it('rechaza vacio o formato irreconocible', () => {
+    expect(parsearFechaArg('')).toBeNull()
+    expect(parsearFechaArg('30 de julio de 2026')).toBeNull()
+  })
+})
+
+describe('validarFecha', () => {
+  it('ok con una fecha valida, cualquiera de los tres separadores', () => {
+    expect(validarFecha('30/07/2026').estado).toBe('ok')
+    expect(validarFecha('30.07.2026').estado).toBe('ok')
+  })
+  it('error si falta o no se puede interpretar', () => {
+    expect(validarFecha(null).estado).toBe('error')
+    expect(validarFecha('').estado).toBe('error')
+    expect(validarFecha('30 de julio').estado).toBe('error')
   })
 })
 

@@ -332,6 +332,7 @@ describe('validarListoParaRegistrarEn', () => {
       await guardarCampoEn(tx, id, 'tipo', 'FAC A')
       await guardarCampoEn(tx, id, 'ptovta', '0011')
       await guardarCampoEn(tx, id, 'nro', '63576')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
       await guardarCampoEn(tx, id, 'condcompra', '60')
       await guardarCampoEn(tx, id, 'imppercep1', '13.248,69')
       await guardarCampoEn(tx, id, 'percep1', 'Tucumán')
@@ -341,7 +342,31 @@ describe('validarListoParaRegistrarEn', () => {
       expect(r.condCompra.estado).toBe('ok')
       expect(r.percepcionIibb.estado).toBe('ok')
       expect(r.formatoComp.estado).toBe('ok')
+      expect(r.fecha.estado).toBe('ok')
       expect(r.bloqueante).toBe(false)
+    })
+  })
+
+  it('bloqueante si la fecha no se puede interpretar', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+      await guardarCampoEn(tx, id, 'fecha', '30 de julio')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.fecha.estado).toBe('error')
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+
+  it('ok si la fecha usa puntos en vez de barras', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'condcompra', '60')
+      await guardarCampoEn(tx, id, 'fecha', '30.07.2026')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.fecha.estado).toBe('ok')
     })
   })
 

@@ -45,6 +45,7 @@ export function ListoParaRegistrar({
     resultado.percepcionIibb,
     resultado.varios,
     resultado.formatoComp,
+    resultado.fecha,
     resultado.tipoFactura,
     resultado.concepto,
   ]

@@ -50,7 +50,12 @@ export async function previsualizarCuotasEn(e: Ejecutor, comprobanteId: number):
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
 
   const codCondCompra = Number(valores.condcompra)
-  const fechaEmision = parsearFechaArg((valores.fecha ?? '').trim()) ?? new Date()
+  // Sin fallback a `new Date()`: una fecha que no parsea no puede
+  // convertirse en "hoy" en silencio -- ver el comentario en
+  // parsearFechaArg. Acá la vista previa simplemente no arma cuotas, igual
+  // que sin condicion de compra o sin total; escribirCuotasEn hereda el
+  // bloqueo porque `cierra` queda en false.
+  const fechaEmision = parsearFechaArg((valores.fecha ?? '').trim())
   const total =
     valores.tipoFactura === 'tarjeta' ? totalImputado(valores) : parsearImporte(valores.total)
 
@@ -61,7 +66,7 @@ export async function previsualizarCuotasEn(e: Ejecutor, comprobanteId: number):
     totalComprobante: total,
     cierra: false,
   }
-  if (!Number.isInteger(codCondCompra) || codCondCompra <= 0 || total <= 0) return vacio
+  if (!fechaEmision || !Number.isInteger(codCondCompra) || codCondCompra <= 0 || total <= 0) return vacio
 
   const [condicion, renglones] = await Promise.all([
     buscarCondicionCompra(codCondCompra),

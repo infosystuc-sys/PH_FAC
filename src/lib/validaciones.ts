@@ -95,10 +95,25 @@ export function validarTotales(
 
 const RE_CAE = /^\d{14}$/
 
+/**
+ * Acepta dd/mm/yyyy, dd.mm.yyyy y dd-mm-yyyy: la IA transcribe la fecha tal
+ * como está impresa en el comprobante, y no todos los proveedores usan la
+ * barra (ej. Topper imprime "30.07.2026"). Bug real, encontrado registrando
+ * un comprobante real: antes solo aceptaba la barra, así que una fecha con
+ * puntos no matcheaba, `parsearFechaArg` devolvía `null`, y el llamador
+ * hacía `?? new Date()` -- la factura quedaba grabada en Tango con la
+ * fecha de HOY en vez de la fecha real, en silencio, sin ningún error.
+ */
 export function parsearFechaArg(f: string): Date | null {
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(f.trim())
+  const m = /^(\d{2})[/.-](\d{2})[/.-](\d{4})$/.exec(f.trim())
   if (!m) return null
-  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]))
+  const dia = Number(m[1])
+  const mes = Number(m[2])
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
+  const d = new Date(Number(m[3]), mes - 1, dia)
+  // new Date() no rechaza dia=31 en un mes de 30: reindexa al mes
+  // siguiente en vez de fallar. Detectarlo comparando el dia de vuelta.
+  if (d.getDate() !== dia) return null
   return Number.isNaN(d.getTime()) ? null : d
 }
 
@@ -116,6 +131,21 @@ export function validarCae(
     return { estado: 'advertencia', mensaje: `CAE vencido el ${vtocae}.` }
   }
   return { estado: 'ok', mensaje: 'CAE válido.' }
+}
+
+/**
+ * La fecha de emisión no tiene otro chequeo en "Listo para registrar" --
+ * sin este, una fecha ilegible pasaba desapercibida hasta el momento de
+ * grabar, donde el registro la reemplazaba en silencio por la fecha de
+ * hoy (ver el comentario en `parsearFechaArg`).
+ */
+export function validarFecha(fecha: string | null | undefined): ResultadoValidacion {
+  const f = (fecha ?? '').trim()
+  if (!f) return { estado: 'error', mensaje: 'Falta la fecha de emisión.' }
+  if (!parsearFechaArg(f)) {
+    return { estado: 'error', mensaje: `No se pudo interpretar la fecha de emisión "${f}".` }
+  }
+  return { estado: 'ok', mensaje: 'Fecha de emisión válida.' }
 }
 
 export function validarFormatoNComp(
