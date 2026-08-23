@@ -219,6 +219,19 @@ export function Formulario({
             void aprenderImpuestoTango(comprobanteId, codProvee, 'percepcion', jurisdiccion, v.trim())
           }
         }
+
+        // El operador eligió a mano la condición de compra: si esta
+        // factura trae el texto de condición de pago/venta que imprimió
+        // el proveedor, se aprende la relación -- misma idea que IVA/IIBB,
+        // para que la próxima factura de artículos de este proveedor con
+        // el mismo texto ya no necesite elegirla de nuevo (ver
+        // resolverCondicionCompraEn en cola.ts).
+        if (clave === 'condcompra') {
+          const condicionTexto = (valores.condpago ?? '').trim()
+          if (condicionTexto) {
+            void aprenderImpuestoTango(comprobanteId, codProvee, 'condicion', condicionTexto, v.trim())
+          }
+        }
       }
 
       void guardarCampo(comprobanteId, clave, v)

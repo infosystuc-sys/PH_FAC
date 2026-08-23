@@ -151,6 +151,12 @@ No confundas el remito con la orden de compra ni con el número de la
 factura misma. Si no encontrás ningún remito, dejá remito1 y remito2
 vacíos: es un dato que el operador puede cargar, y uno inventado manda a
 buscar mercadería que no existe.
+También buscá la CONDICIÓN DE PAGO O DE VENTA, con etiquetas como
+"Condición de Venta", "Condiciones de Pago", "Forma de Pago" o similar.
+Devolvela tal como está impresa en condpago -- "Cuenta Corriente", "D026",
+"30-60-90 días", lo que figure, sin interpretarla ni convertirla a un
+código de Tango: eso lo hace el sistema después, comparándola contra lo
+que ya aprendió de este proveedor.
 Poné la atención en eso, en el neto gravado, las alícuotas de IVA y las
 percepciones del pie.`,
 

@@ -8,6 +8,7 @@ import {
   marcarLeidoEn,
   marcarFalloEn,
   resolverProveedorEn,
+  resolverCondicionCompraEn,
   observarSinConceptoEn,
   lineasDeRemitos,
   guardarRenglonesFacturadosEn,
@@ -22,7 +23,8 @@ import {
   MOTIVO_FACTURA_NO_COINCIDE,
 } from '@/lib/observacion'
 import { cotejarRenglones } from '@/lib/cotejo'
-import { obtenerDetalleEn } from '@/server/app/detalle'
+import { obtenerDetalleEn, guardarCampoEn } from '@/server/app/detalle'
+import { aprenderImpuestoEn } from '@/server/app/aprendizajeImpuestos'
 import { getPool } from '@/server/db/pool'
 
 afterAll(async () => {
@@ -296,6 +298,80 @@ describe('resolverProveedorEn', () => {
       const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
       const cod = await resolverProveedorEn(tx, id, String(real.cuit))
       expect(cod).toBe(String(real.cod))
+    })
+  })
+})
+
+describe('resolverCondicionCompraEn', () => {
+  function provPrueba(): string {
+    return `ZZ${Date.now() % 100000}`
+  }
+
+  it('completa condcompra cuando el proveedor ya enseño ese texto', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'condicion', 'Cuenta Corriente', '8')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await resolverCondicionCompraEn(tx, id, prov, 'Cuenta Corriente')
+
+      const d = await obtenerDetalleEn(tx, id)
+      const campo = d.campos.find((c) => c.clave === 'condcompra')!
+      expect(campo.valorFinal).toBe('8')
+      // Lo resolvio el sistema por lo aprendido, no el operador.
+      expect(campo.corregido).toBe(false)
+      expect(d.auditoria.some((a) => a.texto.includes('Condición de compra aprendida'))).toBe(true)
+    })
+  })
+
+  it('matchea aunque el texto venga con otro casing/acentuacion/espacios', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'condicion', 'cuenta corriente', '8')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await resolverCondicionCompraEn(tx, id, prov, '  CUENTA  CORRIENTE  ')
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'condcompra')?.valorFinal).toBe('8')
+    })
+  })
+
+  it('no escribe nada si el proveedor no enseño nada para ese texto', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await resolverCondicionCompraEn(tx, id, prov, 'Un texto que nunca se aprendio')
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'condcompra')).toBeUndefined()
+    })
+  })
+
+  it('no pisa una condicion de compra que ya tiene valor', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'condicion', 'Cuenta Corriente', '8')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      // Conceptos/tarjeta ya la fijan en COND_COMPRA_CONCEPTOS antes de
+      // llegar aca -- se simula con cualquier valor previo.
+      await guardarCampoEn(tx, id, 'condcompra', '2', { corregidoPorUsuario: false })
+      await resolverCondicionCompraEn(tx, id, prov, 'Cuenta Corriente')
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'condcompra')?.valorFinal).toBe('2')
+    })
+  })
+
+  it('no hace nada sin proveedor o sin texto de condicion', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await resolverCondicionCompraEn(tx, id, null, 'Cuenta Corriente')
+      await resolverCondicionCompraEn(tx, id, provPrueba(), null)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'condcompra')).toBeUndefined()
     })
   })
 })

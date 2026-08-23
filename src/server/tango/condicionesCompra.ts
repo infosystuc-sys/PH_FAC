@@ -8,6 +8,23 @@ export type CondicionCompra = {
   cuotas: number
 }
 
+/**
+ * Deja el texto de condición de pago/venta que imprime el proveedor en la
+ * misma forma con la que después se busca (`resolverCondicionCompraEn` en
+ * cola.ts), para que una fila aprendida con una grafía de la factura
+ * ("Cuenta Corriente", " CUENTA CORRIENTE ") haga match con la próxima
+ * aunque venga escrita con otro casing o espacios de más. Mismo criterio
+ * que `normalizar` en percepcionIibb.ts.
+ */
+export function normalizarTextoCondicion(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
 // Tango guarda la condicion de compra en dos niveles. CONDICION_COMPRA es la
 // cabecera: una fila por condicion (36). CPA49 son los renglones de cuotas
 // (68 filas): cada uno dice que porcentaje vence a los cuantos dias. La app

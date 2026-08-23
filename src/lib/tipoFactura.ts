@@ -69,11 +69,11 @@ export const MAX_CAMPOS_CON_RENGLONES = 31
  * en el prompt, no se guarda en PHF_CAMPO y no se muestra en el
  * formulario.
  *
- * Ninguno de estos ocho se usa para registrar: `cae`, `vtocae` y
+ * Ninguno de estos siete se usa para registrar: `cae`, `vtocae` y
  * `ordencompra` no se graban en Tango ni se cotejan contra nada; el
  * vencimiento que va a CPA54 sale de la condición de compra, no del campo
- * `vencimiento` (ver comprobantes.ts); y `condiva`/`condpago` salen de la
- * ficha del proveedor en CPA01, que es la que manda.
+ * `vencimiento` (ver comprobantes.ts); y `condiva` sale de la ficha del
+ * proveedor en CPA01, que es la que manda.
  *
  * `moneda` y `cotizacion` SÍ se graban en la cabecera, pero los
  * comprobantes que la app importa son siempre en pesos, así que los
@@ -89,7 +89,6 @@ const NO_ANALIZADOS_COMUNES = [
   'cotizacion',
   'ordencompra',
   'condiva',
-  'condpago',
   'vencimiento',
 ] as const
 
@@ -100,10 +99,23 @@ const NO_ANALIZADOS_COMUNES = [
  */
 const REMITOS = ['remito1', 'remito2'] as const
 
+/**
+ * `condpago` (el texto de la condición de pago/venta tal como lo imprime
+ * el proveedor, ej. "Cuenta Corriente", "D026", "30-60-90 días") solo se
+ * pide en artículos: es la única familia que deja `condcompra` vacía para
+ * que el operador la elija -- conceptos y tarjeta arrancan siempre con
+ * `COND_COMPRA_CONCEPTOS` fija (ver cola.ts), así que ahí no hay nada que
+ * ayudar a resolver. Se usa para aprender, por proveedor, a qué condición
+ * de compra de Tango corresponde ese texto (`resolverCondicionCompraEn` en
+ * cola.ts, mismo mecanismo que aprendizajeImpuestos.ts para IVA/IIBB) --
+ * decisión del usuario, 2026-08-23.
+ */
+const CONDICION_PAGO = ['condpago'] as const
+
 export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
-  conceptos: [...NO_ANALIZADOS_COMUNES, ...REMITOS],
+  conceptos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, ...CONDICION_PAGO],
   articulos: NO_ANALIZADOS_COMUNES,
-  tarjeta: [...NO_ANALIZADOS_COMUNES, ...REMITOS],
+  tarjeta: [...NO_ANALIZADOS_COMUNES, ...REMITOS, ...CONDICION_PAGO],
 }
 
 /** Las claves de remito que la IA lee, en orden. */
@@ -146,13 +158,19 @@ export function analizaCampo(tipo: TipoFactura, clave: string): boolean {
  * El grupo "Comprobante" se queda con cuatro campos. Con el span 2 del
  * catálogo suman 8: una fila de tres y una de uno solo. Con span 3 suman
  * 12 -- dos filas de dos, parejas. El grupo "Proveedor" no necesita
- * ajuste: pierde tres campos y queda en 12 por su cuenta.
+ * ajuste en conceptos/tarjeta: pierde tres campos (condiva, condpago,
+ * vencimiento) y queda en 12 por su cuenta. En artículos solo pierde dos
+ * (condiva, vencimiento) y `condpago` queda visible -- con su span de
+ * catálogo (2) el grupo quedaría en 14, no múltiplo de 6, así que ahí
+ * `condpago` pasa a ocupar la fila entera (6): es una condición de pago
+ * completa ("Cuenta Corriente 90-120-150-180 días"), no un código corto
+ * como el resto de esa fila.
  */
 const COMPROBANTE_A_MEDIA_FILA = { tipo: 3, ptovta: 3, nro: 3, fecha: 3 }
 
 const SPAN_POR_TIPO: Record<TipoFactura, Readonly<Record<string, number>>> = {
   conceptos: COMPROBANTE_A_MEDIA_FILA,
-  articulos: COMPROBANTE_A_MEDIA_FILA,
+  articulos: { ...COMPROBANTE_A_MEDIA_FILA, condpago: 6 },
   tarjeta: COMPROBANTE_A_MEDIA_FILA,
 }
 

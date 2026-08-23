@@ -183,17 +183,20 @@ const DEFINICIONES: Definicion[] = [
       CREATE TABLE PHF_ALICUOTA_PROVEEDOR (
         ID              INT IDENTITY(1,1) NOT NULL,
         COD_PROVEE      VARCHAR(20)    NOT NULL,
-        -- 'iva' | 'percepcion'. Sin CHECK: agregar un tercer tipo (por
-        -- ejemplo impuestos varios, cuando la IA capture su texto) no debe
-        -- pedir una migracion aparte.
+        -- 'iva' | 'percepcion' | 'condicion' (2026-08-23: condicion de
+        -- compra, agregada sin migracion aparte -- exactamente lo que este
+        -- comentario anticipaba). Sin CHECK: un cuarto tipo tampoco deberia
+        -- pedir una migracion.
         TIPO            VARCHAR(20)    NOT NULL,
-        -- Como se identifica el impuesto en la factura de este proveedor,
-        -- ya normalizado (ver aprendizajeImpuestos.ts): en 'iva' es el
+        -- Como se identifica el dato en la factura de este proveedor, ya
+        -- normalizado (ver aprendizajeImpuestos.ts): en 'iva' es el
         -- porcentaje ("21", "10.5"); en 'percepcion' es la jurisdiccion sin
-        -- acentos ni mayusculas ("tucuman"). Se guarda normalizado -- no la
-        -- grafia exacta de esa factura puntual -- para que dos facturas del
-        -- mismo proveedor con distinto casing/acentuacion sigan pegando en
-        -- la misma fila.
+        -- acentos ni mayusculas ("tucuman"); en 'condicion' es el texto de
+        -- condicion de pago/venta que imprime el proveedor, tambien sin
+        -- acentos ni mayusculas ("cuenta corriente"). Se guarda normalizado
+        -- -- no la grafia exacta de esa factura puntual -- para que dos
+        -- facturas del mismo proveedor con distinto casing/acentuacion
+        -- sigan pegando en la misma fila.
         DESCRIPCION     NVARCHAR(200)  NOT NULL,
         COD_TANGO       VARCHAR(10)    NOT NULL,
         FECHA_ALTA      DATETIME2      NOT NULL CONSTRAINT DF_PHF_ALIPROV_ALTA DEFAULT SYSDATETIME(),

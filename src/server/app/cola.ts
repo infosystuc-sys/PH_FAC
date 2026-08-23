@@ -20,8 +20,10 @@ import {
   MOTIVO_REMITO_SIN_SALDO,
   MOTIVO_FACTURA_NO_COINCIDE,
 } from '@/lib/observacion'
-import { guardarExtraccionEn, guardarCampoEn, auditarEn } from './detalle'
+import { guardarExtraccionEn, guardarCampoEn, auditarEn, obtenerDetalleEn } from './detalle'
 import { leerPdf } from './archivos'
+import { cargarAprendidosEn } from './aprendizajeImpuestos'
+import { normalizarTextoCondicion } from '@/server/tango/condicionesCompra'
 
 export const MAX_INTENTOS = 3
 export const MINUTOS_REPESCA = 10
@@ -217,6 +219,42 @@ export async function resolverProveedorEn(
 
   await auditarEn(e, id, `Proveedor resuelto por CUIT: ${proveedor.codProvee} — ${proveedor.razonSocial}`)
   return proveedor.codProvee
+}
+
+/**
+ * Si esta factura de artículos todavía no tiene condición de compra
+ * elegida y el proveedor ya le enseñó a la app a qué código de Tango
+ * corresponde el texto de condición de pago/venta que imprime (`condpago`,
+ * ver `CONDICION_PAGO` en tipoFactura.ts), la aplica sola -- mismo
+ * mecanismo que `aprendizajeImpuestos.ts` usa para IVA/IIBB, ahora
+ * también para condición de compra (tipo `'condicion'`). El operador la
+ * sigue pudiendo cambiar desde el formulario; al hacerlo, se reaprende
+ * (ver `cambiar()` en formulario.tsx).
+ *
+ * Conceptos y tarjeta no llaman a esto: ya arrancan con
+ * `COND_COMPRA_CONCEPTOS` fija (ver más arriba), así que `condcompra` ya
+ * está seteada para cuando este paso correría -- no hay nada que resolver.
+ */
+export async function resolverCondicionCompraEn(
+  e: Ejecutor,
+  id: number,
+  codProvee: string | null,
+  condicionTexto: string | null,
+): Promise<void> {
+  const prov = (codProvee ?? '').trim()
+  const texto = (condicionTexto ?? '').trim()
+  if (!prov || !texto) return
+
+  const detalle = await obtenerDetalleEn(e, id)
+  const yaTiene = (detalle.campos.find((c) => c.clave === 'condcompra')?.valorFinal ?? '').trim()
+  if (yaTiene) return
+
+  const aprendidos = await cargarAprendidosEn(e, prov, 'condicion')
+  const cod = aprendidos[normalizarTextoCondicion(texto)]
+  if (!cod) return
+
+  await guardarCampoEn(e, id, 'condcompra', cod, { corregidoPorUsuario: false })
+  await auditarEn(e, id, `Condición de compra aprendida para el proveedor: "${texto}" → código ${cod}`)
 }
 
 /**
@@ -570,6 +608,7 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       }
       await desnormalizarBandejaEn(tx, id, r.extraccion)
       const cod = await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
+      await resolverCondicionCompraEn(tx, id, cod, r.extraccion.campos.condpago?.valor ?? null)
       const conValor = Object.values(r.extraccion.campos).filter((c) => c.valor !== null).length
       await marcarLeidoEn(tx, id, prom, r.ms, r.modelo, conValor)
       await observarSinConceptoEn(tx, id, tipoFactura, cod)

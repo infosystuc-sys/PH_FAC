@@ -45,6 +45,16 @@ describe('aprenderImpuestoEn / cargarAprendidosEn', () => {
     })
   })
 
+  it('normaliza la condicion de compra: sin acentos, mayusculas ni espacios de mas', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'condicion', '  Cuenta  Corriente  ', '8')
+
+      const aprendidos = await cargarAprendidosEn(tx, prov, 'condicion')
+      expect(aprendidos).toEqual({ 'cuenta corriente': '8' })
+    })
+  })
+
   it('una segunda correccion para el mismo texto reemplaza a la primera', async () => {
     await conRollback(async (tx) => {
       const prov = provPrueba()

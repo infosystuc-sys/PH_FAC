@@ -3,29 +3,35 @@ import { getPool } from '../db/pool'
 import { usuarioActual } from '@/lib/usuario'
 import { parsearImporte } from '@/lib/formato'
 import { normalizar as normalizarJurisdiccion } from '@/lib/percepcionIibb'
+import { normalizarTextoCondicion } from '@/server/tango/condicionesCompra'
 
 type Ejecutor = { request(): sql.Request }
 
 /**
- * Los dos tipos de impuesto que hoy pueden aprenderse por proveedor. Las
- * alícuotas de IVA se identifican por porcentaje y las percepciones de
- * Ingresos Brutos por jurisdicción -- ver el comentario de
- * `PHF_ALICUOTA_PROVEEDOR` en `scripts/migrate.ts`. Los impuestos varios
- * quedan afuera: hoy la IA no captura un texto propio para esa línea, solo
- * el código que ya elige el operador de una lista -- no hay "cómo lo
- * escribe la factura" que guardar todavía.
+ * Los tres tipos de dato que hoy pueden aprenderse por proveedor. Las
+ * alícuotas de IVA se identifican por porcentaje, las percepciones de
+ * Ingresos Brutos por jurisdicción, y la condición de compra por el texto
+ * de condición de pago/venta que imprime el proveedor -- ver el comentario
+ * de `PHF_ALICUOTA_PROVEEDOR` en `scripts/migrate.ts` (el nombre de la
+ * tabla quedó corto desde que 'condicion' no es una alícuota, pero el
+ * mecanismo -- MERGE por proveedor+tipo+texto -- es el mismo). Los
+ * impuestos varios quedan afuera: hoy la IA no captura un texto propio
+ * para esa línea, solo el código que ya elige el operador de una lista --
+ * no hay "cómo lo escribe la factura" que guardar todavía.
  */
-export type TipoAprendizaje = 'iva' | 'percepcion'
+export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion'
 
 /**
  * Deja la `DESCRIPCION` de la tabla en la misma forma con la que después
- * se busca (`resolverCodigoIva`/`resolverPercepcionIibb`), para que una
- * fila aprendida con una grafía de la factura ("21,00%", "Tucumán ") haga
+ * se busca (`resolverCodigoIva`/`resolverPercepcionIibb`/
+ * `resolverCondicionCompraEn`), para que una fila aprendida con una
+ * grafía de la factura ("21,00%", "Tucumán ", "CUENTA CORRIENTE") haga
  * match con la próxima aunque venga escrita distinto.
  */
 function normalizarDescripcion(tipo: TipoAprendizaje, descripcion: string): string {
   if (tipo === 'iva') return String(parsearImporte(descripcion))
-  return normalizarJurisdiccion(descripcion)
+  if (tipo === 'percepcion') return normalizarJurisdiccion(descripcion)
+  return normalizarTextoCondicion(descripcion)
 }
 
 /**

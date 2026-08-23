@@ -385,10 +385,13 @@ export async function aprenderImpuestoTango(
 ): Promise<void> {
   await aprenderImpuesto(codProvee, tipo, descripcion, codTango)
 
-  const etiqueta = tipo === 'iva' ? `IVA ${descripcion}%` : `IIBB "${descripcion}"`
-  await conTransaccion((tx) =>
-    auditarEn(tx, comprobanteId, `Impuesto aprendido para el proveedor: ${etiqueta} → código ${codTango}`),
-  )
+  const mensaje =
+    tipo === 'iva'
+      ? `Impuesto aprendido para el proveedor: IVA ${descripcion}% → código ${codTango}`
+      : tipo === 'percepcion'
+        ? `Impuesto aprendido para el proveedor: IIBB "${descripcion}" → código ${codTango}`
+        : `Condición de compra aprendida para el proveedor: "${descripcion}" → código ${codTango}`
+  await conTransaccion((tx) => auditarEn(tx, comprobanteId, mensaje))
 }
 
 /** Todo el maestro de conceptos, para que el operador elija uno a mano. */
