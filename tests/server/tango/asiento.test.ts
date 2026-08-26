@@ -113,6 +113,63 @@ describe('previsualizarAsientoEn', () => {
     })
   })
 
+  it('la leyenda del operador se agrega a la leyenda de cada renglon, no la reemplaza', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+      await guardarCampoEn(tx, id, 'neto', '10000,00')
+      await guardarCampoEn(tx, id, 'total', '12100,00')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '2100,00')
+      await guardarCampoEn(tx, id, 'leyendaAsiento', 'Pago adelantado agosto')
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+
+      expect(asiento.lineas).toHaveLength(3)
+      for (const l of asiento.lineas) {
+        expect(l.leyenda).toMatch(/ — Pago adelantado agosto$/)
+      }
+      // La base de cada leyenda sigue distinguiendo que es cada linea.
+      const sb = asiento.lineas.find((l) => l.codCuenta === '51460')
+      expect(sb!.leyenda).toBe('Subtotal gravado — Pago adelantado agosto')
+    })
+  })
+
+  it('sin leyenda del operador, las lineas quedan igual que antes', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+      await guardarCampoEn(tx, id, 'neto', '10000,00')
+      await guardarCampoEn(tx, id, 'total', '12100,00')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '2100,00')
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+      const sb = asiento.lineas.find((l) => l.codCuenta === '51460')
+      expect(sb!.leyenda).toBe('Subtotal gravado')
+    })
+  })
+
+  it('la leyenda combinada se trunca a 100 caracteres, igual que va a quedar grabada', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+      await guardarCampoEn(tx, id, 'neto', '10000,00')
+      await guardarCampoEn(tx, id, 'total', '12100,00')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '2100,00')
+      await guardarCampoEn(tx, id, 'leyendaAsiento', 'X'.repeat(200))
+
+      const asiento = await previsualizarAsientoEn(tx, id)
+      for (const l of asiento.lineas) {
+        expect(l.leyenda.length).toBeLessThanOrEqual(100)
+      }
+    })
+  })
+
   it('factura de articulos: Subtotal gravado va a la cuenta del articulo', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
@@ -332,6 +389,33 @@ describe('escribirAsientoEn', () => {
       const totalDebe = filas.filter((l) => l.D_H === 'D').reduce((a, l) => a + Number(l.IMPORTE_RENGLON_BASE_CP), 0)
       const totalHaber = filas.filter((l) => l.D_H === 'H').reduce((a, l) => a + Number(l.IMPORTE_RENGLON_BASE_CP), 0)
       expect(totalDebe).toBe(totalHaber)
+    })
+  })
+
+  it('graba la leyenda del operador agregada a la de cada renglon real', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'codprovee', '010151')
+      await guardarCampoEn(tx, id, 'neto', '10000,00')
+      await guardarCampoEn(tx, id, 'total', '12100,00')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '2100,00')
+      await guardarCampoEn(tx, id, 'leyendaAsiento', 'Referencia OC-4521')
+
+      const ncompInC = ncompFalso(3)
+      await escribirAsientoEn(tx, id, ncompInC, new Date('2026-06-19T00:00:00Z'))
+
+      const header = await tx.request().input('n', ncompInC).query(`
+        SELECT ID_ASIENTO_COMPROBANTE_CP FROM ASIENTO_COMPROBANTE_CP WHERE NCOMP_IN_C = @n
+      `)
+      const lineas = await tx.request().input('id', header.recordset[0].ID_ASIENTO_COMPROBANTE_CP).query(`
+        SELECT DESC_LEYENDA FROM ASIENTO_CP WHERE ID_ASIENTO_COMPROBANTE_CP = @id
+      `)
+      expect(lineas.recordset).toHaveLength(3)
+      for (const l of lineas.recordset as { DESC_LEYENDA: string }[]) {
+        expect(l.DESC_LEYENDA.trim()).toMatch(/ — Referencia OC-4521$/)
+      }
     })
   })
 

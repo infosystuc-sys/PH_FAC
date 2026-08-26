@@ -125,12 +125,18 @@ export const CAMPOS: DefCampo[] = [
   { clave: 'imputado', label: 'Total imputado', grupo: 'importes', span: 3,
     tipo: 'decimal', mono: true, extraePorIA: false, soloLectura: true },
 
-  // Imputación en Tango — 6 = 1 fila. Ninguno lo extrae la IA:
+  // Imputación en Tango — 12 = 2 filas de 6. Ninguno lo extrae la IA:
   // `codprovee` se resuelve del CUIT, `condcompra` lo elige el operador.
   { clave: 'condcompra', label: 'Condición de compra', grupo: 'imputacion', span: 3,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
   { clave: 'tipoFactura', label: 'Tipo de factura', grupo: 'imputacion', span: 3,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
+  // Texto libre del operador, aparte de cualquier campo que lea la IA. Se
+  // agrega a la leyenda de cada renglón del asiento -- ver
+  // previsualizarAsientoEn en asiento.ts -- para dejar constancia de algo
+  // que no sale del comprobante (un motivo de pago, una referencia interna).
+  { clave: 'leyendaAsiento', label: 'Leyenda / observación del asiento', grupo: 'imputacion', span: 6,
+    tipo: 'texto', mono: false, extraePorIA: false, soloLectura: false },
 ]
 
 /** Correccion manual del codigo de Tango de una fila. No la extrae la IA. */

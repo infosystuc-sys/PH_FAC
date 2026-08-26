@@ -27,6 +27,9 @@ import { terminalActual } from '@/lib/usuario'
 /** El unico modelo que pidio el usuario: "FACTURAS / NOTAS DE DEBITO". */
 const ID_ASIENTO_MODELO_CP = 1
 
+/** ASIENTO_CP.DESC_LEYENDA es VARCHAR(100) -- verificado contra la base real. */
+const LARGO_LEYENDA = 100
+
 export type RenglonModelo = {
   idCuenta: number
   codCuenta: string
@@ -389,11 +392,23 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
     })
   }
 
+  // Texto libre del operador (campo "Leyenda / observación del asiento"),
+  // agregado a la leyenda de cada renglón -- no la reemplaza, cada línea
+  // sigue diciendo qué es (Subtotal gravado, IVA 21%...), esto solo suma
+  // algo que el comprobante no dice. Se trunca acá, no solo al escribir
+  // en escribirAsientoEn, para que la vista previa ("Ver asiento") muestre
+  // exactamente el texto que va a quedar grabado en ASIENTO_CP.DESC_LEYENDA
+  // (VARCHAR(100)).
+  const observacion = (valores.leyendaAsiento ?? '').trim()
+  const lineasConLeyenda = observacion
+    ? lineas.map((l) => ({ ...l, leyenda: `${l.leyenda} — ${observacion}`.slice(0, LARGO_LEYENDA) }))
+    : lineas
+
   const totalDebe = Math.round(lineas.reduce((a, l) => a + l.debe, 0) * 100) / 100
   const totalHaber = Math.round(lineas.reduce((a, l) => a + l.haber, 0) * 100) / 100
 
   return {
-    lineas,
+    lineas: lineasConLeyenda,
     totalDebe,
     totalHaber,
     balanceado: Math.abs(totalDebe - totalHaber) < 0.01,
@@ -480,7 +495,7 @@ export async function escribirAsientoEn(
       .input('idCuenta', sql.Int, l.idCuenta)
       .input('dh', sql.Char(1), l.debe > 0 ? 'D' : 'H')
       .input('importe', sql.Decimal(19, 4), importe)
-      .input('leyenda', sql.VarChar(100), l.leyenda.slice(0, 100))
+      .input('leyenda', sql.VarChar(LARGO_LEYENDA), l.leyenda.slice(0, LARGO_LEYENDA))
       .input('edita', sql.Char(1), l.editaCuenta ? 'S' : 'N')
       .query(`
         INSERT INTO ASIENTO_CP
