@@ -2,13 +2,7 @@
 
 ## Para retomar ahora (2026-08-26)
 
-**Único pendiente inmediato: pushear a `origin`.** `master` está adelante de `origin/master` (todo el trabajo reciente). El `push`/`fetch` automático **no funciona desde esta sesión**: se diagnosticó con `GIT_TRACE=1` que no es un problema de red (curl a github.com responde al toque) sino que GitHub devuelve 401 y Git Credential Manager intenta abrir un prompt interactivo de login que una sesión no interactiva no puede completar -- por eso `git fetch`/`git push` cuelgan sin error, no fallan. Correr manualmente desde una terminal propia:
-
-```bash
-cd /d/APP/PH_FAC && git push origin master
-```
-
-Va a pedir loguearse en GitHub una sola vez (ventana del navegador o de Windows); después queda cacheado.
+**El push/fetch automático ya funciona desde esta sesión (resuelto 2026-08-26).** El problema original -- GitHub devolvía 401 y Git Credential Manager intentaba abrir un prompt interactivo de login que una sesión no interactiva no puede completar, así que `git fetch`/`git push` colgaban sin error -- era del remoto HTTPS. Se cambió `origin` a SSH (`git@github.com:infosystuc-sys/factura.git`): ya había una clave (`~/.ssh/id_ed25519`, sin passphrase, comentario `infosystuc@gmail.com`) generada antes pero nunca autorizada en GitHub -- el usuario la agregó en https://github.com/settings/ssh/new y desde entonces `git push`/`git fetch` andan directo, sin ningún login manual. `master` está al día con `origin/master`.
 
 No hay ninguna rama propia ni worktree pendiente de mergear — todo el trabajo reciente se hizo directo en `master`, con el consentimiento explícito del usuario en cada caso.
 
