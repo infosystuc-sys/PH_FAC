@@ -9,6 +9,7 @@ const TABLAS = [
   'PHF_RENGLON',
   'PHF_AUDITORIA',
   'PHF_ALICUOTA_PROVEEDOR',
+  'PHF_CONFIGURACION',
 ]
 
 async function columnas(pool: sql.ConnectionPool, tabla: string): Promise<string[]> {
@@ -24,9 +25,10 @@ async function columnas(pool: sql.ConnectionPool, tabla: string): Promise<string
 }
 
 async function limpiarPrefijo(pool: sql.ConnectionPool, prefijo: string): Promise<void> {
-  // Orden inverso al de creacion por las FK. ALICUOTA_PROVEEDOR no tiene
-  // FK a ninguna otra tabla propia, asi que su lugar en el orden no importa.
-  for (const t of ['AUDITORIA', 'RENGLON', 'CAMPO', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR']) {
+  // Orden inverso al de creacion por las FK. ALICUOTA_PROVEEDOR y
+  // CONFIGURACION no tienen FK a ninguna otra tabla propia, asi que su
+  // lugar en el orden no importa.
+  for (const t of ['AUDITORIA', 'RENGLON', 'CAMPO', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'CONFIGURACION']) {
     await pool.request().batch(`DROP TABLE IF EXISTS ${prefijo}${t}`)
   }
 }
@@ -87,7 +89,7 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
       const pool = await getPool()
       // Los hijos (FK con ON DELETE CASCADE) tienen que caer antes que
       // PHF_COMPROBANTE, que es la tabla referenciada.
-      const sufijosEnOrden = ['CAMPO', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'ROTA']
+      const sufijosEnOrden = ['CAMPO', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'CONFIGURACION', 'ROTA']
       for (const prefijo of prefijosUsados) {
         for (const sufijo of sufijosEnOrden) {
           const tabla = `${prefijo}${sufijo}`
@@ -142,6 +144,20 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
         WHERE t.name = @t AND i.name LIKE 'IX[_]%'
       `)
     expect(idx.recordset[0].n).toBe(3)
+  })
+
+  it('siembra la fila unica (ID=1) de PHF_CONFIGURACION, sin duplicarla en corridas siguientes', async () => {
+    const prefijo = prefijoUnico()
+    await migrar(prefijo)
+
+    const pool = await getPool()
+    const tabla = `${prefijo}CONFIGURACION`
+    const filas = await pool.request().query(`SELECT ID, CARPETA_RAIZ, INTERVALO_MINUTOS FROM ${tabla}`)
+    expect(filas.recordset).toEqual([{ ID: 1, CARPETA_RAIZ: null, INTERVALO_MINUTOS: 15 }])
+
+    await migrar(prefijo)
+    const otraVez = await pool.request().query(`SELECT COUNT(*) AS n FROM ${tabla}`)
+    expect(otraVez.recordset[0].n).toBe(1)
   })
 
   it('la segunda corrida con el mismo prefijo no crea nada', async () => {

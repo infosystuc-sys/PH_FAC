@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { probarConexion } from '@/server/db/pool'
 import { usuarioActual } from '@/lib/usuario'
 import styles from './header-global.module.css'
@@ -19,6 +20,9 @@ export async function HeaderGlobal() {
       <span className={styles.seccion}>Cuentas a pagar</span>
 
       <div className={styles.derecha}>
+        <Link href="/configuracion" className={styles.config}>
+          Configuración
+        </Link>
         <span
           className={styles.punto}
           style={{ background: conexion.ok ? 'var(--conexion-ok)' : 'var(--error)' }}

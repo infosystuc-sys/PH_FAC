@@ -14,15 +14,22 @@ import {
   type RenglonFacturado,
 } from '@/lib/cotejo'
 import { normalizarCuit, parsearImporteONulo } from '@/lib/formato'
-import { tipoFacturaODefault, CLAVES_REMITO, type TipoFactura } from '@/lib/tipoFactura'
+import {
+  tipoFacturaODefault,
+  CLAVES_REMITO,
+  TIPOS_FACTURA,
+  TIPO_FACTURA_DEFAULT,
+  type TipoFactura,
+} from '@/lib/tipoFactura'
 import {
   MOTIVO_SIN_CONCEPTO,
   MOTIVO_REMITO_SIN_SALDO,
   MOTIVO_FACTURA_NO_COINCIDE,
 } from '@/lib/observacion'
 import { guardarExtraccionEn, guardarCampoEn, auditarEn, obtenerDetalleEn } from './detalle'
-import { leerPdf } from './archivos'
+import { guardarPdf, leerPdf } from './archivos'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
+import { usuarioActual } from '@/lib/usuario'
 import { normalizarTextoCondicion } from '@/server/tango/condicionesCompra'
 import { buscarFacturaEnCpa04 } from '@/server/tango/comprobantes'
 import { letraComprobante, nComp as armarNComp } from '@/lib/validaciones'
@@ -38,6 +45,42 @@ const INTERVALO_MS = 2 * 60 * 1000
 type Ejecutor = { request(): sql.Request }
 
 export type Pendiente = { id: number; ruta: string; tipoFactura: TipoFactura }
+
+/**
+ * El punto de entrada real al pipeline, sin importar de donde vino el PDF
+ * (carga manual en `acciones.ts`, o el escaneo automatico de carpetas en
+ * `carpetas.ts`): guarda el archivo, inserta la fila en 'procesando' y
+ * audita el alta. No llama a la IA -- eso lo hace `procesarUno`, mas abajo,
+ * cuando el worker (`tanda()`) la levante.
+ */
+export async function importarComprobanteEn(
+  e: Ejecutor,
+  nombre: string,
+  datos: Buffer,
+  tipoFactura: TipoFactura = TIPO_FACTURA_DEFAULT,
+  origen: string = 'carga manual',
+): Promise<number> {
+  const { ruta, hash } = await guardarPdf(nombre, datos)
+
+  const r = await e
+    .request()
+    .input('nombre', sql.NVarChar(260), nombre.slice(0, 260))
+    .input('ruta', sql.NVarChar(500), ruta)
+    .input('hash', sql.Char(64), hash)
+    .input('tipoFactura', sql.VarChar(20), tipoFactura)
+    .input('usuario', sql.NVarChar(60), usuarioActual())
+    .query(`
+      INSERT INTO PHF_COMPROBANTE
+        (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, TIPO_FACTURA, USUARIO_ALTA)
+      OUTPUT INSERTED.ID
+      VALUES (@nombre, @ruta, @hash, 'procesando', @tipoFactura, @usuario)
+    `)
+
+  const id = Number(r.recordset[0].ID)
+  const etiqueta = TIPOS_FACTURA.find((t) => t.clave === tipoFactura)?.label ?? tipoFactura
+  await auditarEn(e, id, `PDF importado desde ${origen} — ${etiqueta}`)
+  return id
+}
 
 /**
  * Los comprobantes que hay que extraer: los recien encolados y los que

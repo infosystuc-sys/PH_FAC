@@ -4,17 +4,12 @@ import sql from 'mssql'
 import { revalidatePath } from 'next/cache'
 import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
-import { borrarPdf, guardarPdf } from './archivos'
+import { borrarPdf } from './archivos'
 import { auditarEn, guardarCampoEn } from './detalle'
-import { despertarWorker } from './cola'
+import { despertarWorker, importarComprobanteEn } from './cola'
 import { usuarioActual } from '@/lib/usuario'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
-import {
-  TIPOS_FACTURA,
-  TIPO_FACTURA_DEFAULT,
-  esTipoFactura,
-  type TipoFactura,
-} from '@/lib/tipoFactura'
+import { esTipoFactura } from '@/lib/tipoFactura'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
 import { registrarComprobante as registrarComprobanteTango } from '@/server/tango/comprobantes'
@@ -32,42 +27,21 @@ import { renglonesDelRemitoInterno } from '@/server/tango/remitos'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
 import { aprenderImpuesto, type TipoAprendizaje } from './aprendizajeImpuestos'
+import {
+  leerConfiguracionCarpetasEn,
+  guardarConfiguracionCarpetasEn,
+  escanearCarpetasAhora,
+  type ConfiguracionCarpetas,
+} from './carpetas'
 
 export type { AsientoPreview, LineaAsiento } from '@/server/tango/asiento'
 export type { CuotasPreview, CuotaPreview } from '@/server/tango/cuotas'
+export type { ConfiguracionCarpetas } from './carpetas'
 
 type Ejecutor = { request(): sql.Request }
 
 const MAX_BYTES = 10 * 1024 * 1024
 const MAX_ARCHIVOS = 50
-
-export async function importarComprobanteEn(
-  e: Ejecutor,
-  nombre: string,
-  datos: Buffer,
-  tipoFactura: TipoFactura = TIPO_FACTURA_DEFAULT,
-): Promise<number> {
-  const { ruta, hash } = await guardarPdf(nombre, datos)
-
-  const r = await e
-    .request()
-    .input('nombre', sql.NVarChar(260), nombre.slice(0, 260))
-    .input('ruta', sql.NVarChar(500), ruta)
-    .input('hash', sql.Char(64), hash)
-    .input('tipoFactura', sql.VarChar(20), tipoFactura)
-    .input('usuario', sql.NVarChar(60), usuarioActual())
-    .query(`
-      INSERT INTO PHF_COMPROBANTE
-        (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, TIPO_FACTURA, USUARIO_ALTA)
-      OUTPUT INSERTED.ID
-      VALUES (@nombre, @ruta, @hash, 'procesando', @tipoFactura, @usuario)
-    `)
-
-  const id = Number(r.recordset[0].ID)
-  const etiqueta = TIPOS_FACTURA.find((t) => t.clave === tipoFactura)?.label ?? tipoFactura
-  await auditarEn(e, id, `PDF importado desde carga manual — ${etiqueta}`)
-  return id
-}
 
 export async function importarComprobantes(fd: FormData): Promise<{ importados: number }> {
   const archivos = fd.getAll('archivos').filter((x): x is File => x instanceof File)
@@ -724,4 +698,21 @@ export async function verAsiento(comprobanteId: number): Promise<AsientoPreview>
  */
 export async function verCuotas(comprobanteId: number): Promise<CuotasPreview> {
   return previsualizarCuotas(comprobanteId)
+}
+
+export async function leerConfiguracionCarpetas(): Promise<ConfiguracionCarpetas> {
+  return leerConfiguracionCarpetasEn(await getPool())
+}
+
+export async function guardarConfiguracionCarpetas(
+  carpetaRaiz: string | null,
+  intervaloMinutos: number,
+): Promise<void> {
+  await guardarConfiguracionCarpetasEn(await getPool(), carpetaRaiz, intervaloMinutos)
+  revalidatePath('/configuracion')
+}
+
+/** Botón "Escanear ahora": dispara el escaneo sin esperar al ciclo. No espera el resultado. */
+export async function dispararEscaneoCarpetas(): Promise<void> {
+  escanearCarpetasAhora()
 }

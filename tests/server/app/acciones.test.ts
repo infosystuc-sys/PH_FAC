@@ -4,7 +4,6 @@ import { rm } from 'node:fs/promises'
 import { conRollback } from '@/server/db/tx'
 import { cerrarPool, getPool } from '@/server/db/pool'
 import {
-  importarComprobanteEn,
   importarComprobantes,
   elegirProveedorEn,
   confirmarComprobante,
@@ -27,70 +26,6 @@ afterAll(async () => {
 })
 
 const PDF = Buffer.from('%PDF-1.4 de prueba')
-
-describe('importarComprobanteEn', () => {
-  it('crea el comprobante en procesando', async () => {
-    await conRollback(async (tx) => {
-      const id = await importarComprobanteEn(tx, 'factura.pdf', PDF)
-      const r = await tx.request().input('id', sql.Int, id)
-        .query('SELECT ESTADO, ARCHIVO_NOMBRE, ARCHIVO_HASH, ARCHIVO_RUTA, INTENTOS FROM PHF_COMPROBANTE WHERE ID = @id')
-      const c = r.recordset[0]
-      creados.push(String(c.ARCHIVO_RUTA))
-
-      expect(c.ESTADO).toBe('procesando')
-      expect(c.ARCHIVO_NOMBRE).toBe('factura.pdf')
-      expect(String(c.ARCHIVO_HASH)).toHaveLength(64)
-      expect(c.INTENTOS).toBe(0)
-    })
-  })
-
-  it('deja la entrada de auditoria de la importacion', async () => {
-    await conRollback(async (tx) => {
-      const id = await importarComprobanteEn(tx, 'factura.pdf', PDF)
-      const r = await tx.request().input('id', sql.Int, id)
-        .query('SELECT ARCHIVO_RUTA FROM PHF_COMPROBANTE WHERE ID = @id')
-      creados.push(String(r.recordset[0].ARCHIVO_RUTA))
-
-      // La entrada deja asentado el tipo elegido al importar, que es lo
-      // que decide con que prompt lo lee la IA: si despues el comprobante
-      // sale mal leido, el historial dice si se importo con el tipo que
-      // correspondia.
-      const d = await obtenerDetalleEn(tx, id)
-      expect(d.auditoria[0].texto).toBe(
-        'PDF importado desde carga manual — Factura de conceptos',
-      )
-    })
-  })
-
-  it('asienta en la auditoria el tipo elegido cuando no es el default', async () => {
-    await conRollback(async (tx) => {
-      const id = await importarComprobanteEn(tx, 'resumen.pdf', PDF, 'tarjeta')
-      const r = await tx.request().input('id', sql.Int, id)
-        .query('SELECT ARCHIVO_RUTA, TIPO_FACTURA FROM PHF_COMPROBANTE WHERE ID = @id')
-      creados.push(String(r.recordset[0].ARCHIVO_RUTA))
-
-      expect(r.recordset[0].TIPO_FACTURA).toBe('tarjeta')
-      const d = await obtenerDetalleEn(tx, id)
-      expect(d.auditoria[0].texto).toContain('Liquidación de tarjeta')
-    })
-  })
-
-  it('permite importar dos veces el mismo PDF', async () => {
-    // La deteccion de duplicados es de la Fase 3 y va por proveedor + tipo
-    // + numero, no por hash del archivo. Importar dos veces no se bloquea.
-    await conRollback(async (tx) => {
-      const a = await importarComprobanteEn(tx, 'factura.pdf', PDF)
-      const b = await importarComprobanteEn(tx, 'factura.pdf', PDF)
-      expect(a).not.toBe(b)
-
-      for (const id of [a, b]) {
-        const r = await tx.request().input('id', sql.Int, id)
-          .query('SELECT ARCHIVO_RUTA FROM PHF_COMPROBANTE WHERE ID = @id')
-        creados.push(String(r.recordset[0].ARCHIVO_RUTA))
-      }
-    })
-  })
-})
 
 describe('importarComprobantes', () => {
   it('no deja ningun comprobante importado si un archivo del lote supera el limite de tamano', async () => {

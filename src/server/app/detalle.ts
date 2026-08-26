@@ -241,3 +241,19 @@ export async function auditarEn(
       VALUES (@id, @texto, @usuario)
     `)
 }
+
+/**
+ * El ID de un comprobante ya importado con este mismo hash de archivo, o
+ * `null` si no hay ninguno. `guardarPdf` ya calcula este hash (ARCHIVO_HASH)
+ * para cada PDF, pero hasta ahora nada lo usaba: la carga manual no lo
+ * necesita (el operador ve lo que está subiendo), el escaneo automático de
+ * carpetas sí -- es la forma de no crear un comprobante repetido si el
+ * mismo PDF se dropea dos veces en la carpeta.
+ */
+export async function buscarComprobantePorHashEn(e: Ejecutor, hash: string): Promise<number | null> {
+  const r = await e
+    .request()
+    .input('hash', sql.Char(64), hash)
+    .query('SELECT TOP 1 ID FROM PHF_COMPROBANTE WHERE ARCHIVO_HASH = @hash')
+  return r.recordset.length > 0 ? Number(r.recordset[0].ID) : null
+}

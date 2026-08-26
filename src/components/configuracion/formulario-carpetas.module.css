@@ -1,0 +1,131 @@
+.tarjeta {
+  max-width: 520px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 9px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  margin-bottom: 5px;
+  font-size: 11.5px;
+  color: var(--texto-3);
+}
+
+.input {
+  height: 36px;
+  padding: 0 11px;
+  border-radius: 7px;
+  border: 1px solid var(--borde-input);
+  background: var(--superficie);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: var(--texto);
+  outline: none;
+}
+
+.inputChico {
+  composes: input;
+  width: 90px;
+  font-family: var(--sans);
+}
+
+.input:focus,
+.inputChico:focus {
+  border-color: var(--acento);
+  box-shadow: 0 0 0 3px rgba(43, 79, 208, 0.12);
+}
+
+.ayuda {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--texto-4);
+}
+
+.code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--fondo-app);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--error);
+}
+
+.acciones {
+  display: flex;
+  gap: 8px;
+}
+
+.primario {
+  height: 36px;
+  padding: 0 15px;
+  background: var(--oscuro);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  border-radius: 7px;
+}
+
+.primario:hover:not(:disabled) {
+  background: var(--acento);
+}
+
+.primario:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.secundario {
+  height: 36px;
+  padding: 0 15px;
+  background: var(--fondo-app);
+  border: 1px solid var(--borde);
+  border-radius: 7px;
+  color: var(--texto);
+  font-size: 13px;
+}
+
+.secundario:hover:not(:disabled) {
+  background: var(--fondo-panel);
+}
+
+.secundario:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.estado {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 12px;
+  border-top: 1px solid var(--borde-sutil-3);
+  font-size: 12px;
+}
+
+.estadoEtiqueta {
+  color: var(--texto-4);
+}
+
+.estadoValor {
+  font-family: var(--mono);
+  color: var(--texto-3);
+}
+
+.estadoResultado {
+  color: var(--texto-3);
+}

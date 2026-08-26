@@ -244,6 +244,24 @@ const DEFINICIONES: Definicion[] = [
       },
     ],
   },
+  {
+    tabla: 'PHF_CONFIGURACION',
+    // Una sola fila fija (ID=1) -- primera tabla de configuracion global de
+    // la app (2026-08-26, importacion automatica desde carpetas). Todo lo
+    // que hacia falta antes vivia en variables de entorno; esto es
+    // configurable desde la propia app, asi que necesita persistirse.
+    ddlTabla: `
+      CREATE TABLE PHF_CONFIGURACION (
+        ID                  INT            NOT NULL,
+        CARPETA_RAIZ        NVARCHAR(500)  NULL,
+        INTERVALO_MINUTOS   INT            NOT NULL CONSTRAINT DF_PHF_CONFIG_INTERVALO DEFAULT 15,
+        ULTIMO_ESCANEO      DATETIME2      NULL,
+        ULTIMO_RESULTADO    NVARCHAR(500)  NULL,
+        CONSTRAINT PK_PHF_CONFIGURACION PRIMARY KEY (ID),
+        CONSTRAINT CK_PHF_CONFIGURACION_ID CHECK (ID = 1)
+      );
+    `,
+  },
 ]
 
 /**
@@ -441,9 +459,27 @@ export async function migrarDefiniciones(
   return creadas
 }
 
-/** Crea las cuatro tablas propias que falten. Devuelve los nombres de las creadas. */
+/**
+ * A diferencia del resto de las tablas propias, que arrancan vacias,
+ * PHF_CONFIGURACION necesita su unica fila (ID=1) sembrada desde el vamos --
+ * sin eso no hay de donde leer INTERVALO_MINUTOS. Ninguna otra tabla
+ * necesita esto hoy, asi que es un paso puntual y no un campo mas de
+ * `Definicion` (YAGNI).
+ */
+async function sembrarConfiguracion(prefijo: string): Promise<void> {
+  const pool = await getPool()
+  const tabla = conPrefijo('PHF_CONFIGURACION', prefijo)
+  await pool.request().batch(`
+    IF NOT EXISTS (SELECT 1 FROM ${tabla} WHERE ID = 1)
+      INSERT INTO ${tabla} (ID, INTERVALO_MINUTOS) VALUES (1, 15);
+  `)
+}
+
+/** Crea las tablas propias que falten y repara las que ya existen. Devuelve los nombres de las creadas. */
 export async function migrar(prefijo = 'PHF_'): Promise<string[]> {
-  return migrarDefiniciones(DEFINICIONES, prefijo)
+  const creadas = await migrarDefiniciones(DEFINICIONES, prefijo)
+  await sembrarConfiguracion(prefijo)
+  return creadas
 }
 
 // Deteccion de ejecucion directa (vs. import desde los tests). Comparar

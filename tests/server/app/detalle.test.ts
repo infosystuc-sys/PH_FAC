@@ -1,12 +1,24 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import sql from 'mssql'
+import { createHash } from 'node:crypto'
+import { rm } from 'node:fs/promises'
 import { conRollback } from '@/server/db/tx'
 import { cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
-import { guardarExtraccionEn, obtenerDetalleEn, guardarCampoEn, auditarEn } from '@/server/app/detalle'
+import {
+  guardarExtraccionEn,
+  obtenerDetalleEn,
+  guardarCampoEn,
+  auditarEn,
+  buscarComprobantePorHashEn,
+} from '@/server/app/detalle'
+import { importarComprobanteEn } from '@/server/app/cola'
 import type { Extraccion } from '@/server/ia/extraccion'
 
+const creados: string[] = []
+
 afterAll(async () => {
+  for (const r of creados) await rm(r, { force: true })
   await cerrarPool()
 })
 
@@ -191,6 +203,27 @@ describe('auditarEn', () => {
       expect(d.auditoria).toHaveLength(1)
       expect(d.auditoria[0].texto).toBe('PDF importado desde carga manual')
       expect(d.auditoria[0].usuario).not.toBe('')
+    })
+  })
+})
+
+describe('buscarComprobantePorHashEn', () => {
+  it('encuentra el comprobante que tiene ese hash de archivo', async () => {
+    await conRollback(async (tx) => {
+      const pdf = Buffer.from(`%PDF-1.4 hash de prueba ${Date.now()}`)
+      const id = await importarComprobanteEn(tx, 'factura.pdf', pdf)
+      const r = await tx.request().input('id', sql.Int, id)
+        .query('SELECT ARCHIVO_RUTA FROM PHF_COMPROBANTE WHERE ID = @id')
+      creados.push(String(r.recordset[0].ARCHIVO_RUTA))
+
+      const hash = createHash('sha256').update(pdf).digest('hex')
+      expect(await buscarComprobantePorHashEn(tx, hash)).toBe(id)
+    })
+  })
+
+  it('devuelve null si ningun comprobante tiene ese hash', async () => {
+    await conRollback(async (tx) => {
+      expect(await buscarComprobantePorHashEn(tx, '0'.repeat(64))).toBeNull()
     })
   })
 })
