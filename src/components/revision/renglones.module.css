@@ -21,6 +21,12 @@
   border-bottom: 1px solid var(--borde-sutil-3);
 }
 
+.accionesEncabezado {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .titulo {
   margin: 0;
   font-size: 11.5px;

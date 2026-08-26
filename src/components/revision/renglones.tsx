@@ -3,6 +3,7 @@ import { formatMoneda, formatCantidad, parsearImporte } from '@/lib/formato'
 import { SelectorArticulo } from './selector-articulo'
 import { ActualizarRemito } from './actualizar-remito'
 import { VincularArticulo } from './vincular-articulo'
+import { VincularTodos } from './vincular-todos'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './renglones.module.css'
 
@@ -117,13 +118,28 @@ export function Renglones({
 
   const hayRemitoAsignado = renglones.some((r) => r.remitoNcompInS !== null)
 
+  // Mismo criterio que muestra "Vincular con Tango" en cada renglon (mas
+  // abajo): los dos codigos -- el nuestro y el del proveedor -- resueltos.
+  // "Vincular todos" es la version en lote de ese mismo boton, no una
+  // regla nueva.
+  const paresVinculables = codProvee
+    ? renglones
+        .map((r) => ({ codArticu: r.codigoFinal ?? r.codigo, codSinoni: r.codProveedor }))
+        .filter((p): p is { codArticu: string; codSinoni: string } => Boolean(p.codArticu && p.codSinoni))
+    : []
+
   return (
     <section className={styles.tarjeta}>
       <div className={styles.encabezado}>
         <h3 className={styles.titulo}>Renglones detectados</h3>
-        {!soloLectura && hayRemitoAsignado && (
-          <ActualizarRemito comprobanteId={comprobanteId} />
-        )}
+        <div className={styles.accionesEncabezado}>
+          {!soloLectura && hayRemitoAsignado && (
+            <ActualizarRemito comprobanteId={comprobanteId} />
+          )}
+          {!soloLectura && codProvee && paresVinculables.length > 0 && (
+            <VincularTodos comprobanteId={comprobanteId} codProvee={codProvee} pares={paresVinculables} />
+          )}
+        </div>
       </div>
 
       <div className={styles.header}>

@@ -14,7 +14,7 @@ import {
   asignarRemitoEn,
   actualizarCantidadesRemitoEn,
 } from '@/server/app/acciones'
-import { eliminarComprobanteEn, elegirArticuloEn } from '@/server/app/acciones'
+import { eliminarComprobanteEn, elegirArticuloEn, asociarCodigosProveedorEnLote } from '@/server/app/acciones'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { obtenerDetalleEn, guardarCampoEn, auditarEn } from '@/server/app/detalle'
 import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
@@ -494,5 +494,19 @@ describe('asignarRemitoEn al reapuntar un renglon', () => {
       expect(d.renglones[0].remitoNcompInS).toBeNull()
       expect(d.renglones[0].cantidadRemito).toBeNull()
     })
+  })
+})
+
+describe('asociarCodigosProveedorEnLote', () => {
+  // No se ejercita el camino que escribe de verdad: `asociarArticuloProveedor`
+  // usa getPool() (no una transaccion propia, ver el comentario en
+  // acciones.ts), asi que llamarlo de verdad pegaria contra CPA15 real sin
+  // poder revertirlo -- mismo motivo por el que `asociarArticuloProveedor`
+  // (tests/server/tango/articulos.test.ts) tampoco se llama directo, solo
+  // se reproduce su MERGE dentro de un conRollback. Lo que sí se puede
+  // probar sin tocar nada es el camino vacio.
+  it('sin pares no toca nada y devuelve 0', async () => {
+    const n = await asociarCodigosProveedorEnLote(999999999, '010685', [])
+    expect(n).toBe(0)
   })
 })

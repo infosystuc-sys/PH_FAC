@@ -363,6 +363,45 @@ export async function asociarCodigoProveedor(
 }
 
 /**
+ * "Vincular todos": la version en lote de `asociarCodigoProveedor` -- el
+ * mismo UPSERT en CPA15, pero para todos los renglones que ya tienen los
+ * dos códigos resueltos de una sola vez, en vez de que el operador
+ * clickee "Vincular con Tango" renglón por renglón. Los pares vienen del
+ * cliente (`renglones.tsx` ya sabe cuáles renglones califican, con el
+ * mismo criterio que la visibilidad del botón individual) para no
+ * duplicar esa regla del lado del servidor.
+ *
+ * `asociarArticuloProveedor` usa `getPool()` y no una transacción propia
+ * -- cada UPSERT toma su propia conexión del pool -- así que lanzarlos en
+ * paralelo es seguro (a diferencia de un `sql.Transaction` compartido, que
+ * cuelga con dos pedidos en vuelo; ver el comentario en asiento.ts).
+ */
+export async function asociarCodigosProveedorEnLote(
+  comprobanteId: number,
+  codProvee: string,
+  pares: { codArticu: string; codSinoni: string }[],
+): Promise<number> {
+  // Varios renglones de la factura (distintos talles, por ejemplo) suelen
+  // apuntar al mismo artículo con el mismo código de proveedor -- se
+  // dedupe para no pegarle a la misma fila de CPA15 más de una vez.
+  const unicos = [...new Map(pares.map((p) => [`${p.codArticu} ${p.codSinoni}`, p])).values()]
+  if (unicos.length === 0) return 0
+
+  await Promise.all(unicos.map((p) => asociarArticuloProveedor(codProvee, p.codArticu, p.codSinoni)))
+
+  await conTransaccion((tx) =>
+    auditarEn(
+      tx,
+      comprobanteId,
+      `Códigos del proveedor vinculados en lote con Tango — ${unicos.length} artículo(s)`,
+    ),
+  )
+
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  return unicos.length
+}
+
+/**
  * El operador corrige a mano a qué código de Tango va un porcentaje de IVA
  * o una jurisdicción de IIBB que no se pudo resolver solo, y esa
  * corrección se aprende para este proveedor (`PHF_ALICUOTA_PROVEEDOR`): la
