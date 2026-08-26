@@ -13,7 +13,12 @@ import {
   asignarRemitoEn,
   actualizarCantidadesRemitoEn,
 } from '@/server/app/acciones'
-import { eliminarComprobanteEn, elegirArticuloEn, asociarCodigosProveedorEnLote } from '@/server/app/acciones'
+import {
+  eliminarComprobanteEn,
+  eliminarComprobantesEnLote,
+  elegirArticuloEn,
+  asociarCodigosProveedorEnLote,
+} from '@/server/app/acciones'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { obtenerDetalleEn, guardarCampoEn, auditarEn } from '@/server/app/detalle'
 import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
@@ -335,6 +340,23 @@ describe('eliminarComprobanteEn', () => {
       await eliminarComprobanteEn(tx, id)
       await expect(eliminarComprobanteEn(tx, id)).rejects.toThrow(/no existe/i)
     })
+  })
+})
+
+describe('eliminarComprobantesEnLote', () => {
+  // `eliminarComprobantesEnLote` reusa el `eliminarComprobante` real (borra
+  // el PDF, pega contra el pool) -- mismo motivo que `importarComprobantes`
+  // (plural) tampoco se ejercita con exito real acá: no hay forma de
+  // revertirlo con conRollback. Lo que sí se prueba sin tocar nada real es
+  // el conteo de fallidos con ids que no existen.
+  it('con ids que no existen, cuenta todo como fallido sin tirar', async () => {
+    const r = await eliminarComprobantesEnLote([999_999_998, 999_999_999])
+    expect(r).toEqual({ eliminados: 0, fallidos: 2 })
+  })
+
+  it('con un array vacio no hace nada', async () => {
+    const r = await eliminarComprobantesEnLote([])
+    expect(r).toEqual({ eliminados: 0, fallidos: 0 })
   })
 })
 

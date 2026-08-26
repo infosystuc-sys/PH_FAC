@@ -6,13 +6,13 @@
 }
 
 .scroll {
-  min-width: 1010px;
+  min-width: 1038px;
 }
 
 .header,
 .fila {
   display: grid;
-  grid-template-columns: 170px 92px 148px 100px minmax(200px, 1fr) 132px 132px 96px 36px 44px;
+  grid-template-columns: 28px 170px 92px 148px 100px minmax(200px, 1fr) 132px 132px 96px 36px 44px;
   align-items: center;
   padding: 0 16px;
 }
@@ -62,6 +62,72 @@
 
 .fila:hover {
   background: var(--fondo-panel);
+}
+
+/* El checkbox de seleccion, a diferencia de `.accion`, va siempre visible:
+   no es una accion destructiva que necesite esconderse del click accidental,
+   y sin visibilidad constante el operador no descubre que existe. */
+.check {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.check input {
+  cursor: pointer;
+}
+
+.filaSeleccionada {
+  background: var(--fondo-panel);
+}
+
+/* Reemplaza el header de columnas mientras hay algo seleccionado -- mismo
+   lugar, mismo alto, para no correr el resto de la pantalla. */
+.barraSeleccion {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.cantidadSeleccion {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--texto-2);
+}
+
+.eliminarSeleccion,
+.cancelarSeleccion {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.eliminarSeleccion {
+  border: none;
+  background: var(--error);
+  color: #fff;
+}
+
+.eliminarSeleccion:hover {
+  opacity: 0.88;
+}
+
+.cancelarSeleccion {
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  color: var(--texto-3);
+}
+
+.cancelarSeleccion:hover {
+  background: var(--fondo-app);
 }
 
 .tipo {

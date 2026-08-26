@@ -547,6 +547,29 @@ export async function eliminarComprobante(id: number): Promise<ComprobanteElimin
   return { id: eliminado.id, estado: eliminado.estado, tangoNComp: eliminado.tangoNComp }
 }
 
+/**
+ * Selección múltiple desde la bandeja: elimina cada uno por separado
+ * reusando `eliminarComprobante` sin cambios -- mismo PDF borrado, mismo
+ * `revalidatePath`, mismas garantías -- en vez de reinventar el borrado en
+ * lote a nivel SQL. Que uno falle (por ejemplo, otra pestaña ya lo borró)
+ * no corta el resto: se cuenta como fallido y se sigue con el próximo.
+ */
+export async function eliminarComprobantesEnLote(
+  ids: number[],
+): Promise<{ eliminados: number; fallidos: number }> {
+  let eliminados = 0
+  let fallidos = 0
+  for (const id of ids) {
+    try {
+      await eliminarComprobante(id)
+      eliminados += 1
+    } catch {
+      fallidos += 1
+    }
+  }
+  return { eliminados, fallidos }
+}
+
 export async function asignarRemitoEn(
   e: Ejecutor,
   renglonId: number,
