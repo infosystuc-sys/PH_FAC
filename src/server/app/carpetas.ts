@@ -195,8 +195,12 @@ async function cicloCarpetas(): Promise<void> {
     const config = await leerConfiguracionCarpetasEn(pool)
     minutos = config.intervaloMinutos > 0 ? config.intervaloMinutos : 1
     if (config.carpetaRaiz) await escanearCarpetasEn(pool)
-  } catch {
-    // Si la base no responde, el proximo ciclo reintenta.
+  } catch (err) {
+    // No se deja escapar -- el ciclo tiene que seguir reprogramandose pase
+    // lo que pase -- pero silenciarlo del todo hizo dificil de diagnosticar
+    // un fallo real (ver RETOMAR.md, "instrumentation.ts en el lugar
+    // equivocado"): al menos queda en el log del servidor.
+    console.error('[carpetas] fallo el ciclo de escaneo, reintenta en la proxima vuelta:', err)
   } finally {
     temporizadorCarpetas = setTimeout(() => void cicloCarpetas(), minutos * 60 * 1000)
   }
@@ -214,7 +218,7 @@ export function escanearCarpetasAhora(): void {
   escaneando = true
   getPool()
     .then((pool) => escanearCarpetasEn(pool))
-    .catch(() => {})
+    .catch((err) => console.error('[carpetas] fallo el escaneo manual:', err))
     .finally(() => {
       escaneando = false
     })
