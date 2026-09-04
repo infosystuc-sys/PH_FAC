@@ -21,6 +21,9 @@ export type ComprobanteCpa04 = {
   fechaEmision: Date
 }
 
+/** `CPA04.N_COMP` es `varchar(14)` -- verificado contra la base real. */
+const LARGO_N_COMP = 14
+
 /**
  * Solo T_COMP = 'FAC': es el unico tipo que esta app procesa (facturas de
  * compra). N_COMP codifica letra+puntoVenta(5)+numero(8) -- ver la nota de
@@ -31,11 +34,23 @@ export async function buscarFacturaEnCpa04(
   codProvee: string,
   nComp: string,
 ): Promise<ComprobanteCpa04 | null> {
+  // `nComp` no trunca a proposito cuando el punto de venta o el numero
+  // vienen mas largos de lo esperado: un dato pasado de largo tiene que
+  // fallar el match y no esconderse. Pero pasarle ese valor al parametro
+  // no fallaba el match: hacia explotar al driver antes de llegar a SQL
+  // ("Parameter @nc: Data type 0xA7 has an invalid data length"), y con el
+  // la pantalla de revision entera. Se corta aca: contra una columna de 14
+  // caracteres, algo mas largo no puede coincidir con ninguna fila, asi que
+  // "sin coincidencia" es la respuesta correcta y no una tapada. Al operador
+  // el dato pasado de largo ya se lo marca validarFormatoNComp, que es donde
+  // corresponde avisarle.
+  if (nComp.length > LARGO_N_COMP) return null
+
   const pool = await getPool()
   const r = await pool
     .request()
     .input('cp', sql.VarChar(6), codProvee)
-    .input('nc', sql.VarChar(14), nComp)
+    .input('nc', sql.VarChar(LARGO_N_COMP), nComp)
     .query(`
       SELECT TOP 1 N_COMP, COD_PROVEE, IMPORTE_TO, FECHA_EMIS
       FROM CPA04

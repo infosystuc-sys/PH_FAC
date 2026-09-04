@@ -30,6 +30,19 @@ describe('buscarFacturaEnCpa04', () => {
     const r = await buscarFacturaEnCpa04('999999', 'Z9999999999999')
     expect(r).toBeNull()
   })
+
+  it('devuelve null, sin explotar, si el N_COMP es mas largo que la columna', async () => {
+    // Regresion de un error real: `nComp` no trunca a proposito cuando el
+    // punto de venta o el numero vienen pasados de largo (una liquidacion de
+    // tarjeta con un numero de 12 digitos, un punto de venta tipeado con un
+    // digito de mas), y ese valor le reventaba al driver antes de llegar a
+    // SQL -- "Parameter @nc: Data type 0xA7 has an invalid data length" --
+    // volteando la pantalla de revision entera con "No se pudo mostrar esta
+    // pantalla". Contra una columna varchar(14) un valor mas largo no puede
+    // coincidir con nada, asi que la respuesta correcta es "sin coincidencia".
+    expect(await buscarFacturaEnCpa04('010108', 'A00000102388983')).toBeNull() // 15
+    expect(await buscarFacturaEnCpa04('010077', 'A10077000020984549')).toBeNull() // 18
+  })
 })
 
 describe('mapearAlicuotaIva', () => {
