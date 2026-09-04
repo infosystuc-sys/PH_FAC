@@ -17,6 +17,7 @@ import {
   validarVarios,
   validarTipoFactura,
   validarNetoContraIva,
+  netoQueImplicaElIva,
   validarAlicuotas,
   type ResultadoValidacion,
 } from '@/lib/validaciones'
@@ -170,6 +171,12 @@ export type ResultadoListoParaRegistrar = {
   alicuotas: ResultadoValidacion
   varios: ResultadoValidacion
   netoIva: ResultadoValidacion
+  /**
+   * El neto que implican las líneas de IVA, para ofrecérselo al operador de
+   * un clic cuando `netoIva` no cierra. `null` si no hay ninguna línea que
+   * permita deducirlo.
+   */
+  netoSegunIva: number | null
   bloqueante: boolean
 }
 
@@ -238,6 +245,7 @@ export async function validarListoParaRegistrarEn(
   // neto no viene impreso, se compone sumando cargos, y un componente
   // faltante se arrastra al total, a las cuotas y al asiento entero.
   const netoIva = validarNetoContraIva(lineasIva, valores.neto, valores.tipoFactura)
+  const netoSegunIva = netoQueImplicaElIva(lineasIva)
 
   const bloqueante = [
     condCompra,
@@ -261,6 +269,7 @@ export async function validarListoParaRegistrarEn(
     concepto,
     alicuotas,
     netoIva,
+    netoSegunIva,
     bloqueante,
   }
 }

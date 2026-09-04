@@ -1,5 +1,6 @@
 import type { ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import { SelectorConcepto } from './selector-concepto'
+import { AplicarNetoIva } from './aplicar-neto-iva'
 import styles from './listo-para-registrar.module.css'
 
 const GLIFO = { ok: '✓', advertencia: '!', error: '✕' } as const
@@ -69,6 +70,10 @@ export function ListoParaRegistrar({
               tipoFactura === 'conceptos' &&
               codProvee ? (
                 <SelectorConcepto comprobanteId={comprobanteId} codProvee={codProvee} />
+              ) : r === resultado.netoIva &&
+                r.estado !== 'ok' &&
+                resultado.netoSegunIva !== null ? (
+                <AplicarNetoIva comprobanteId={comprobanteId} neto={resultado.netoSegunIva} />
               ) : undefined
             }
           />

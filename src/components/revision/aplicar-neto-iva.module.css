@@ -1,0 +1,25 @@
+/* Mismo lugar y separacion que el selector de concepto: la accion que
+   propone la tarjeta va debajo del mensaje, no al lado. */
+.boton {
+  margin-top: 8px;
+  align-self: flex-start;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--texto-2);
+  cursor: pointer;
+}
+
+.boton:hover:not(:disabled) {
+  background: var(--fondo-app);
+  color: var(--texto);
+}
+
+.boton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

@@ -123,12 +123,13 @@ const TOLERANCIA_NETO_IVA_MINIMA = 1
  * El IVA si es un dato firme -- viene impreso, rotulado y sin ambiguedad --
  * asi que sirve de verificador independiente del dato que no lo es.
  */
-export function validarNetoContraIva(
-  lineas: LineaAlicuota[],
-  netoDeclarado: string | null | undefined,
-  tipoFactura?: string | null,
-): ResultadoValidacion {
-  let baseSegunIva = 0
+/**
+ * La base gravada que implican las líneas de IVA, o `null` si ninguna sirve
+ * para deducirla. Separada de la validación porque el número también se le
+ * ofrece al operador para que lo aplique de un clic cuando el cotejo falla.
+ */
+export function netoQueImplicaElIva(lineas: LineaAlicuota[]): number | null {
+  let base = 0
   let cuantas = 0
   for (const l of lineas) {
     // Solo el IVA que grava la base. Una percepcion o una retencion viven
@@ -139,17 +140,25 @@ export function validarNetoContraIva(
     if (!esIvaSobreLaBase(l.alicuota)) continue
     // El 0% no dice nada de la base, y ademas dividiria por cero.
     if (l.porcentaje <= 0 || l.importe <= 0) continue
-    baseSegunIva += l.importe / (l.porcentaje / 100)
+    base += l.importe / (l.porcentaje / 100)
     cuantas += 1
   }
+  return cuantas === 0 ? null : Math.round(base * 100) / 100
+}
 
-  if (cuantas === 0) {
+export function validarNetoContraIva(
+  lineas: LineaAlicuota[],
+  netoDeclarado: string | null | undefined,
+  tipoFactura?: string | null,
+): ResultadoValidacion {
+  const esperado = netoQueImplicaElIva(lineas)
+
+  if (esperado === null) {
     return { estado: 'ok', mensaje: 'Sin líneas de IVA para cotejar contra el neto.' }
   }
 
   const fmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const neto = parsearImporte(netoDeclarado)
-  const esperado = Math.round(baseSegunIva * 100) / 100
   const diferencia = Math.abs(esperado - neto)
   const tolerancia = Math.max(TOLERANCIA_NETO_IVA_MINIMA, esperado * TOLERANCIA_NETO_IVA)
 
