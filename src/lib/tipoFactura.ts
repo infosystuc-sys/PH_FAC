@@ -112,10 +112,57 @@ const REMITOS = ['remito1', 'remito2'] as const
  */
 const CONDICION_PAGO = ['condpago'] as const
 
+/**
+ * Los slots que se le sacan a tarjeta para hacerle lugar al array de cargos
+ * (ver ANALIZA_CARGOS). El array cuesta el equivalente a cuatro campos y
+ * baja el techo de 35 a 31, asi que habia que liberar espacio.
+ *
+ * Se eligieron estos seis mirando las liquidaciones reales: ninguna de las
+ * tres cargadas usa mas de dos slots de IVA (y en una de esas dos el
+ * segundo resulto ser una percepcion del 3% mal leida) ni mas de una
+ * percepcion de IIBB. Quedan tres slots de IVA y tres de percepcion, que es
+ * mas de lo que cualquiera de las tres necesita.
+ *
+ * Si alguna vez aparece una liquidacion con cuatro alicuotas de IVA, el
+ * dato se pierde sin que nada lo señale: el campo no se pide, no se guarda
+ * y no se muestra. La contraparte es que el cotejo neto-IVA
+ * (validarNetoContraIva) no cerraria, asi que el operador se enteraria por
+ * ahi -- pero conviene tenerlo escrito.
+ */
+const SLOTS_LIBERADOS_TARJETA = [
+  'porciva4',
+  'impiva4',
+  'porciva5',
+  'impiva5',
+  'percep4',
+  'imppercep4',
+] as const
+
 export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
   conceptos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, ...CONDICION_PAGO],
   articulos: NO_ANALIZADOS_COMUNES,
-  tarjeta: [...NO_ANALIZADOS_COMUNES, ...REMITOS, ...CONDICION_PAGO],
+  tarjeta: [
+    ...NO_ANALIZADOS_COMUNES,
+    ...REMITOS,
+    ...CONDICION_PAGO,
+    ...SLOTS_LIBERADOS_TARJETA,
+  ],
+}
+
+/**
+ * Si el tipo pide el desglose de cargos que componen el neto gravado (ver
+ * `src/lib/cargos.ts`). Solo tarjeta: es el unico donde el neto no viene
+ * impreso y hay que armarlo sumando.
+ *
+ * En conceptos y en articulos el neto figura como tal en el comprobante, asi
+ * que pedir un desglose seria gastar cupo de schema --que en articulos ya
+ * esta casi lleno, 34 de 35-- para reconstruir un dato que se puede leer
+ * directo.
+ */
+export const ANALIZA_CARGOS: Record<TipoFactura, boolean> = {
+  conceptos: false,
+  articulos: false,
+  tarjeta: true,
 }
 
 /** Las claves de remito que la IA lee, en orden. */

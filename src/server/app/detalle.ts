@@ -43,9 +43,20 @@ export type RenglonGuardado = RenglonExtraido & {
 
 export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
 
+/** Un cargo del pie de una liquidación de tarjeta, ya guardado. */
+export type CargoGuardado = {
+  id: number
+  orden: number
+  concepto: string | null
+  importe: string | null
+  /** Si suma al neto gravado. */
+  gravado: boolean
+}
+
 export type Detalle = {
   campos: CampoGuardado[]
   renglones: RenglonGuardado[]
+  cargos: CargoGuardado[]
   auditoria: EntradaAuditoria[]
 }
 
@@ -69,6 +80,8 @@ export async function guardarExtraccionEn(
     .query('DELETE FROM PHF_CAMPO WHERE COMPROBANTE_ID = @id')
   await e.request().input('id', sql.Int, comprobanteId)
     .query('DELETE FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id')
+  await e.request().input('id', sql.Int, comprobanteId)
+    .query('DELETE FROM PHF_CARGO WHERE COMPROBANTE_ID = @id')
 
   const conValor: number[] = []
 
@@ -112,6 +125,24 @@ export async function guardarExtraccionEn(
       `)
   }
 
+  // Los cargos que componen el neto gravado (solo tarjeta). `GRAVADO` sale
+  // del default de la tabla: todos suman hasta que el operador diga lo
+  // contrario, y esa correccion se aprende por proveedor.
+  let ordenCargo = 0
+  for (const c of extraccion.cargos) {
+    ordenCargo += 1
+    await e
+      .request()
+      .input('id', sql.Int, comprobanteId)
+      .input('orden', sql.Int, ordenCargo)
+      .input('concepto', sql.NVarChar(200), c.concepto)
+      .input('imp', sql.Decimal(19, 4), parsearImporteONulo(c.importe))
+      .query(`
+        INSERT INTO PHF_CARGO (COMPROBANTE_ID, ORDEN, CONCEPTO, IMPORTE)
+        VALUES (@id, @orden, @concepto, @imp)
+      `)
+  }
+
   if (conValor.length === 0) return 0
   return conValor.reduce((a, b) => a + b, 0) / conValor.length
 }
@@ -131,9 +162,12 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
 
       SELECT FECHA, TEXTO, USUARIO
       FROM PHF_AUDITORIA WHERE COMPROBANTE_ID = @id ORDER BY FECHA, ID;
+
+      SELECT ID, ORDEN, CONCEPTO, IMPORTE, GRAVADO
+      FROM PHF_CARGO WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
     `)
 
-  const [c, g, a] = r.recordsets as unknown as Record<string, unknown>[][]
+  const [c, g, a, cg] = r.recordsets as unknown as Record<string, unknown>[][]
 
   return {
     campos: c.map((x) => ({
@@ -158,6 +192,13 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       codigoFinal: x.CODIGO_FINAL === null ? null : String(x.CODIGO_FINAL),
       porcBonif: x.PORC_BONIF === null ? null : String(x.PORC_BONIF),
       codProveedor: x.COD_PROVEEDOR === null ? null : String(x.COD_PROVEEDOR),
+    })),
+    cargos: cg.map((x) => ({
+      id: Number(x.ID),
+      orden: Number(x.ORDEN),
+      concepto: x.CONCEPTO === null ? null : String(x.CONCEPTO),
+      importe: x.IMPORTE === null ? null : String(x.IMPORTE),
+      gravado: Boolean(x.GRAVADO),
     })),
     auditoria: a.map((x) => ({
       fecha: new Date(x.FECHA as string),

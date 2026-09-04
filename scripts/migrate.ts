@@ -135,6 +135,36 @@ const DEFINICIONES: Definicion[] = [
     `,
   },
   {
+    // Los cargos que componen el neto gravado de una liquidacion de tarjeta
+    // (arancel, comision, costo financiero...). Ver src/lib/cargos.ts para
+    // por que se piden desglosados en vez de pedir el neto ya sumado.
+    //
+    // Tabla propia y no PHF_RENGLON: un renglon es mercaderia que entro por
+    // un remito, con codigo de articulo, cantidad y precio unitario, y se
+    // imputa a CPA46. Un cargo es una linea del pie del resumen que solo
+    // aporta importe a la base gravada. Meterlos en la misma tabla obligaria
+    // a dejar la mitad de las columnas en NULL en cada fila y a que todo lo
+    // que hoy lee PHF_RENGLON tuviera que aprender a saltearlos.
+    tabla: 'PHF_CARGO',
+    ddlTabla: `
+      CREATE TABLE PHF_CARGO (
+        ID              INT IDENTITY(1,1) NOT NULL,
+        COMPROBANTE_ID  INT            NOT NULL,
+        ORDEN           INT            NOT NULL,
+        -- El rotulo tal como lo imprime la procesadora ("Arancel de ley").
+        CONCEPTO        NVARCHAR(200)  NULL,
+        IMPORTE         DECIMAL(19,4)  NULL,
+        -- Si este cargo suma al neto gravado. Arranca en 1 y el operador lo
+        -- corrige; esa correccion se aprende por proveedor.
+        GRAVADO         BIT            NOT NULL CONSTRAINT DF_PHF_CARGO_GRAVADO DEFAULT 1,
+        CONSTRAINT PK_PHF_CARGO PRIMARY KEY (ID),
+        CONSTRAINT UQ_PHF_CARGO UNIQUE (COMPROBANTE_ID, ORDEN),
+        CONSTRAINT FK_PHF_CARGO_COMP FOREIGN KEY (COMPROBANTE_ID)
+          REFERENCES PHF_COMPROBANTE (ID) ON DELETE CASCADE
+      );
+    `,
+  },
+  {
     tabla: 'PHF_RENGLON',
     ddlTabla: `
       CREATE TABLE PHF_RENGLON (

@@ -313,6 +313,40 @@ export async function resolverCondicionCompraEn(
 }
 
 /**
+ * Recalcula el neto gravado sumando los cargos marcados como gravados, y lo
+ * escribe en el campo `neto`.
+ *
+ * Es el punto de todo el desglose: la suma la hace la base, con aritmética
+ * decimal exacta, en vez de hacerla el modelo de memoria. Leyendo el mismo
+ * PDF dos veces la IA habia devuelto dos netos distintos --uno con un cargo
+ * de menos-- mientras que los cargos por separado los transcribe bien.
+ *
+ * Devuelve el neto calculado, o `null` si el comprobante no tiene cargos
+ * (cualquier tipo que no sea tarjeta, o una liquidacion donde el modelo no
+ * pudo desglosar nada: ahi se respeta lo que haya leido en `neto`).
+ */
+export async function recalcularNetoDeCargosEn(
+  e: Ejecutor,
+  id: number,
+): Promise<number | null> {
+  const r = await e
+    .request()
+    .input('id', sql.Int, id)
+    .query<{ cuantos: number; suma: number | null }>(`
+      SELECT COUNT(*) AS cuantos, SUM(CASE WHEN GRAVADO = 1 THEN IMPORTE ELSE 0 END) AS suma
+      FROM PHF_CARGO WHERE COMPROBANTE_ID = @id
+    `)
+  const fila = r.recordset[0]
+  if (!fila || Number(fila.cuantos) === 0) return null
+
+  const neto = Math.round(Number(fila.suma ?? 0) * 100) / 100
+  await guardarCampoEn(e, id, 'neto', neto.toFixed(2).replace('.', ','), {
+    corregidoPorUsuario: false,
+  })
+  return neto
+}
+
+/**
  * Completa la identificación que una liquidación de tarjeta no trae impresa:
  * la letra (constante, `LETRA_TARJETA`) y el punto de venta (aprendido del
  * proveedor). Sin las dos, `registrarComprobanteEn` corta con "No se pudo
@@ -786,7 +820,19 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       await resolverCondicionCompraEn(tx, id, cod, r.extraccion.campos.condpago?.valor ?? null)
       // Va despues de resolverProveedorEn porque el punto de venta se
       // aprende por proveedor: sin `cod` no hay a quien preguntarle.
-      if (tipoFactura === 'tarjeta') await completarIdentificacionTarjetaEn(tx, id, cod)
+      if (tipoFactura === 'tarjeta') {
+        await completarIdentificacionTarjetaEn(tx, id, cod)
+        // Antes de desnormalizar no: el neto no es una columna de bandeja.
+        // Despues de guardarExtraccionEn si, que es quien escribe PHF_CARGO.
+        const neto = await recalcularNetoDeCargosEn(tx, id)
+        if (neto !== null) {
+          await auditarEn(
+            tx,
+            id,
+            `Neto gravado calculado sumando ${r.extraccion.cargos.length} cargo(s): ${neto.toFixed(2)}`,
+          )
+        }
+      }
       const conValor = Object.values(r.extraccion.campos).filter((c) => c.valor !== null).length
       await marcarLeidoEn(tx, id, prom, r.ms, r.modelo, conValor)
 

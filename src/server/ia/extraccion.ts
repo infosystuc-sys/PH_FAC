@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { camposIaPara, schemaExtraccion } from '@/lib/campos'
 import { CLAVES_RENGLON, type RenglonExtraido } from '@/lib/renglones'
-import { ANALIZA_RENGLONES, type TipoFactura } from '@/lib/tipoFactura'
+import { CLAVES_CARGO, type CargoExtraido } from '@/lib/cargos'
+import { ANALIZA_RENGLONES, ANALIZA_CARGOS, type TipoFactura } from '@/lib/tipoFactura'
 import { PROMPTS_EXTRACCION } from './prompt'
 
 export type CampoExtraido = { valor: string | null; confianza: number }
@@ -9,6 +10,8 @@ export type CampoExtraido = { valor: string | null; confianza: number }
 export type Extraccion = {
   campos: Record<string, CampoExtraido>
   renglones: RenglonExtraido[]
+  /** Los cargos que componen el neto gravado. Solo en tarjeta; vacío en el resto. */
+  cargos: CargoExtraido[]
 }
 
 export type UsoTokens = { inputTokens: number; outputTokens: number }
@@ -84,7 +87,26 @@ export function parsearRespuesta(texto_: string, tipo: TipoFactura): Extraccion 
   // no se imputa.
   const renglones = ANALIZA_RENGLONES[tipo] ? parsearRenglones(crudo.renglones) : []
 
-  return { campos, renglones }
+  // Los cargos que componen el neto gravado. Solo tarjeta los pide; en los
+  // otros tipos se descartan aunque vinieran, mismo criterio que arriba.
+  const cargos = ANALIZA_CARGOS[tipo] ? parsearCargos(crudo.cargos) : []
+
+  return { campos, renglones, cargos }
+}
+
+/** Los cargos de la respuesta cruda. Un cargo sin importe no sirve para sumar. */
+export function parsearCargos(crudo: unknown): CargoExtraido[] {
+  const cargos: CargoExtraido[] = []
+  for (const c of Array.isArray(crudo) ? crudo : []) {
+    if (c === null || typeof c !== 'object') continue
+    const o = c as Record<string, unknown>
+    const fila = Object.fromEntries(
+      CLAVES_CARGO.map((k) => [k, texto(o[k])]),
+    ) as unknown as CargoExtraido
+    if (fila.importe === null) continue
+    cargos.push(fila)
+  }
+  return cargos
 }
 
 /**

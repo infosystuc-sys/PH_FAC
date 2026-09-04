@@ -1,5 +1,6 @@
 import { CLAVES_RENGLON } from './renglones'
-import { ANALIZA_RENGLONES, analizaCampo, type TipoFactura } from './tipoFactura'
+import { CLAVES_CARGO } from './cargos'
+import { ANALIZA_RENGLONES, ANALIZA_CARGOS, analizaCampo, type TipoFactura } from './tipoFactura'
 
 export type GrupoCampo = 'comprobante' | 'proveedor' | 'importes' | 'imputacion'
 /**
@@ -261,6 +262,18 @@ export function schemaExtraccion(tipo: TipoFactura): Record<string, unknown> {
     const renglon: Record<string, unknown> = {}
     for (const k of CLAVES_RENGLON) renglon[k] = VALOR
     props.renglones = { type: 'array', items: objeto(renglon) }
+  }
+
+  // Los cargos que componen el neto gravado de una liquidación de tarjeta.
+  // Va como array y no como pares de campos fijos porque la cantidad
+  // cambia con cada procesadora -- dos en Valle Fértil, cinco en Tarjeta
+  // Sol -- y unos pares fijos obligarían a elegir un máximo que igual se
+  // quedaría corto. Cuesta lo mismo que ~4 campos, que es lo que se liberó
+  // en tarjeta (ver SLOTS_LIBERADOS_TARJETA).
+  if (ANALIZA_CARGOS[tipo]) {
+    const cargo: Record<string, unknown> = {}
+    for (const k of CLAVES_CARGO) cargo[k] = VALOR
+    props.cargos = { type: 'array', items: objeto(cargo) }
   }
 
   return objeto(props)

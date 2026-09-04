@@ -242,6 +242,7 @@ describe('desnormalizarBandejaEn', () => {
           fecha: { valor: '18/05/2026', confianza: 1 },
         },
         renglones: [],
+        cargos: [],
       })
 
       const r = await tx.request().input('id', sql.Int, id).query(`
@@ -267,6 +268,7 @@ describe('desnormalizarBandejaEn', () => {
           fecha: { valor: 'no es una fecha', confianza: 0.1 },
         },
         renglones: [],
+        cargos: [],
       })
 
       const r = await tx.request().input('id', sql.Int, id)

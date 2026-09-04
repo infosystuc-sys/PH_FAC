@@ -33,6 +33,7 @@ function extraccionDePrueba(): Extraccion {
       { codigo: '106817', descripcion: 'MICROONDAS', cantidad: '4',
         precioUnitario: '80.745,57', importe: '322.982,28' },
     ],
+    cargos: [],
   }
 }
 

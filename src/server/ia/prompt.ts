@@ -202,6 +202,14 @@ inducen al error:
 - El total de descuentos cuando incluye impuestos: "TOTAL DESCUENTO",
   "Total deducciones". Ese numero ya trae adentro el IVA y las retenciones,
   asi que no es la base gravada.
+Además del neto en el campo correspondiente, devolvé el DESGLOSE en el
+array "cargos": una entrada por cada cargo, con su rótulo tal como está
+impreso en "concepto" y su importe en "importe". No los sumes ahí ni los
+agrupes -- transcribí uno por uno, que la suma la hace el sistema.
+Incluí también los que figuran en cero: que el resumen liste "Promociones
+$0,00" es información, y omitirlo hace parecer que no lo miraste.
+No pongas en "cargos" ni los impuestos (IVA, retenciones, percepciones,
+que van en sus campos propios) ni las líneas señuelo de recién.
 Verificación obligatoria antes de contestar: el IVA que figura en el
 resumen tiene que ser el porcentaje declarado del neto gravado que
 devolvés. Si el resumen dice IVA $914,74 y la alícuota es 21%, el neto
