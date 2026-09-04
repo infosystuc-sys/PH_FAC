@@ -113,7 +113,7 @@ describe('previsualizarAsientoEn', () => {
     })
   })
 
-  it('la leyenda del operador se agrega a la leyenda de cada renglon, no la reemplaza', async () => {
+  it('la leyenda del operador reemplaza la leyenda de cada renglon', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
@@ -127,12 +127,11 @@ describe('previsualizarAsientoEn', () => {
       const asiento = await previsualizarAsientoEn(tx, id)
 
       expect(asiento.lineas).toHaveLength(3)
+      // Todas las lineas dicen lo mismo: la del modelo ("Subtotal gravado",
+      // "IVA 21%"...) queda reemplazada, no concatenada.
       for (const l of asiento.lineas) {
-        expect(l.leyenda).toMatch(/ — Pago adelantado agosto$/)
+        expect(l.leyenda).toBe('Pago adelantado agosto')
       }
-      // La base de cada leyenda sigue distinguiendo que es cada linea.
-      const sb = asiento.lineas.find((l) => l.codCuenta === '51460')
-      expect(sb!.leyenda).toBe('Subtotal gravado — Pago adelantado agosto')
     })
   })
 
@@ -152,7 +151,7 @@ describe('previsualizarAsientoEn', () => {
     })
   })
 
-  it('la leyenda combinada se trunca a 100 caracteres, igual que va a quedar grabada', async () => {
+  it('la leyenda del operador se trunca a 100 caracteres, igual que va a quedar grabada', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
@@ -392,7 +391,7 @@ describe('escribirAsientoEn', () => {
     })
   })
 
-  it('graba la leyenda del operador agregada a la de cada renglon real', async () => {
+  it('graba la leyenda del operador en lugar de la de cada renglon real', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
       await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
@@ -414,7 +413,7 @@ describe('escribirAsientoEn', () => {
       `)
       expect(lineas.recordset).toHaveLength(3)
       for (const l of lineas.recordset as { DESC_LEYENDA: string }[]) {
-        expect(l.DESC_LEYENDA.trim()).toMatch(/ — Referencia OC-4521$/)
+        expect(l.DESC_LEYENDA.trim()).toBe('Referencia OC-4521')
       }
     })
   })

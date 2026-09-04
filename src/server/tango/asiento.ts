@@ -392,16 +392,20 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
     })
   }
 
-  // Texto libre del operador (campo "Leyenda / observación del asiento"),
-  // agregado a la leyenda de cada renglón -- no la reemplaza, cada línea
-  // sigue diciendo qué es (Subtotal gravado, IVA 21%...), esto solo suma
-  // algo que el comprobante no dice. Se trunca acá, no solo al escribir
-  // en escribirAsientoEn, para que la vista previa ("Ver asiento") muestre
-  // exactamente el texto que va a quedar grabado en ASIENTO_CP.DESC_LEYENDA
-  // (VARCHAR(100)).
+  // Texto libre del operador (campo "Leyenda / observación del asiento"):
+  // REEMPLAZA la leyenda de cada renglón, no se le agrega (decisión
+  // explícita del usuario, 2026-09-03 -- antes se concatenaba a la del
+  // modelo). Cuando el operador carga una leyenda, es la única que queda:
+  // las 5 o 6 líneas del asiento dicen todas lo mismo, que es como el
+  // usuario quiere leerlo en Tango. Sin leyenda cargada, cada línea
+  // conserva la del modelo contable ("Subtotal gravado", "IVA 21%"...).
+  //
+  // Se trunca acá, no solo al escribir en escribirAsientoEn, para que la
+  // vista previa ("Ver asiento") muestre exactamente el texto que va a
+  // quedar grabado en ASIENTO_CP.DESC_LEYENDA (VARCHAR(100)).
   const observacion = (valores.leyendaAsiento ?? '').trim()
   const lineasConLeyenda = observacion
-    ? lineas.map((l) => ({ ...l, leyenda: `${l.leyenda} — ${observacion}`.slice(0, LARGO_LEYENDA) }))
+    ? lineas.map((l) => ({ ...l, leyenda: observacion.slice(0, LARGO_LEYENDA) }))
     : lineas
 
   const totalDebe = Math.round(lineas.reduce((a, l) => a + l.debe, 0) * 100) / 100

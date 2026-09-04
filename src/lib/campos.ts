@@ -131,8 +131,8 @@ export const CAMPOS: DefCampo[] = [
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
   { clave: 'tipoFactura', label: 'Tipo de factura', grupo: 'imputacion', span: 3,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
-  // Texto libre del operador, aparte de cualquier campo que lea la IA. Se
-  // agrega a la leyenda de cada renglón del asiento -- ver
+  // Texto libre del operador, aparte de cualquier campo que lea la IA.
+  // Reemplaza la leyenda de cada renglón del asiento -- ver
   // previsualizarAsientoEn en asiento.ts -- para dejar constancia de algo
   // que no sale del comprobante (un motivo de pago, una referencia interna).
   { clave: 'leyendaAsiento', label: 'Leyenda / observación del asiento', grupo: 'imputacion', span: 6,
