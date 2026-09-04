@@ -18,7 +18,7 @@ pnpm seed      # carga comprobantes de muestra
 
 ## Base de datos
 
-`PUNTO_HOGAR_1` en `INFOSYS01\AXSQLSERVER`. Credenciales en `.env.local`, que **no se commitea**.
+`PUNTO_HOGAR_1` en `SERVIDORT\AXSQLEXPRESS`. Credenciales en `.env.local`, que **no se commitea**.
 
 **Es la base de Tango Gestión con más de 3.100 tablas del ERP y datos reales.** Las tablas de esta app conviven con ellas. Requiere el servicio SQL Server Browser corriendo (la instancia tiene nombre).
 
