@@ -232,6 +232,17 @@ export function Formulario({
             void aprenderImpuestoTango(comprobanteId, codProvee, 'condicion', condicionTexto, v.trim())
           }
         }
+
+        // El operador cargó a mano el punto de venta de una liquidación de
+        // tarjeta: se aprende para este proveedor, así la próxima sale sola
+        // (ver completarIdentificacionTarjetaEn en cola.ts). Solo en
+        // tarjeta: en los otros tipos el punto de venta está impreso en el
+        // comprobante y cambia de uno a otro, así que no hay convención de
+        // proveedor que valga la pena recordar -- y aplicar una aprendida
+        // sería peor que dejar el campo vacío.
+        if (clave === 'ptovta' && valores.tipoFactura === 'tarjeta') {
+          void aprenderImpuestoTango(comprobanteId, codProvee, 'ptovta', 'tarjeta', v.trim())
+        }
       }
 
       void guardarCampo(comprobanteId, clave, v)

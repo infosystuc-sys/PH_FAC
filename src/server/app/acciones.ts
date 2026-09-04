@@ -403,7 +403,12 @@ export async function aprenderImpuestoTango(
       ? `Impuesto aprendido para el proveedor: IVA ${descripcion}% → código ${codTango}`
       : tipo === 'percepcion'
         ? `Impuesto aprendido para el proveedor: IIBB "${descripcion}" → código ${codTango}`
-        : `Condición de compra aprendida para el proveedor: "${descripcion}" → código ${codTango}`
+        : // En 'ptovta' la descripcion es la clave interna del tipo de
+          // comprobante ('tarjeta'), no algo que el operador haya leido en
+          // el PDF: nombrarla en el historial seria ruido.
+          tipo === 'ptovta'
+          ? `Punto de venta aprendido para el proveedor: ${codTango}`
+          : `Condición de compra aprendida para el proveedor: "${descripcion}" → código ${codTango}`
   await conTransaccion((tx) => auditarEn(tx, comprobanteId, mensaje))
 }
 

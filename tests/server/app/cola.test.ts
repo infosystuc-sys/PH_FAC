@@ -11,6 +11,8 @@ import {
   marcarFalloEn,
   resolverProveedorEn,
   resolverCondicionCompraEn,
+  completarIdentificacionTarjetaEn,
+  LETRA_TARJETA,
   marcarExistenteEnTangoEn,
   observarSinConceptoEn,
   lineasDeRemitos,
@@ -458,6 +460,92 @@ describe('resolverCondicionCompraEn', () => {
 
       const d = await obtenerDetalleEn(tx, id)
       expect(d.campos.find((c) => c.clave === 'condcompra')).toBeUndefined()
+    })
+  })
+})
+
+describe('completarIdentificacionTarjetaEn', () => {
+  function provPrueba(): string {
+    return `ZZ${Date.now() % 100000}`
+  }
+
+  async function bandeja(tx: sql.Transaction, id: number) {
+    const r = await tx
+      .request()
+      .input('id', id)
+      .query('SELECT TIPO, PUNTO_VENTA FROM PHF_COMPROBANTE WHERE ID = @id')
+    return r.recordset[0] as { TIPO: string | null; PUNTO_VENTA: string | null }
+  }
+
+  it('completa la letra A aunque el proveedor no haya enseñado nada', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await completarIdentificacionTarjetaEn(tx, id, provPrueba())
+
+      const d = await obtenerDetalleEn(tx, id)
+      const campo = d.campos.find((c) => c.clave === 'tipo')!
+      expect(campo.valorFinal).toBe(LETRA_TARJETA)
+      // La completo el sistema, no el operador.
+      expect(campo.corregido).toBe(false)
+      expect(d.auditoria.some((a) => a.texto.includes('Letra completada'))).toBe(true)
+      // Sin punto de venta aprendido, ese campo queda sin tocar.
+      expect(d.campos.find((c) => c.clave === 'ptovta')).toBeUndefined()
+    })
+  })
+
+  it('completa el punto de venta que el proveedor ya enseño', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '10077')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await completarIdentificacionTarjetaEn(tx, id, prov)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'ptovta')?.valorFinal).toBe('10077')
+      expect(d.auditoria.some((a) => a.texto.includes('Punto de venta aprendido'))).toBe(true)
+    })
+  })
+
+  it('deja las columnas de bandeja en sincro con los campos', async () => {
+    // Si no, el chequeo de duplicados de validaciones.ts --que busca por
+    // PUNTO_VENTA en PHF_COMPROBANTE-- no encontraria la liquidacion.
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '00000')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await completarIdentificacionTarjetaEn(tx, id, prov)
+
+      expect(await bandeja(tx, id)).toMatchObject({ TIPO: 'A', PUNTO_VENTA: '00000' })
+    })
+  })
+
+  it('no pisa la letra ni el punto de venta que ya trae el comprobante', async () => {
+    // Si la liquidacion los imprimio y la IA los leyo, gana el documento.
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '10077')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await guardarCampoEn(tx, id, 'tipo', 'B')
+      await guardarCampoEn(tx, id, 'ptovta', '0003')
+      await completarIdentificacionTarjetaEn(tx, id, prov)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'tipo')?.valorFinal).toBe('B')
+      expect(d.campos.find((c) => c.clave === 'ptovta')?.valorFinal).toBe('0003')
+    })
+  })
+
+  it('sin proveedor completa la letra igual, pero no el punto de venta', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await completarIdentificacionTarjetaEn(tx, id, null)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'tipo')?.valorFinal).toBe(LETRA_TARJETA)
+      expect(d.campos.find((c) => c.clave === 'ptovta')).toBeUndefined()
     })
   })
 })

@@ -104,4 +104,55 @@ describe('aprenderImpuestoEn / cargarAprendidosEn', () => {
       expect(await cargarAprendidosEn(tx, '   ', 'percepcion')).toEqual({})
     })
   })
+
+  describe("tipo 'ptovta'", () => {
+    it('guarda un punto de venta por proveedor, con el tipo de factura como clave', async () => {
+      await conRollback(async (tx) => {
+        const prov = provPrueba()
+        await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '10077')
+
+        expect(await cargarAprendidosEn(tx, prov, 'ptovta')).toEqual({ tarjeta: '10077' })
+      })
+    })
+
+    it('no se pisa con lo aprendido para los otros tipos del mismo proveedor', async () => {
+      // Los cuatro tipos comparten tabla: la clave unica es
+      // (proveedor, tipo, descripcion), asi que 'tarjeta' como descripcion
+      // de 'ptovta' no puede chocar con nada de 'iva' ni de 'condicion'.
+      await conRollback(async (tx) => {
+        const prov = provPrueba()
+        await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '00000')
+        await aprenderImpuestoEn(tx, prov, 'condicion', 'tarjeta', '8')
+        await aprenderImpuestoEn(tx, prov, 'iva', '21', '1')
+
+        expect(await cargarAprendidosEn(tx, prov, 'ptovta')).toEqual({ tarjeta: '00000' })
+        expect(await cargarAprendidosEn(tx, prov, 'condicion')).toEqual({ tarjeta: '8' })
+        expect(await cargarAprendidosEn(tx, prov, 'iva')).toEqual({ 21: '1' })
+      })
+    })
+
+    it('una segunda correccion reemplaza a la primera', async () => {
+      // El operador se equivoco, o el proveedor cambio de convencion: vale
+      // lo ultimo que dijo, sin dejar dos filas compitiendo.
+      await conRollback(async (tx) => {
+        const prov = provPrueba()
+        await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '00000')
+        await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '10077')
+
+        expect(await cargarAprendidosEn(tx, prov, 'ptovta')).toEqual({ tarjeta: '10077' })
+      })
+    })
+
+    it('conserva los ceros a la izquierda del punto de venta', async () => {
+      // '00000' es un punto de venta real (VALLE FERTIL y el Banco de
+      // Santiago del Estero lo usan): si se guardara como numero se
+      // convertiria en '0' y armaria un N_COMP distinto.
+      await conRollback(async (tx) => {
+        const prov = provPrueba()
+        await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '00000')
+
+        expect((await cargarAprendidosEn(tx, prov, 'ptovta')).tarjeta).toBe('00000')
+      })
+    })
+  })
 })

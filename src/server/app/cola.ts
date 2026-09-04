@@ -40,6 +40,16 @@ export const CONCURRENCIA = 3
 
 /** "CONTADO 1 DIA". Todas las facturas de conceptos arrancan con esta. */
 export const COND_COMPRA_CONCEPTOS = '2'
+
+/**
+ * La letra con la que se archivan las liquidaciones de tarjeta. Verificado
+ * contra CPA04: las 24 liquidaciones ya cargadas de los tres proveedores de
+ * tarjeta/banco (VALLE FERTIL, Banco de Santiago del Estero, Banco Macro)
+ * son todas 'A', sin una sola excepcion. A diferencia del punto de venta
+ * --que cambia de proveedor a proveedor y por eso se aprende-- esta es una
+ * constante real, asi que no hay nada que aprender.
+ */
+export const LETRA_TARJETA = 'A'
 const INTERVALO_MS = 2 * 60 * 1000
 
 type Ejecutor = { request(): sql.Request }
@@ -300,6 +310,74 @@ export async function resolverCondicionCompraEn(
 
   await guardarCampoEn(e, id, 'condcompra', cod, { corregidoPorUsuario: false })
   await auditarEn(e, id, `Condición de compra aprendida para el proveedor: "${texto}" → código ${cod}`)
+}
+
+/**
+ * Completa la identificación que una liquidación de tarjeta no trae impresa:
+ * la letra (constante, `LETRA_TARJETA`) y el punto de venta (aprendido del
+ * proveedor). Sin las dos, `registrarComprobanteEn` corta con "No se pudo
+ * determinar la letra del comprobante" y `validarFormatoNComp` bloquea por
+ * falta de punto de venta -- una liquidación quedaba imposible de registrar
+ * sin que el operador tipeara los dos campos a mano en cada una.
+ *
+ * Las dos se completan SOLO si están vacías: si la liquidación imprimió su
+ * letra o su punto de venta y la IA los leyó, gana el documento. Un default
+ * que pisa un dato real es peor que no tener default.
+ *
+ * El punto de venta se aprende y no se fija porque no hay una convención
+ * única -- ver el comentario de `TipoAprendizaje` en
+ * `aprendizajeImpuestos.ts`. La primera liquidación de un proveedor nuevo
+ * la completa el operador; de ahí en más sale sola.
+ */
+export async function completarIdentificacionTarjetaEn(
+  e: Ejecutor,
+  id: number,
+  codProvee: string | null,
+): Promise<void> {
+  const detalle = await obtenerDetalleEn(e, id)
+  const valorDe = (clave: string) =>
+    (detalle.campos.find((c) => c.clave === clave)?.valorFinal ?? '').trim()
+
+  let letra: string | null = null
+  if (!valorDe('tipo')) {
+    letra = LETRA_TARJETA
+    await guardarCampoEn(e, id, 'tipo', letra, { corregidoPorUsuario: false })
+    await auditarEn(e, id, `Letra completada para liquidación de tarjeta: ${letra}`)
+  }
+
+  let ptovta: string | null = null
+  const prov = (codProvee ?? '').trim()
+  if (prov && !valorDe('ptovta')) {
+    const aprendido = (await cargarAprendidosEn(e, prov, 'ptovta'))['tarjeta']
+    if (aprendido) {
+      ptovta = aprendido
+      await guardarCampoEn(e, id, 'ptovta', ptovta, { corregidoPorUsuario: false })
+      await auditarEn(e, id, `Punto de venta aprendido para el proveedor: ${ptovta}`)
+    }
+  }
+
+  if (!letra && !ptovta) return
+
+  // Las columnas de bandeja no las escribe guardarCampoEn, sino
+  // desnormalizarBandejaEn desde la extraccion -- que para estos dos campos
+  // vino vacia. Sin esta actualizacion la bandeja mostraria la liquidacion
+  // sin letra ni punto de venta pese a que el formulario ya los tiene, y el
+  // chequeo de duplicados de validaciones.ts, que busca por PUNTO_VENTA y
+  // NUMERO en esta misma tabla, no encontraria nada.
+  //
+  // COALESCE y no asignacion directa: cada campo se completa por separado,
+  // y el que no se completo en esta pasada tiene que quedar como estaba.
+  await e
+    .request()
+    .input('id', sql.Int, id)
+    .input('tipo', sql.VarChar(10), letra)
+    .input('pv', sql.VarChar(10), ptovta)
+    .query(`
+      UPDATE PHF_COMPROBANTE
+      SET TIPO = COALESCE(@tipo, TIPO),
+          PUNTO_VENTA = COALESCE(@pv, PUNTO_VENTA)
+      WHERE ID = @id
+    `)
 }
 
 /**
@@ -706,6 +784,9 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       await desnormalizarBandejaEn(tx, id, r.extraccion)
       const cod = await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
       await resolverCondicionCompraEn(tx, id, cod, r.extraccion.campos.condpago?.valor ?? null)
+      // Va despues de resolverProveedorEn porque el punto de venta se
+      // aprende por proveedor: sin `cod` no hay a quien preguntarle.
+      if (tipoFactura === 'tarjeta') await completarIdentificacionTarjetaEn(tx, id, cod)
       const conValor = Object.values(r.extraccion.campos).filter((c) => c.valor !== null).length
       await marcarLeidoEn(tx, id, prom, r.ms, r.modelo, conValor)
 

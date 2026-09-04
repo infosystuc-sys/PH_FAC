@@ -8,18 +8,28 @@ import { normalizarTextoCondicion } from '@/server/tango/condicionesCompra'
 type Ejecutor = { request(): sql.Request }
 
 /**
- * Los tres tipos de dato que hoy pueden aprenderse por proveedor. Las
+ * Los cuatro tipos de dato que hoy pueden aprenderse por proveedor. Las
  * alícuotas de IVA se identifican por porcentaje, las percepciones de
- * Ingresos Brutos por jurisdicción, y la condición de compra por el texto
- * de condición de pago/venta que imprime el proveedor -- ver el comentario
- * de `PHF_ALICUOTA_PROVEEDOR` en `scripts/migrate.ts` (el nombre de la
- * tabla quedó corto desde que 'condicion' no es una alícuota, pero el
- * mecanismo -- MERGE por proveedor+tipo+texto -- es el mismo). Los
- * impuestos varios quedan afuera: hoy la IA no captura un texto propio
- * para esa línea, solo el código que ya elige el operador de una lista --
- * no hay "cómo lo escribe la factura" que guardar todavía.
+ * Ingresos Brutos por jurisdicción, la condición de compra por el texto
+ * de condición de pago/venta que imprime el proveedor, y el punto de venta
+ * por el tipo de comprobante -- ver el comentario de
+ * `PHF_ALICUOTA_PROVEEDOR` en `scripts/migrate.ts` (el nombre de la tabla
+ * quedó corto desde que 'condicion' no es una alícuota, pero el mecanismo
+ * -- MERGE por proveedor+tipo+texto -- es el mismo). Los impuestos varios
+ * quedan afuera: hoy la IA no captura un texto propio para esa línea, solo
+ * el código que ya elige el operador de una lista -- no hay "cómo lo
+ * escribe la factura" que guardar todavía.
+ *
+ * 'ptovta' es el único que no se identifica por algo impreso en el
+ * comprobante, porque no hay nada que leer: una liquidación de tarjeta no
+ * trae punto de venta (ver el prompt de tarjeta), y sin embargo Tango
+ * necesita uno para armar el N_COMP. Lo que se aprende es la convención
+ * con la que el operador viene archivando a ese proveedor -- verificado
+ * contra CPA04: VALLE FERTIL y el Banco de Santiago del Estero usan
+ * '00000', pero el Banco Macro usa '10077', su propio código de proveedor.
+ * Por eso no puede ser una constante de la app: es dato de cada proveedor.
  */
-export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion'
+export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion' | 'ptovta'
 
 /**
  * Deja la `DESCRIPCION` de la tabla en la misma forma con la que después
@@ -31,6 +41,11 @@ export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion'
 function normalizarDescripcion(tipo: TipoAprendizaje, descripcion: string): string {
   if (tipo === 'iva') return String(parsearImporte(descripcion))
   if (tipo === 'percepcion') return normalizarJurisdiccion(descripcion)
+  // En 'ptovta' la descripcion es la clave de un TipoFactura ('tarjeta'),
+  // no un texto de la factura: ya viene canonica, solo se le sacan los
+  // espacios. Pasarla por normalizarTextoCondicion daria lo mismo hoy,
+  // pero ataria la clave a las reglas de otro tipo de dato.
+  if (tipo === 'ptovta') return descripcion.trim()
   return normalizarTextoCondicion(descripcion)
 }
 
