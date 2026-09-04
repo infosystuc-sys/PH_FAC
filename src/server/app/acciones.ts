@@ -5,8 +5,8 @@ import { revalidatePath } from 'next/cache'
 import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
 import { borrarPdf } from './archivos'
-import { auditarEn, guardarCampoEn } from './detalle'
-import { despertarWorker, importarComprobanteEn } from './cola'
+import { auditarEn, guardarCampoEn, obtenerDetalleEn } from './detalle'
+import { despertarWorker, importarComprobanteEn, recalcularNetoDeCargosEn } from './cola'
 import { usuarioActual } from '@/lib/usuario'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { esTipoFactura } from '@/lib/tipoFactura'
@@ -389,6 +389,57 @@ export async function asociarCodigosProveedorEnLote(
  * estado local del formulario -- forzar un refresh acá interrumpiría al
  * operador si está editando otro campo al mismo tiempo.
  */
+/**
+ * El operador marca o desmarca si un cargo de una liquidación suma al neto
+ * gravado. Recalcula el neto con la suma nueva y, si el proveedor está
+ * resuelto, aprende la decisión por rótulo: la próxima liquidación de esa
+ * misma procesadora ya va a venir bien sin que toque nada.
+ *
+ * Con `revalidatePath`, a diferencia de `aprenderImpuestoTango`: acá el
+ * cambio mueve el neto, que se muestra en el formulario y alimenta el
+ * cotejo contra el IVA y el total. Dejar la pantalla con el neto viejo
+ * después de destildar un cargo sería mostrar un número que ya no es.
+ */
+export async function marcarCargoGravado(
+  comprobanteId: number,
+  cargoId: number,
+  gravado: boolean,
+): Promise<void> {
+  const pool = await getPool()
+
+  const r = await pool
+    .request()
+    .input('id', sql.Int, cargoId)
+    .input('comp', sql.Int, comprobanteId)
+    .input('g', sql.Bit, gravado)
+    .query<{ CONCEPTO: string | null }>(`
+      UPDATE PHF_CARGO SET GRAVADO = @g
+      OUTPUT INSERTED.CONCEPTO
+      WHERE ID = @id AND COMPROBANTE_ID = @comp
+    `)
+  if (r.recordset.length === 0) return
+
+  const neto = await recalcularNetoDeCargosEn(pool, comprobanteId)
+  const concepto = r.recordset[0].CONCEPTO
+
+  await conTransaccion((tx) =>
+    auditarEn(
+      tx,
+      comprobanteId,
+      `Cargo "${concepto ?? '(sin rótulo)'}" marcado como ${gravado ? 'gravado' : 'NO gravado'}` +
+        (neto === null ? '' : ` — neto recalculado en ${neto.toFixed(2)}`),
+    ),
+  )
+
+  const detalle = await obtenerDetalleEn(pool, comprobanteId)
+  const codProvee = (detalle.campos.find((c) => c.clave === 'codprovee')?.valorFinal ?? '').trim()
+  if (codProvee && concepto) {
+    await aprenderImpuesto(codProvee, 'gravado', concepto, gravado ? 'S' : 'N')
+  }
+
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+}
+
 export async function aprenderImpuestoTango(
   comprobanteId: number,
   codProvee: string,

@@ -8,8 +8,9 @@ import { PanelObservacion } from './panel-observacion'
 import { PanelValidaciones } from './validaciones'
 import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
+import { Cargos } from './cargos'
 import { Historial } from './historial'
-import type { RenglonGuardado, EntradaAuditoria } from '@/server/app/detalle'
+import type { RenglonGuardado, CargoGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
 import type { CodigoImpuesto } from '@/server/tango/impuestos'
@@ -59,6 +60,7 @@ export function Pantalla({
   confianza,
   hayCorrecciones,
   renglones,
+  cargos,
   auditoria,
   validaciones,
   listoParaRegistrar,
@@ -83,6 +85,7 @@ export function Pantalla({
   confianza: number | null
   hayCorrecciones: boolean
   renglones: RenglonGuardado[]
+  cargos: CargoGuardado[]
   auditoria: EntradaAuditoria[]
   validaciones: Validaciones
   listoParaRegistrar: ResultadoListoParaRegistrar | null
@@ -194,6 +197,9 @@ export function Pantalla({
           aprendidosIva={aprendidosIva}
           aprendidosPercepcion={aprendidosPercepcion}
         />
+        {/* Va antes de Renglones porque en tarjeta es la tarjeta con el
+            detalle del comprobante, y en tarjeta no hay renglones. */}
+        <Cargos comprobanteId={comprobanteId} cargos={cargos} soloLectura={soloLectura} />
         <Renglones
           comprobanteId={comprobanteId}
           renglones={renglones}

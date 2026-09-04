@@ -163,6 +163,7 @@ export default async function RevisionPage({
           confianza={encabezado.confianzaPromedio}
           hayCorrecciones={hayCorrecciones}
           renglones={detalle.renglones}
+          cargos={detalle.cargos}
           auditoria={detalle.auditoria}
           validaciones={validaciones}
           listoParaRegistrar={listoParaRegistrar}

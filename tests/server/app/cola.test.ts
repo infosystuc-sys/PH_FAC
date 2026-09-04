@@ -12,6 +12,8 @@ import {
   resolverProveedorEn,
   resolverCondicionCompraEn,
   completarIdentificacionTarjetaEn,
+  recalcularNetoDeCargosEn,
+  aplicarCargosAprendidosEn,
   LETRA_TARJETA,
   marcarExistenteEnTangoEn,
   observarSinConceptoEn,
@@ -462,6 +464,107 @@ describe('resolverCondicionCompraEn', () => {
 
       const d = await obtenerDetalleEn(tx, id)
       expect(d.campos.find((c) => c.clave === 'condcompra')).toBeUndefined()
+    })
+  })
+})
+
+describe('recalcularNetoDeCargosEn y aplicarCargosAprendidosEn', () => {
+  function provPrueba(): string {
+    return `ZZ${Date.now() % 100000}`
+  }
+
+  async function conCargos(
+    tx: sql.Transaction,
+    id: number,
+    cargos: { concepto: string; importe: number }[],
+  ) {
+    let orden = 0
+    for (const c of cargos) {
+      orden += 1
+      await tx
+        .request()
+        .input('id', sql.Int, id)
+        .input('orden', sql.Int, orden)
+        .input('c', sql.NVarChar(200), c.concepto)
+        .input('i', sql.Decimal(19, 4), c.importe)
+        .query('INSERT INTO PHF_CARGO (COMPROBANTE_ID, ORDEN, CONCEPTO, IMPORTE) VALUES (@id, @orden, @c, @i)')
+    }
+  }
+
+  it('suma los cargos y escribe el neto', async () => {
+    // El caso real de VALLE FERTIL, que es donde el modelo se comia un cargo.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await conCargos(tx, id, [
+        { concepto: 'Arancel de ley', importe: 2177.97 },
+        { concepto: 'Pago Veloz', importe: 0 },
+        { concepto: 'Comisión', importe: 2177.97 },
+      ])
+
+      expect(await recalcularNetoDeCargosEn(tx, id)).toBe(4355.94)
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'neto')?.valorFinal).toBe('4355,94')
+    })
+  })
+
+  it('devuelve null y no toca el neto si no hay cargos', async () => {
+    // Es el caso de conceptos y articulos, que no piden desglose.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await guardarCampoEn(tx, id, 'neto', '999,00')
+
+      expect(await recalcularNetoDeCargosEn(tx, id)).toBeNull()
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'neto')?.valorFinal).toBe('999,00')
+    })
+  })
+
+  it('excluye de la suma lo que el proveedor enseño que no grava', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'gravado', 'Pago Veloz', 'N')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await conCargos(tx, id, [
+        { concepto: 'Arancel de ley', importe: 2177.97 },
+        { concepto: 'Pago Veloz', importe: 500 },
+      ])
+
+      expect(await aplicarCargosAprendidosEn(tx, id, prov)).toBe(1)
+      expect(await recalcularNetoDeCargosEn(tx, id)).toBe(2177.97)
+
+      // El cargo excluido sigue existiendo, solo deja de sumar: el operador
+      // tiene que poder ver que la linea estaba y que se dejo afuera.
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.cargos).toHaveLength(2)
+      expect(d.cargos.find((c) => c.concepto === 'Pago Veloz')?.gravado).toBe(false)
+    })
+  })
+
+  it('matchea el rotulo aprendido con otro casing o acentuacion', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'gravado', 'COMISION', 'N')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await conCargos(tx, id, [{ concepto: 'Comisión', importe: 100 }])
+
+      expect(await aplicarCargosAprendidosEn(tx, id, prov)).toBe(1)
+      expect(await recalcularNetoDeCargosEn(tx, id)).toBe(0)
+    })
+  })
+
+  it('no excluye nada sin proveedor, ni por lo aprendido de otro', async () => {
+    await conRollback(async (tx) => {
+      const prov = provPrueba()
+      await aprenderImpuestoEn(tx, prov, 'gravado', 'Pago Veloz', 'N')
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await conCargos(tx, id, [{ concepto: 'Pago Veloz', importe: 500 }])
+
+      expect(await aplicarCargosAprendidosEn(tx, id, null)).toBe(0)
+      expect(await aplicarCargosAprendidosEn(tx, id, `${prov}X`)).toBe(0)
+      expect(await recalcularNetoDeCargosEn(tx, id)).toBe(500)
     })
   })
 })

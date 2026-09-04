@@ -313,6 +313,44 @@ export async function resolverCondicionCompraEn(
 }
 
 /**
+ * Marca como no gravados los cargos cuyo rótulo este proveedor ya enseñó
+ * que no suma a la base. Corre antes de `recalcularNetoDeCargosEn`, para
+ * que el neto salga bien de entrada.
+ *
+ * Cada procesadora mantiene su formato mes a mes, así que alcanza con que
+ * el operador lo corrija una vez: la liquidación siguiente ya viene bien
+ * sin que toque nada. Solo se aplica lo aprendido como NO gravado -- el
+ * default de la tabla ya es que todo suma, así que no hay nada que hacer
+ * con lo aprendido en el otro sentido.
+ */
+export async function aplicarCargosAprendidosEn(
+  e: Ejecutor,
+  id: number,
+  codProvee: string | null,
+): Promise<number> {
+  const prov = (codProvee ?? '').trim()
+  if (!prov) return 0
+
+  const aprendidos = await cargarAprendidosEn(e, prov, 'gravado')
+  const noGravados = Object.entries(aprendidos)
+    .filter(([, v]) => v === 'N')
+    .map(([rotulo]) => rotulo)
+  if (noGravados.length === 0) return 0
+
+  const detalle = await obtenerDetalleEn(e, id)
+  let marcados = 0
+  for (const c of detalle.cargos) {
+    if (!c.concepto || !noGravados.includes(normalizarTextoCondicion(c.concepto))) continue
+    await e
+      .request()
+      .input('id', sql.Int, c.id)
+      .query('UPDATE PHF_CARGO SET GRAVADO = 0 WHERE ID = @id')
+    marcados += 1
+  }
+  return marcados
+}
+
+/**
  * Recalcula el neto gravado sumando los cargos marcados como gravados, y lo
  * escribe en el campo `neto`.
  *
@@ -822,14 +860,16 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // aprende por proveedor: sin `cod` no hay a quien preguntarle.
       if (tipoFactura === 'tarjeta') {
         await completarIdentificacionTarjetaEn(tx, id, cod)
-        // Antes de desnormalizar no: el neto no es una columna de bandeja.
-        // Despues de guardarExtraccionEn si, que es quien escribe PHF_CARGO.
+        // Va despues de guardarExtraccionEn, que es quien escribe PHF_CARGO.
+        const excluidos = await aplicarCargosAprendidosEn(tx, id, cod)
         const neto = await recalcularNetoDeCargosEn(tx, id)
         if (neto !== null) {
+          const detalle =
+            excluidos > 0 ? `, ${excluidos} excluido(s) por lo aprendido del proveedor` : ''
           await auditarEn(
             tx,
             id,
-            `Neto gravado calculado sumando ${r.extraccion.cargos.length} cargo(s): ${neto.toFixed(2)}`,
+            `Neto gravado calculado sumando ${r.extraccion.cargos.length} cargo(s)${detalle}: ${neto.toFixed(2)}`,
           )
         }
       }

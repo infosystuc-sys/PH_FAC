@@ -28,8 +28,15 @@ type Ejecutor = { request(): sql.Request }
  * contra CPA04: VALLE FERTIL y el Banco de Santiago del Estero usan
  * '00000', pero el Banco Macro usa '10077', su propio código de proveedor.
  * Por eso no puede ser una constante de la app: es dato de cada proveedor.
+ *
+ * 'gravado' es el otro que no resuelve un codigo de Tango sino un si/no:
+ * guarda, por proveedor y por rotulo de cargo ("Arancel de ley", "Costo
+ * financiero"), si ese cargo suma al neto gravado. El operador lo destilda
+ * una vez y las liquidaciones siguientes de esa misma procesadora ya salen
+ * bien, que es lo unico que hace falta porque cada procesadora mantiene su
+ * formato mes a mes. `COD_TANGO` guarda 'S' o 'N'.
  */
-export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion' | 'ptovta'
+export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion' | 'ptovta' | 'gravado'
 
 /**
  * Deja la `DESCRIPCION` de la tabla en la misma forma con la que después
@@ -46,6 +53,10 @@ function normalizarDescripcion(tipo: TipoAprendizaje, descripcion: string): stri
   // espacios. Pasarla por normalizarTextoCondicion daria lo mismo hoy,
   // pero ataria la clave a las reglas de otro tipo de dato.
   if (tipo === 'ptovta') return descripcion.trim()
+  // En 'gravado' la descripcion es el rotulo del cargo tal como lo imprime
+  // la procesadora ("Arancel de ley", "Costo financiero"). Se normaliza
+  // igual que la condicion de compra --sin acentos, minusculas, espacios
+  // colapsados-- para que "Comisión" y "COMISION" sean el mismo cargo.
   return normalizarTextoCondicion(descripcion)
 }
 
