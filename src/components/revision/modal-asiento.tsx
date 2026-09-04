@@ -65,24 +65,28 @@ export function ModalAsiento({
               <>
                 <div className={styles.header}>
                   <span>Cuenta</span>
+                  <span>Leyenda</span>
                   <span className={styles.monto}>Debe</span>
                   <span className={styles.monto}>Haber</span>
                 </div>
                 {asiento.lineas.map((l, i) => (
                   <div key={i} className={styles.fila}>
-                    <span>
-                      <span className={styles.cuenta}>
-                        {l.codCuenta} · {l.descCuenta}
-                      </span>
-                      <br />
-                      <span className={styles.leyenda}>{l.leyenda}</span>
+                    <span className={styles.cuenta}>
+                      {l.codCuenta} · {l.descCuenta}
+                    </span>
+                    {/* Es literalmente lo que va a quedar en
+                        ASIENTO_CP.DESC_LEYENDA de este renglon. El guion
+                        marca la linea sin leyenda, para que una celda vacia
+                        no se lea como un error de la vista previa. */}
+                    <span className={styles.leyenda}>
+                      {l.leyenda || <span className={styles.leyendaVacia}>—</span>}
                     </span>
                     <span className={styles.monto}>{formatMoneda(l.debe)}</span>
                     <span className={styles.monto}>{formatMoneda(l.haber)}</span>
                   </div>
                 ))}
                 <div className={styles.totales}>
-                  <span>Totales</span>
+                  <span className={styles.totalesLabel}>Totales</span>
                   <span className={styles.monto}>{formatMoneda(asiento.totalDebe)}</span>
                   <span className={styles.monto}>{formatMoneda(asiento.totalHaber)}</span>
                 </div>

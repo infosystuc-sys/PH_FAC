@@ -9,7 +9,10 @@
 }
 
 .caja {
-  width: 640px;
+  /* Mas ancho que los demas modales: la leyenda es una columna propia y
+     puede llegar a 100 caracteres (el largo real de ASIENTO_CP.DESC_LEYENDA)
+     cuando el operador carga la suya. */
+  width: 820px;
   max-height: 80vh;
   overflow-y: auto;
   background: var(--superficie);
@@ -53,7 +56,7 @@
 .fila,
 .totales {
   display: grid;
-  grid-template-columns: 1fr 110px 110px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 110px 110px;
   gap: 10px;
   align-items: baseline;
 }
@@ -75,11 +78,21 @@
 
 .cuenta {
   font-family: var(--mono);
+  overflow-wrap: anywhere;
 }
 
+/* Es la que se graba tal cual en ASIENTO_CP.DESC_LEYENDA, asi que se
+   muestra entera: `anywhere` corta tambien un texto sin espacios (el
+   operador escribe cosas como "TEL.MOVIL-20/7-19/8-AMEX-VTO:9/9"), que si
+   no se desbordaria de la columna. */
 .leyenda {
-  color: var(--texto-3);
-  font-size: 11.5px;
+  color: var(--texto-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.leyendaVacia {
+  color: var(--texto-5);
 }
 
 .monto {
@@ -91,6 +104,11 @@
   padding: 10px 0 6px;
   border-top: 2px solid var(--borde);
   font-weight: 600;
+}
+
+/* "Totales" ocupa Cuenta + Leyenda: no hay nada que poner en la segunda. */
+.totalesLabel {
+  grid-column: span 2;
 }
 
 .aviso {
