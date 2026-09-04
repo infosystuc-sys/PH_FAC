@@ -146,6 +146,17 @@ export function netoQueImplicaElIva(lineas: LineaAlicuota[]): number | null {
   return cuantas === 0 ? null : Math.round(base * 100) / 100
 }
 
+/**
+ * Si un neto puede considerarse el que implica el IVA. Compartida entre la
+ * validación y el ajuste automático de tarjeta (`ajustarNetoConIvaEn`) para
+ * que no puedan discrepar: sería absurdo que el pipeline diera por bueno un
+ * neto que la pantalla marca en rojo, o al revés.
+ */
+export function netoCierraConIva(esperado: number, neto: number): boolean {
+  const tolerancia = Math.max(TOLERANCIA_NETO_IVA_MINIMA, esperado * TOLERANCIA_NETO_IVA)
+  return Math.abs(esperado - neto) <= tolerancia
+}
+
 export function validarNetoContraIva(
   lineas: LineaAlicuota[],
   netoDeclarado: string | null | undefined,
@@ -160,9 +171,8 @@ export function validarNetoContraIva(
   const fmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const neto = parsearImporte(netoDeclarado)
   const diferencia = Math.abs(esperado - neto)
-  const tolerancia = Math.max(TOLERANCIA_NETO_IVA_MINIMA, esperado * TOLERANCIA_NETO_IVA)
 
-  if (diferencia <= tolerancia) {
+  if (netoCierraConIva(esperado, neto)) {
     return { estado: 'ok', mensaje: `El neto cierra con el IVA declarado ($ ${fmt.format(esperado)}).` }
   }
 

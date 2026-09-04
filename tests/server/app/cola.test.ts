@@ -14,6 +14,7 @@ import {
   completarIdentificacionTarjetaEn,
   recalcularNetoDeCargosEn,
   aplicarCargosAprendidosEn,
+  ajustarNetoConIvaEn,
   LETRA_TARJETA,
   marcarExistenteEnTangoEn,
   observarSinConceptoEn,
@@ -565,6 +566,96 @@ describe('recalcularNetoDeCargosEn y aplicarCargosAprendidosEn', () => {
       expect(await aplicarCargosAprendidosEn(tx, id, null)).toBe(0)
       expect(await aplicarCargosAprendidosEn(tx, id, `${prov}X`)).toBe(0)
       expect(await recalcularNetoDeCargosEn(tx, id)).toBe(500)
+    })
+  })
+})
+
+describe('ajustarNetoConIvaEn (calculo inverso)', () => {
+  async function conIva(
+    tx: sql.Transaction,
+    id: number,
+    neto: string,
+    lineas: { porc: string; imp: string }[],
+  ) {
+    await guardarCampoEn(tx, id, 'neto', neto)
+    let n = 0
+    for (const l of lineas) {
+      n += 1
+      await guardarCampoEn(tx, id, `porciva${n}`, l.porc)
+      await guardarCampoEn(tx, id, `impiva${n}`, l.imp)
+    }
+  }
+
+  it('no toca el neto si ya cierra contra el IVA', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await conIva(tx, id, '4355,94', [{ porc: '21', imp: '914,74' }])
+
+      const r = await ajustarNetoConIvaEn(tx, id, null)
+      expect(r.ajustado).toBe(false)
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'neto')?.valorFinal).toBe('4355,94')
+    })
+  })
+
+  it('reemplaza el neto cuando lo sumado se comio un cargo', async () => {
+    // El caso real de VALLE FERTIL: la lectura devolvio solo el arancel.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await conIva(tx, id, '2177,97', [{ porc: '21', imp: '914,74' }])
+
+      const r = await ajustarNetoConIvaEn(tx, id, null)
+      expect(r.ajustado).toBe(true)
+      expect(r.neto).toBe(4355.9)
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'neto')?.valorFinal).toBe('4355,90')
+    })
+  })
+
+  it('suma las bases de 21% y 10,5% juntas', async () => {
+    // Pedido explicito del usuario: las dos alicuotas conviven y cada una
+    // aporta su parte de la base. 2.100/0,21 = 10.000 y 1.050/0,105 = 10.000.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await conIva(tx, id, '1,00', [
+        { porc: '21', imp: '2100,00' },
+        { porc: '10,5', imp: '1050,00' },
+      ])
+
+      const r = await ajustarNetoConIvaEn(tx, id, null)
+      expect(r.ajustado).toBe(true)
+      expect(r.neto).toBe(20000)
+    })
+  })
+
+  it('no hace nada sin lineas de IVA que permitan deducir la base', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await guardarCampoEn(tx, id, 'neto', '5000,00')
+
+      const r = await ajustarNetoConIvaEn(tx, id, null)
+      expect(r.ajustado).toBe(false)
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'neto')?.valorFinal).toBe('5000,00')
+    })
+  })
+
+  it('arrastra el error si la linea de IVA es la que esta mal', async () => {
+    // Documenta el limite real del inverso, con el caso de BANCO MACRO: una
+    // percepcion del 3% leida como alicuota del 21% infla la base deducida
+    // (208.868 en vez de 182.760). El inverso no puede distinguirlo, por eso
+    // el ajuste queda asentado en la auditoria y avisado en la tarjeta de
+    // cargos en vez de aplicarse en silencio.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await conIva(tx, id, '182759,80', [
+        { porc: '21', imp: '38379,53' },
+        { porc: '21', imp: '5482,77' },
+      ])
+
+      const r = await ajustarNetoConIvaEn(tx, id, null)
+      expect(r.ajustado).toBe(true)
+      expect(r.neto).toBe(208868.1)
     })
   })
 })

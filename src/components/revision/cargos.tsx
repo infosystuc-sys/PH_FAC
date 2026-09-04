@@ -24,10 +24,13 @@ import styles from './cargos.module.css'
 export function Cargos({
   comprobanteId,
   cargos,
+  netoVigente,
   soloLectura = false,
 }: {
   comprobanteId: number
   cargos: CargoGuardado[]
+  /** El valor del campo `neto`, que puede no ser esta suma: ver el aviso de abajo. */
+  netoVigente: string | null
   soloLectura?: boolean
 }) {
   const [pendiente, arrancar] = useTransition()
@@ -40,6 +43,11 @@ export function Cargos({
   const total = cargos
     .filter((c) => c.gravado)
     .reduce((a, c) => a + parsearImporte(c.importe), 0)
+
+  // Un centavo de diferencia es redondeo, no un ajuste: el inverso divide
+  // el IVA por la alícuota y no cae justo.
+  const neto = parsearImporte(netoVigente)
+  const netoDifiere = Math.abs(neto - total) > 0.05
 
   return (
     <section className={styles.tarjeta}>
@@ -76,9 +84,22 @@ export function Cargos({
       </div>
 
       <div className={styles.total}>
-        <span>Neto gravado</span>
+        <span>Suma de los cargos</span>
         <span className={styles.importe}>{formatMoneda(total)}</span>
       </div>
+
+      {/* El neto puede no ser esta suma: cuando lo sumado no cierra contra
+          el IVA impreso, el pipeline lo reemplaza por el que ese IVA implica
+          (ver ajustarNetoConIvaEn). Después de ese ajuste el cotejo de
+          "Listo para registrar" siempre da bien --se forzó-- así que este
+          aviso es lo único que deja ver que hubo un ajuste y contra qué. */}
+      {netoDifiere && (
+        <p className={styles.aviso}>
+          El neto gravado del comprobante es {formatMoneda(neto)}, no esta suma: se derivó del IVA
+          impreso porque los cargos no cerraban. Si la diferencia te llama la atención, revisá
+          contra el PDF si falta un cargo acá o si alguna línea de IVA quedó mal leída.
+        </p>
+      )}
     </section>
   )
 }

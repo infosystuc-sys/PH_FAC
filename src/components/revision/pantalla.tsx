@@ -199,7 +199,12 @@ export function Pantalla({
         />
         {/* Va antes de Renglones porque en tarjeta es la tarjeta con el
             detalle del comprobante, y en tarjeta no hay renglones. */}
-        <Cargos comprobanteId={comprobanteId} cargos={cargos} soloLectura={soloLectura} />
+        <Cargos
+          comprobanteId={comprobanteId}
+          cargos={cargos}
+          netoVigente={iniciales.neto?.valor ?? null}
+          soloLectura={soloLectura}
+        />
         <Renglones
           comprobanteId={comprobanteId}
           renglones={renglones}

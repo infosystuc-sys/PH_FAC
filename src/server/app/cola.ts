@@ -13,7 +13,7 @@ import {
   type LineaRemito,
   type RenglonFacturado,
 } from '@/lib/cotejo'
-import { normalizarCuit, parsearImporteONulo } from '@/lib/formato'
+import { normalizarCuit, parsearImporte, parsearImporteONulo } from '@/lib/formato'
 import {
   tipoFacturaODefault,
   CLAVES_REMITO,
@@ -32,7 +32,14 @@ import { cargarAprendidosEn } from './aprendizajeImpuestos'
 import { usuarioActual } from '@/lib/usuario'
 import { normalizarTextoCondicion } from '@/server/tango/condicionesCompra'
 import { buscarFacturaEnCpa04 } from '@/server/tango/comprobantes'
-import { letraComprobante, nComp as armarNComp } from '@/lib/validaciones'
+import {
+  letraComprobante,
+  nComp as armarNComp,
+  netoQueImplicaElIva,
+  netoCierraConIva,
+} from '@/lib/validaciones'
+import { resolverAlicuotas } from '@/lib/alicuotas'
+import { listarAlicuotasIva } from '@/server/tango/impuestos'
 
 export const MAX_INTENTOS = 3
 export const MINUTOS_REPESCA = 10
@@ -310,6 +317,56 @@ export async function resolverCondicionCompraEn(
 
   await guardarCampoEn(e, id, 'condcompra', cod, { corregidoPorUsuario: false })
   await auditarEn(e, id, `Condición de compra aprendida para el proveedor: "${texto}" → código ${cod}`)
+}
+
+/**
+ * Cálculo inverso: si el neto que salió de sumar los cargos no cierra
+ * contra el IVA impreso, se reemplaza por el que ese IVA implica
+ * (`importe ÷ alícuota`, sumando las alícuotas que gravan la base -- 21% y
+ * 10,5% conviven sin problema, cada una aporta su parte).
+ *
+ * Decisión explícita del usuario. La razón es cuál de los dos datos es más
+ * firme: el IVA viene impreso, rotulado y sin ambigüedad, mientras que el
+ * neto hay que componerlo sumando cargos que cada procesadora rotula
+ * distinto y que el modelo puede no encontrar todos. Cuando discrepan, el
+ * IVA gana.
+ *
+ * Solo en tarjeta: en los otros tipos el neto viene impreso como tal, así
+ * que no hay nada que reconstruir y una diferencia es información para el
+ * operador, no algo para pisar.
+ *
+ * **Lo que este ajuste puede tapar, y por eso queda en la auditoría:** si
+ * la que está mal es la línea de IVA y no el neto, el inverso arrastra el
+ * error en vez de corregirlo -- pasó de verdad con una liquidación de Banco
+ * Macro donde una percepción del 3% se leyó como alícuota del 21%, y el
+ * inverso habría dado $208.868 en vez de $182.760. Después de este ajuste
+ * el cotejo de la pantalla siempre cierra (lo acabamos de forzar), así que
+ * la entrada de auditoría y el subtotal de la tarjeta de cargos son lo
+ * único que deja ver que hubo un ajuste y contra qué.
+ */
+export async function ajustarNetoConIvaEn(
+  e: Ejecutor,
+  id: number,
+  codProvee: string | null,
+): Promise<{ ajustado: boolean; neto: number | null; sumaCargos: number | null }> {
+  const detalle = await obtenerDetalleEn(e, id)
+  const valores: Record<string, string | null | undefined> = {}
+  for (const c of detalle.campos) valores[c.clave] = c.valorFinal
+
+  const prov = (codProvee ?? '').trim()
+  const aprendidos = prov ? await cargarAprendidosEn(e, prov, 'iva') : {}
+  const lineas = resolverAlicuotas(valores, await listarAlicuotasIva(), aprendidos)
+
+  const esperado = netoQueImplicaElIva(lineas)
+  const actual = parsearImporte(valores.neto)
+  // Sin lineas de IVA utilizables no hay inverso que aplicar.
+  if (esperado === null) return { ajustado: false, neto: null, sumaCargos: actual }
+  if (netoCierraConIva(esperado, actual)) return { ajustado: false, neto: actual, sumaCargos: actual }
+
+  await guardarCampoEn(e, id, 'neto', esperado.toFixed(2).replace('.', ','), {
+    corregidoPorUsuario: false,
+  })
+  return { ajustado: true, neto: esperado, sumaCargos: actual }
 }
 
 /**
@@ -870,6 +927,18 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
             tx,
             id,
             `Neto gravado calculado sumando ${r.extraccion.cargos.length} cargo(s)${detalle}: ${neto.toFixed(2)}`,
+          )
+        }
+
+        // Ultimo recurso: si lo sumado no cierra contra el IVA impreso --o
+        // si no hubo cargos que sumar-- se deriva el neto del IVA.
+        const ajuste = await ajustarNetoConIvaEn(tx, id, cod)
+        if (ajuste.ajustado) {
+          await auditarEn(
+            tx,
+            id,
+            `Neto ajustado por cálculo inverso desde el IVA: ${ajuste.neto!.toFixed(2)} ` +
+              `(lo que había sumaba ${(ajuste.sumaCargos ?? 0).toFixed(2)})`,
           )
         }
       }
