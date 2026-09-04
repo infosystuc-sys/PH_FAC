@@ -11,9 +11,24 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString()
 
-// Escala fija: no hay controles de zoom (no se pidieron). 1.5 da una
-// resolucion legible sin generar canvases enormes en comprobantes largos.
-const ESCALA = 1.5
+/*
+ * La escala sale del ancho real del panel, no de una constante. Antes era
+ * fija en 1.5, que para una A4 da una hoja de 892px: el panel del PDF mide
+ * ~420px (`minmax(420px, 44%)` en pantalla.module.css), asi que la hoja
+ * nunca entraba y, al estar centrada, el operador veia solo una franja del
+ * medio del comprobante -- ni siquiera en un monitor ancho entraba, porque
+ * 44% de 1920px tampoco alcanza los 892px.
+ *
+ * ESCALA_MAX conserva el 1.5 de antes como techo: con el PDF en pantalla
+ * completa no tiene sentido dibujar canvases mas grandes que eso.
+ */
+const ESCALA_MAX = 1.5
+
+/** Piso: por debajo preferimos que desborde y se scrollee antes que dibujar algo ilegible. */
+const ESCALA_MIN = 0.35
+
+/** Un resize menor a esto no justifica re-renderizar todas las paginas (hay comprobantes de 48 hojas). */
+const UMBRAL_RESIZE_PX = 8
 
 export function Visor({
   id,
@@ -37,7 +52,37 @@ export function Visor({
   // lo que dispara una nueva pasada de resaltado sobre el estado actual.
   const [paginasConTexto, setPaginasConTexto] = useState(0)
 
+  // Ancho util del panel, medido del DOM. `null` hasta la primera medicion:
+  // sin ancho no se puede elegir la escala, asi que el render espera.
+  //
+  // No hay riesgo de bucle (medir -> renderizar mas ancho -> medir de
+  // nuevo): `.hojas` es un bloque que toma el ancho del panel, y una hoja
+  // mas ancha lo desborda en vez de estirarlo, asi que la medicion no
+  // depende de lo que se dibuje adentro.
+  const [ancho, setAncho] = useState<number | null>(null)
   useEffect(() => {
+    const el = contenedor.current
+    if (!el) return
+
+    const medir = () => {
+      const actual = el.clientWidth
+      if (actual === 0) return
+      setAncho((previo) =>
+        previo !== null && Math.abs(previo - actual) < UMBRAL_RESIZE_PX ? previo : actual,
+      )
+    }
+
+    medir()
+    const observador = new ResizeObserver(medir)
+    observador.observe(el)
+    return () => observador.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (ancho === null) return
+    // Copia local: `cargar` lo usa adentro de un closure async y ahi se
+    // pierde el estrechado de tipo del guard de arriba.
+    const anchoPanel = ancho
     let cancelado = false
     // La tarea de carga (no el documento) es lo que tiene destroy(): en
     // esta version de pdf.js PDFDocumentProxy no expone ese metodo, solo
@@ -73,7 +118,12 @@ export function Visor({
           const pagina = await doc.getPage(n)
           if (cancelado || !contenedor.current) return
 
-          const viewport = pagina.getViewport({ scale: ESCALA })
+          // La escala se calcula por pagina: un comprobante puede mezclar
+          // hojas de distinto tamano (una A4 y un ticket largo), y lo que
+          // tiene que entrar en el panel es cada una, no la primera.
+          const base = pagina.getViewport({ scale: 1 })
+          const escala = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, anchoPanel / base.width))
+          const viewport = pagina.getViewport({ scale: escala })
 
           const hoja = document.createElement('div')
           hoja.className = styles.hoja
@@ -94,7 +144,7 @@ export function Visor({
           // un calc() que depende de --total-scale-factor: sin fijarlo
           // ese calc queda invalido y el contenedor se queda sin tamano,
           // desalineando toda la capa de texto respecto del canvas.
-          capa.style.setProperty('--total-scale-factor', String(ESCALA))
+          capa.style.setProperty('--total-scale-factor', String(escala))
           capa.style.setProperty('--scale-round-x', '1px')
           capa.style.setProperty('--scale-round-y', '1px')
           hoja.appendChild(capa)
@@ -133,7 +183,11 @@ export function Visor({
       tareaTexto?.cancel()
       void tareaCarga.destroy()
     }
-  }, [id])
+    // `ancho` re-renderiza las hojas cuando cambia el ancho del panel: la
+    // escala depende de el, y una hoja dibujada para el ancho anterior
+    // queda chica o desbordada. El umbral de UMBRAL_RESIZE_PX evita que un
+    // arrastre del borde de la ventana dispare una tanda por pixel.
+  }, [id, ancho])
 
   // Resalta, dentro de la capa de texto de pdf.js, los spans cuyo
   // contenido coincide con el valor del campo enfocado. Recorre todas las

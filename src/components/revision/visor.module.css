@@ -3,6 +3,11 @@
   background: var(--fondo-pdf);
   border-right: 1px solid var(--borde-pdf);
   padding: 22px;
+  /* El visor mide este ancho para elegir la escala de la hoja. Sin reservar
+     el canal de la barra de scroll, la primera medicion (todavia sin barra)
+     da ~15px de mas, las hojas salen apenas anchas, aparece la barra y hay
+     que volver a renderizar todo el comprobante. */
+  scrollbar-gutter: stable;
 }
 
 .barra {
@@ -39,6 +44,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* Con `center` a secas, una hoja mas ancha que el panel (un PDF apaisado,
+     o uno tan angosto que toca ESCALA_MIN) desborda por los dos lados y su
+     borde izquierdo queda inalcanzable con el scroll. `safe` centra solo
+     mientras entra y cae a `start` cuando no. Se deja la linea anterior
+     como respaldo: un navegador que no entienda `safe` ignora esta sola. */
+  align-items: safe center;
   gap: 16px;
 }
 
