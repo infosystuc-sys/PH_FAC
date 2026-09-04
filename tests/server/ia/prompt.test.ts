@@ -58,6 +58,27 @@ describe('PROMPTS_EXTRACCION', () => {
     expect(PROMPTS_EXTRACCION.tarjeta).toContain('SIRCREB')
   })
 
+  it('solo el de tarjeta explica que el numero puede venir como numero de liquidacion', () => {
+    // Verificado contra el PDF real de VALLE FERTIL (010108): el numero
+    // figura como "Nro. Liquidacion : 2388983", y el documento trae ademas
+    // un "Comprobante a Liquidar : PLAN SI 3X1" que no es un numero. Sin
+    // esta regla el modelo lo leia igual, pero por inferencia y con
+    // confianza 0,8; con la regla sube a 0,97.
+    expect(PROMPTS_EXTRACCION.tarjeta).toContain('número de liquidación')
+    expect(PROMPTS_EXTRACCION.tarjeta).toContain('"PLAN SI 3X1"')
+
+    // En los otros dos tipos la regla no aplica y solo seria ruido.
+    expect(PROMPTS_EXTRACCION.conceptos).not.toContain('número de liquidación')
+    expect(PROMPTS_EXTRACCION.articulos).not.toContain('número de liquidación')
+  })
+
+  it('el de tarjeta pide dejar tipo y ptovta vacios en vez de deducirlos', () => {
+    // Estas liquidaciones no imprimen letra ni punto de venta. Un ptovta
+    // deducido del codigo de comercio arma un N_COMP que no existe en
+    // Tango, y eso rompe tanto el chequeo de duplicados como el registro.
+    expect(PROMPTS_EXTRACCION.tarjeta).toContain('dejá tipo y ptovta vacíos')
+  })
+
   it('los tres listan las jurisdicciones de IIBB con su criterio', () => {
     // El prompt pide la JURISDICCION, no el codigo: el codigo lo resuelve
     // la app despues (ver resolverPercepcionIibb). Pedirle el codigo al

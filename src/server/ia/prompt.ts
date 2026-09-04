@@ -167,6 +167,20 @@ Tango y no vas a encontrar campos de renglón en la lista de abajo. Todo el
 comprobante se imputa a un solo concepto -- comisiones de tarjeta -- así
 que lo único que importa son los datos de cabecera, el subtotal y los
 impuestos.
+El NÚMERO casi nunca viene como en una factura común. Acá suele figurar
+como número de liquidación, con etiquetas tipo "Nro. Liquidación",
+"Liquidación Nº", "Nro. Liquidacion" o "Número de liquidación": ese es el
+que va en nro, tal como está impreso.
+Cuidado con dos trampas de estos documentos:
+- Una etiqueta que dice "comprobante" y no trae ningún número. "Comprobante
+  a Liquidar" suele traer el nombre de un plan ("PLAN SI 3X1"): eso no va
+  en ningún campo.
+- Los demás números que trae la liquidación -- código de comercio, número
+  de cupón, de autorización, de tarjeta o de operación -- no son el número
+  del comprobante.
+Estas liquidaciones tampoco suelen imprimir la letra (A/B/C) ni el punto de
+venta. Si no los ves, dejá tipo y ptovta vacíos y no los deduzcas de otro
+número del documento: el operador los completa.
 El neto gravado es el subtotal de comisiones y cargos que cobra la
 tarjeta, no el bruto de las ventas ni el importe que se acredita. Si el
 resumen muestra las dos cosas, el que va es el de lo que nos cobran.
