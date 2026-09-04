@@ -16,6 +16,7 @@ import {
   validarPercepciones,
   validarVarios,
   validarTipoFactura,
+  validarNetoContraIva,
   validarAlicuotas,
   type ResultadoValidacion,
 } from '@/lib/validaciones'
@@ -168,6 +169,7 @@ export type ResultadoListoParaRegistrar = {
   concepto: ResultadoValidacion
   alicuotas: ResultadoValidacion
   varios: ResultadoValidacion
+  netoIva: ResultadoValidacion
   bloqueante: boolean
 }
 
@@ -229,9 +231,13 @@ export async function validarListoParaRegistrarEn(
   // que usa el armado real de la cabecera, asi el operador ve en la
   // revision a que alicuota de Tango va cada linea -- y si alguna no
   // existe, se entera antes de apretar "Registrar en Tango" y no despues.
-  const alicuotas = validarAlicuotas(
-    resolverAlicuotas(valores, await listarAlicuotasIva(), aprendidosIva),
-  )
+  const lineasIva = resolverAlicuotas(valores, await listarAlicuotasIva(), aprendidosIva)
+  const alicuotas = validarAlicuotas(lineasIva)
+
+  // Cotejo del neto contra el IVA impreso. En tarjeta es bloqueante: ahi el
+  // neto no viene impreso, se compone sumando cargos, y un componente
+  // faltante se arrastra al total, a las cuotas y al asiento entero.
+  const netoIva = validarNetoContraIva(lineasIva, valores.neto, valores.tipoFactura)
 
   const bloqueante = [
     condCompra,
@@ -242,6 +248,7 @@ export async function validarListoParaRegistrarEn(
     tipoFactura,
     concepto,
     alicuotas,
+    netoIva,
   ].some((v) => v.estado === 'error')
 
   return {
@@ -253,6 +260,7 @@ export async function validarListoParaRegistrarEn(
     tipoFactura,
     concepto,
     alicuotas,
+    netoIva,
     bloqueante,
   }
 }

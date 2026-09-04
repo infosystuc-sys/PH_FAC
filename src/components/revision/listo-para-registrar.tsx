@@ -42,6 +42,10 @@ export function ListoParaRegistrar({
   const items = [
     resultado.condCompra,
     resultado.alicuotas,
+    // Va pegado a las alícuotas porque es su contracara: aquéllas dicen a
+    // qué código de Tango va cada línea de IVA, y ésta usa esas mismas
+    // líneas para cotejar que el neto sea el que corresponde.
+    resultado.netoIva,
     resultado.percepcionIibb,
     resultado.varios,
     resultado.formatoComp,

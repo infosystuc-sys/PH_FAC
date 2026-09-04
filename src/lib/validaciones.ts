@@ -1,5 +1,5 @@
 import { totalImputado, parsearImporte } from './formato'
-import { formatPorcentaje, type LineaAlicuota } from './alicuotas'
+import { formatPorcentaje, esIvaSobreLaBase, type LineaAlicuota } from './alicuotas'
 import type { LineaPercepcion, LineaVarios } from './percepciones'
 
 export type ResultadoValidacion = {
@@ -90,6 +90,91 @@ export function validarTotales(
   return {
     estado: 'advertencia',
     mensaje: `La suma de los importes difiere en $ ${fmt.format(diferencia)} del total leído.`,
+  }
+}
+
+/**
+ * Cuanto puede diferir el neto declarado del que implica el IVA impreso
+ * antes de considerarlo un error. Es relativa y no de centavos a proposito:
+ * las liquidaciones reales calculan el IVA por transaccion y despues suman,
+ * asi que el redondeo se acumula -- en el resumen de Banco Macro el IVA
+ * impreso difiere 13 centavos del 21% exacto del neto impreso, sobre
+ * $182.759, y esta bien. Un componente faltante, que es lo que esta
+ * validacion busca, nunca es el 0,5%: en el caso real que la motivo era el
+ * 50% del neto.
+ */
+const TOLERANCIA_NETO_IVA = 0.005
+const TOLERANCIA_NETO_IVA_MINIMA = 1
+
+/**
+ * Coteja el neto gravado contra el que implica el IVA impreso: si una
+ * factura declara $914,74 de IVA al 21%, su base tiene que ser $4.355,90.
+ *
+ * Existe por un problema real de las liquidaciones de tarjeta: ahi el neto
+ * gravado no viene impreso en ningun renglon, es la SUMA de varios cargos
+ * (arancel, comision, costo financiero, cargo de transferencia...) que cada
+ * procesadora rotula distinto, y encima todas traen alguna linea que parece
+ * la respuesta y no lo es -- el resumen de Tarjeta Sol tiene un renglon
+ * literalmente llamado "Importe neto" que es lo acreditado, no la base.
+ * Leyendo el mismo PDF dos veces, la IA devolvio dos bases distintas
+ * (4.355,94 y 2.177,97, o sea un componente de menos) y en la equivocada
+ * subio la confianza de 0,55 a 0,88: la confianza no sirve como alarma.
+ *
+ * El IVA si es un dato firme -- viene impreso, rotulado y sin ambiguedad --
+ * asi que sirve de verificador independiente del dato que no lo es.
+ */
+export function validarNetoContraIva(
+  lineas: LineaAlicuota[],
+  netoDeclarado: string | null | undefined,
+  tipoFactura?: string | null,
+): ResultadoValidacion {
+  let baseSegunIva = 0
+  let cuantas = 0
+  for (const l of lineas) {
+    // Solo el IVA que grava la base. Una percepcion o una retencion viven
+    // en estos mismos slots (ver esIvaSobreLaBase) y su importe dividido por
+    // su porcentaje no es base gravada: sumarlas inventaria neto. Es lo que
+    // le permite al operador destrabar el caso real que motivo esto --
+    // corrige a mano el codigo de la linea mal leida y el cotejo cierra.
+    if (!esIvaSobreLaBase(l.alicuota)) continue
+    // El 0% no dice nada de la base, y ademas dividiria por cero.
+    if (l.porcentaje <= 0 || l.importe <= 0) continue
+    baseSegunIva += l.importe / (l.porcentaje / 100)
+    cuantas += 1
+  }
+
+  if (cuantas === 0) {
+    return { estado: 'ok', mensaje: 'Sin líneas de IVA para cotejar contra el neto.' }
+  }
+
+  const fmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const neto = parsearImporte(netoDeclarado)
+  const esperado = Math.round(baseSegunIva * 100) / 100
+  const diferencia = Math.abs(esperado - neto)
+  const tolerancia = Math.max(TOLERANCIA_NETO_IVA_MINIMA, esperado * TOLERANCIA_NETO_IVA)
+
+  if (diferencia <= tolerancia) {
+    return { estado: 'ok', mensaje: `El neto cierra con el IVA declarado ($ ${fmt.format(esperado)}).` }
+  }
+
+  return {
+    // Bloqueante solo en tarjeta, que es donde el neto no viene impreso y
+    // hay que componerlo: ahi una diferencia es casi siempre un cargo que
+    // falta, y el neto arrastra al total y al asiento entero. En los otros
+    // tipos el neto SI viene impreso, asi que una diferencia es mas probable
+    // que sea un caso legitimo (una linea que el proveedor no desglosa) que
+    // un error -- se avisa, no se frena.
+    estado: tipoFactura === 'tarjeta' ? 'error' : 'advertencia',
+    // No se le echa la culpa al neto: el desvío puede estar de cualquiera de
+    // los dos lados, y decidirlo es del operador. En el caso real que
+    // motivó esto pasaron las dos cosas -- en una liquidación faltaba un
+    // cargo en el neto, y en otra el que estaba mal era el IVA (una
+    // percepción del 3% leída como alícuota del 21%).
+    mensaje:
+      `El neto y el IVA no cierran: las alícuotas implican un neto de ` +
+      `$ ${fmt.format(esperado)} y está declarado $ ${fmt.format(neto)} ` +
+      `(difieren $ ${fmt.format(diferencia)}). Revisá si al neto le falta un cargo ` +
+      `o si alguna línea de IVA tiene mal el porcentaje.`,
   }
 }
 

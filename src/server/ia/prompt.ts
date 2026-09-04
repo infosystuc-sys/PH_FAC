@@ -181,9 +181,33 @@ Cuidado con dos trampas de estos documentos:
 Estas liquidaciones tampoco suelen imprimir la letra (A/B/C) ni el punto de
 venta. Si no los ves, dejá tipo y ptovta vacíos y no los deduzcas de otro
 número del documento: el operador los completa.
-El neto gravado es el subtotal de comisiones y cargos que cobra la
-tarjeta, no el bruto de las ventas ni el importe que se acredita. Si el
-resumen muestra las dos cosas, el que va es el de lo que nos cobran.
+EL NETO GRAVADO ES EL DATO MÁS DIFÍCIL DE ESTE COMPROBANTE. Leelo con más
+cuidado que ningún otro, porque casi nunca viene impreso en un renglón
+propio: es la SUMA de todos los cargos que la procesadora nos cobra, y hay
+que armarla sumando línea por línea.
+Los cargos que suman al neto gravado aparecen con rótulos como "Arancel",
+"Arancel de ley", "Comisión", "Costo financiero", "Serv. Costos
+Financieros", "Cargo transferencia", "Pago Express", "Promociones",
+"Descuento por cuotas" o "Plan cuotas". No todos aparecen en todos los
+resúmenes, y cada procesadora los rotula distinto: sumá los que estén.
+NO confundas el neto gravado con ninguna de estas, que son las que más
+inducen al error:
+- El bruto de las ventas presentadas: "Importe Bruto", "Monto presentado",
+  "TOTAL PRESENTADO", "Monto Presentado". Es lo que vendimos, no lo que nos
+  cobran.
+- Lo que se acredita: "Importe neto", "SALDO", "Neto percibido",
+  "Acreditado en cuenta", "Total a acreditar". Ojo que a veces se llama
+  "importe neto" y NO es el neto gravado: es el bruto menos todos los
+  cargos y todos los impuestos.
+- El total de descuentos cuando incluye impuestos: "TOTAL DESCUENTO",
+  "Total deducciones". Ese numero ya trae adentro el IVA y las retenciones,
+  asi que no es la base gravada.
+Verificación obligatoria antes de contestar: el IVA que figura en el
+resumen tiene que ser el porcentaje declarado del neto gravado que
+devolvés. Si el resumen dice IVA $914,74 y la alícuota es 21%, el neto
+gravado tiene que dar cerca de $4.355,90 -- si lo que sumaste da la mitad,
+te faltó un cargo: volvé a buscarlo. Esta cuenta es la mejor forma de
+saber si sumaste todo.
 Estos comprobantes traen casi siempre retenciones y percepciones de
 Ingresos Brutos en el pie, y a veces varias juntas. Leelas con
 atención: van en los pares percepN/imppercepN como en cualquier otro

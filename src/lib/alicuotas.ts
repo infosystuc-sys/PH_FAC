@@ -9,6 +9,25 @@ export const MAX_SLOTS_IVA = 5
  */
 export const CODIGO_IVA_PREFERIDO = 15
 
+/**
+ * Los COD_IVA de CPA14 que son IVA de verdad sobre la base gravada.
+ * Verificado contra la tabla real de esta empresa, que devuelve siete
+ * codigos: 1 (21%), 2 (0%), 3 (10,5%) y 4 (27%) son alicuotas de IVA; 15
+ * ("PERCEPCION R.G.3337") y 16 ("PERCEP. DE IVA") son percepciones del 3%
+ * que viajan en estos mismos slots por decision de registracion, y 17
+ * ("RETENCION IVA") es una retencion.
+ *
+ * La distincion importa para `validarNetoContraIva`: el importe de una
+ * percepcion o una retencion dividido por su porcentaje NO da una base
+ * gravada, asi que sumarlo ahi inventaria neto que no existe.
+ */
+const CODIGOS_IVA_REALES = new Set([1, 2, 3, 4])
+
+/** Si esta alicuota grava la base, o es una percepcion/retencion que viaja en los mismos slots. */
+export function esIvaSobreLaBase(alicuota: AlicuotaTango | null): boolean {
+  return alicuota !== null && CODIGOS_IVA_REALES.has(alicuota.codigo)
+}
+
 export type AlicuotaTango = {
   codigo: number
   porcentaje: number

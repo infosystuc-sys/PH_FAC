@@ -12,7 +12,9 @@ import {
   validarCondCompra,
   validarTipoFactura,
   parsearFechaArg,
+  validarNetoContraIva,
 } from '@/lib/validaciones'
+import type { LineaAlicuota } from '@/lib/alicuotas'
 
 describe('letraComprobante', () => {
   it('reconoce la letra al final de "FAC A"', () => {
@@ -201,6 +203,69 @@ describe('validarTipoFactura', () => {
     for (const t of TIPOS_FACTURA) {
       expect(validarTipoFactura(t.clave).estado, t.clave).toBe('ok')
     }
+  })
+})
+
+describe('validarNetoContraIva', () => {
+  const IVA_21 = { codigo: 1, porcentaje: 21, descripcion: 'IVA 21%' }
+  const PERCEP_3 = { codigo: 15, porcentaje: 3, descripcion: 'PERCEPCION R.G.3337' }
+
+  function linea(porcentaje: number, importe: number, alicuota = IVA_21): LineaAlicuota {
+    return { slot: 1, porcentaje, importe, estado: 'registra', alicuota }
+  }
+
+  it('cierra cuando el neto es el que implica el IVA', () => {
+    // VALLE FERTIL real: IVA 914,74 al 21% -> base 4.355,90.
+    expect(validarNetoContraIva([linea(21, 914.74)], '4355,94', 'tarjeta').estado).toBe('ok')
+  })
+
+  it('detecta el cargo faltante del caso real que lo motivo', () => {
+    // La segunda lectura del mismo PDF devolvio solo el arancel (2.177,97)
+    // y se comio la comision, que era del mismo importe.
+    const r = validarNetoContraIva([linea(21, 914.74)], '2177,97', 'tarjeta')
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('4.355,90')
+  })
+
+  it('tolera el redondeo acumulado de un resumen real', () => {
+    // BANCO MACRO: el IVA impreso difiere 13 centavos del 21% exacto del
+    // neto impreso, sobre $182.759, porque el resumen calcula el IVA por
+    // transaccion y despues suma. No es un error.
+    expect(validarNetoContraIva([linea(21, 38379.53)], '182759,80', 'tarjeta').estado).toBe('ok')
+  })
+
+  it('no suma a la base una percepcion que viaja en los slots de IVA', () => {
+    // El otro error real: una percepcion del 3% leida como alicuota del
+    // 21%. Una vez que el operador corrige el codigo a 15, esa linea deja
+    // de aportar base y el cotejo cierra -- es su via de salida.
+    const conPercepcion = [linea(21, 38379.53), linea(3, 5482.77, PERCEP_3)]
+    expect(validarNetoContraIva(conPercepcion, '182759,80', 'tarjeta').estado).toBe('ok')
+
+    // Sin corregir, las dos cuentan como IVA al 21% y no cierra.
+    const sinCorregir = [linea(21, 38379.53), linea(21, 5482.77)]
+    expect(validarNetoContraIva(sinCorregir, '182759,80', 'tarjeta').estado).toBe('error')
+  })
+
+  it('solo bloquea en tarjeta; en los otros tipos avisa', () => {
+    // En conceptos y articulos el neto viene impreso, asi que una
+    // diferencia es mas probablemente un caso legitimo que un error.
+    expect(validarNetoContraIva([linea(21, 914.74)], '1000', 'tarjeta').estado).toBe('error')
+    expect(validarNetoContraIva([linea(21, 914.74)], '1000', 'conceptos').estado).toBe('advertencia')
+    expect(validarNetoContraIva([linea(21, 914.74)], '1000', 'articulos').estado).toBe('advertencia')
+  })
+
+  it('no opina si no hay una linea de IVA con porcentaje e importe', () => {
+    expect(validarNetoContraIva([], '1000', 'tarjeta').estado).toBe('ok')
+    // Una alicuota del 0% no dice nada de la base (y dividiria por cero).
+    const exenta = { codigo: 2, porcentaje: 0, descripcion: 'IVA 0%' }
+    expect(validarNetoContraIva([linea(0, 0, exenta)], '1000', 'tarjeta').estado).toBe('ok')
+  })
+
+  it('suma las bases de varias alicuotas distintas', () => {
+    const dos = [linea(21, 2100), linea(10.5, 1050, { codigo: 3, porcentaje: 10.5, descripcion: 'IVA 10,5%' })]
+    // 2100/0,21 = 10.000 y 1050/0,105 = 10.000 -> base total 20.000.
+    expect(validarNetoContraIva(dos, '20000', 'tarjeta').estado).toBe('ok')
+    expect(validarNetoContraIva(dos, '10000', 'tarjeta').estado).toBe('error')
   })
 })
 
