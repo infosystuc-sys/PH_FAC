@@ -16,6 +16,7 @@ import {
   aplicarCargosAprendidosEn,
   ajustarNetoConIvaEn,
   LETRA_TARJETA,
+  PTOVTA_TARJETA,
   marcarExistenteEnTangoEn,
   observarSinConceptoEn,
   lineasDeRemitos,
@@ -684,22 +685,19 @@ describe('completarIdentificacionTarjetaEn', () => {
       // La completo el sistema, no el operador.
       expect(campo.corregido).toBe(false)
       expect(d.auditoria.some((a) => a.texto.includes('Letra completada'))).toBe(true)
-      // Sin punto de venta aprendido, ese campo queda sin tocar.
-      expect(d.campos.find((c) => c.clave === 'ptovta')).toBeUndefined()
     })
   })
 
-  it('completa el punto de venta que el proveedor ya enseño', async () => {
+  it('completa el punto de venta con la constante', async () => {
+    // Hasta el 2026-09-04 se aprendia por proveedor. El usuario decidio
+    // unificar en PTOVTA_TARJETA: ver el comentario de esa constante.
     await conRollback(async (tx) => {
-      const prov = provPrueba()
-      await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '10077')
-
       const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
-      await completarIdentificacionTarjetaEn(tx, id, prov)
+      await completarIdentificacionTarjetaEn(tx, id, provPrueba())
 
       const d = await obtenerDetalleEn(tx, id)
-      expect(d.campos.find((c) => c.clave === 'ptovta')?.valorFinal).toBe('10077')
-      expect(d.auditoria.some((a) => a.texto.includes('Punto de venta aprendido'))).toBe(true)
+      expect(d.campos.find((c) => c.clave === 'ptovta')?.valorFinal).toBe(PTOVTA_TARJETA)
+      expect(d.auditoria.some((a) => a.texto.includes('Punto de venta completado'))).toBe(true)
     })
   })
 
@@ -707,41 +705,37 @@ describe('completarIdentificacionTarjetaEn', () => {
     // Si no, el chequeo de duplicados de validaciones.ts --que busca por
     // PUNTO_VENTA en PHF_COMPROBANTE-- no encontraria la liquidacion.
     await conRollback(async (tx) => {
-      const prov = provPrueba()
-      await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '00000')
-
       const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
-      await completarIdentificacionTarjetaEn(tx, id, prov)
+      await completarIdentificacionTarjetaEn(tx, id, provPrueba())
 
-      expect(await bandeja(tx, id)).toMatchObject({ TIPO: 'A', PUNTO_VENTA: '00000' })
+      expect(await bandeja(tx, id)).toMatchObject({ TIPO: 'A', PUNTO_VENTA: PTOVTA_TARJETA })
     })
   })
 
   it('no pisa la letra ni el punto de venta que ya trae el comprobante', async () => {
-    // Si la liquidacion los imprimio y la IA los leyo, gana el documento.
+    // Si la liquidacion los imprimio y la IA los leyo, gana el documento:
+    // las de Tarjeta Naranja traen el punto de venta '0632'.
     await conRollback(async (tx) => {
-      const prov = provPrueba()
-      await aprenderImpuestoEn(tx, prov, 'ptovta', 'tarjeta', '10077')
-
       const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
       await guardarCampoEn(tx, id, 'tipo', 'B')
-      await guardarCampoEn(tx, id, 'ptovta', '0003')
-      await completarIdentificacionTarjetaEn(tx, id, prov)
+      await guardarCampoEn(tx, id, 'ptovta', '0632')
+      await completarIdentificacionTarjetaEn(tx, id, provPrueba())
 
       const d = await obtenerDetalleEn(tx, id)
       expect(d.campos.find((c) => c.clave === 'tipo')?.valorFinal).toBe('B')
-      expect(d.campos.find((c) => c.clave === 'ptovta')?.valorFinal).toBe('0003')
+      expect(d.campos.find((c) => c.clave === 'ptovta')?.valorFinal).toBe('0632')
     })
   })
 
-  it('sin proveedor completa la letra igual, pero no el punto de venta', async () => {
+  it('completa los dos aunque no haya proveedor resuelto', async () => {
+    // Ya no depende del proveedor: la constante aplica igual.
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
       await completarIdentificacionTarjetaEn(tx, id, null)
 
       const d = await obtenerDetalleEn(tx, id)
       expect(d.campos.find((c) => c.clave === 'tipo')?.valorFinal).toBe(LETRA_TARJETA)
-      expect(d.campos.find((c) => c.clave === 'ptovta')).toBeUndefined()
+      expect(d.campos.find((c) => c.clave === 'ptovta')?.valorFinal).toBe(PTOVTA_TARJETA)
     })
   })
 })

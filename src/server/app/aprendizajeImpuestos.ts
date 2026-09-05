@@ -8,41 +8,33 @@ import { normalizarTextoCondicion } from '@/server/tango/condicionesCompra'
 type Ejecutor = { request(): sql.Request }
 
 /**
- * Los cuatro tipos de dato que hoy pueden aprenderse por proveedor. Las
- * alícuotas de IVA se identifican por porcentaje, las percepciones de
- * Ingresos Brutos por jurisdicción, la condición de compra por el texto
- * de condición de pago/venta que imprime el proveedor, y el punto de venta
- * por el tipo de comprobante -- ver el comentario de
+ * Los cinco tipos de dato que hoy pueden aprenderse por proveedor. Cada uno
+ * se identifica por algo impreso en el comprobante: las alícuotas de IVA
+ * por su porcentaje, las percepciones de Ingresos Brutos por la
+ * jurisdicción, los impuestos varios por el rótulo del impuesto, la
+ * condición de compra por el texto de condición de pago/venta, y los cargos
+ * gravados por el rótulo del cargo -- ver el comentario de
  * `PHF_ALICUOTA_PROVEEDOR` en `scripts/migrate.ts` (el nombre de la tabla
  * quedó corto desde que 'condicion' no es una alícuota, pero el mecanismo
- * -- MERGE por proveedor+tipo+texto -- es el mismo). Los impuestos varios
- * quedan afuera: hoy la IA no captura un texto propio para esa línea, solo
- * el código que ya elige el operador de una lista -- no hay "cómo lo
- * escribe la factura" que guardar todavía.
+ * -- MERGE por proveedor+tipo+texto -- es el mismo).
  *
- * 'ptovta' es el único que no se identifica por algo impreso en el
- * comprobante, porque no hay nada que leer: una liquidación de tarjeta no
- * trae punto de venta (ver el prompt de tarjeta), y sin embargo Tango
- * necesita uno para armar el N_COMP. Lo que se aprende es la convención
- * con la que el operador viene archivando a ese proveedor -- verificado
- * contra CPA04: VALLE FERTIL y el Banco de Santiago del Estero usan
- * '00000', pero el Banco Macro usa '10077', su propio código de proveedor.
- * Por eso no puede ser una constante de la app: es dato de cada proveedor.
+ * Hubo un sexto, 'ptovta', entre el 2026-09-04 y el 2026-09-05: el punto de
+ * venta de las liquidaciones de tarjeta, que no viene impreso y sin embargo
+ * Tango necesita para armar el N_COMP. Se aprendía por proveedor porque
+ * CPA04 mostraba convenciones distintas ('00000' en VALLE FERTIL y el Banco
+ * de Santiago del Estero, '10077' en el Banco Macro). El usuario decidió
+ * unificar en una constante -- `PTOVTA_TARJETA` en cola.ts -- así que el
+ * tipo se sacó: era el único que no se identificaba por algo del
+ * comprobante, y sin él la regla de arriba no tiene excepciones.
  *
- * 'gravado' es el otro que no resuelve un codigo de Tango sino un si/no:
+ * 'gravado' no resuelve un codigo de Tango sino un si/no:
  * guarda, por proveedor y por rotulo de cargo ("Arancel de ley", "Costo
  * financiero"), si ese cargo suma al neto gravado. El operador lo destilda
  * una vez y las liquidaciones siguientes de esa misma procesadora ya salen
  * bien, que es lo unico que hace falta porque cada procesadora mantiene su
  * formato mes a mes. `COD_TANGO` guarda 'S' o 'N'.
  */
-export type TipoAprendizaje =
-  | 'iva'
-  | 'percepcion'
-  | 'condicion'
-  | 'ptovta'
-  | 'gravado'
-  | 'varios'
+export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion' | 'gravado' | 'varios'
 
 /**
  * Deja la `DESCRIPCION` de la tabla en la misma forma con la que después
@@ -57,11 +49,6 @@ function normalizarDescripcion(tipo: TipoAprendizaje, descripcion: string): stri
   // clave es de la misma naturaleza: el rotulo impreso del impuesto. Tiene
   // que coincidir con la que usa resolverVarios para buscar.
   if (tipo === 'percepcion' || tipo === 'varios') return normalizarJurisdiccion(descripcion)
-  // En 'ptovta' la descripcion es la clave de un TipoFactura ('tarjeta'),
-  // no un texto de la factura: ya viene canonica, solo se le sacan los
-  // espacios. Pasarla por normalizarTextoCondicion daria lo mismo hoy,
-  // pero ataria la clave a las reglas de otro tipo de dato.
-  if (tipo === 'ptovta') return descripcion.trim()
   // En 'gravado' la descripcion es el rotulo del cargo tal como lo imprime
   // la procesadora ("Arancel de ley", "Costo financiero"). Se normaliza
   // igual que la condicion de compra --sin acentos, minusculas, espacios

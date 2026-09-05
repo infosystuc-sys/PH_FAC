@@ -57,6 +57,24 @@ export const COND_COMPRA_CONCEPTOS = '2'
  * constante real, asi que no hay nada que aprender.
  */
 export const LETRA_TARJETA = 'A'
+
+/**
+ * El punto de venta con el que se archivan las liquidaciones de tarjeta
+ * cuando el comprobante no lo imprime. Decision explicita del usuario
+ * (2026-09-05).
+ *
+ * Reemplaza al aprendizaje por proveedor que habia hasta ayer. Ese
+ * aprendizaje se habia construido sobre lo que figura en CPA04 --VALLE
+ * FERTIL y el Banco de Santiago del Estero con '00000', el Banco Macro con
+ * '10077'--, pero el usuario decidio unificar en '00001' de aca en
+ * adelante, sabiendo que los N_COMP nuevos no van a continuar esas series
+ * viejas. Queda escrito para que la discrepancia con CPA04 no se lea como
+ * un bug.
+ *
+ * Solo aplica si el comprobante no lo trae: hay liquidaciones que si lo
+ * imprimen --las de Tarjeta Naranja traen '0632'-- y ahi manda el documento.
+ */
+export const PTOVTA_TARJETA = '00001'
 const INTERVALO_MS = 2 * 60 * 1000
 
 type Ejecutor = { request(): sql.Request }
@@ -443,25 +461,25 @@ export async function recalcularNetoDeCargosEn(
 
 /**
  * Completa la identificación que una liquidación de tarjeta no trae impresa:
- * la letra (constante, `LETRA_TARJETA`) y el punto de venta (aprendido del
- * proveedor). Sin las dos, `registrarComprobanteEn` corta con "No se pudo
- * determinar la letra del comprobante" y `validarFormatoNComp` bloquea por
- * falta de punto de venta -- una liquidación quedaba imposible de registrar
- * sin que el operador tipeara los dos campos a mano en cada una.
+ * la letra (`LETRA_TARJETA`) y el punto de venta (`PTOVTA_TARJETA`). Sin las
+ * dos, `registrarComprobanteEn` corta con "No se pudo determinar la letra
+ * del comprobante" y `validarFormatoNComp` bloquea por falta de punto de
+ * venta -- una liquidación quedaba imposible de registrar sin que el
+ * operador tipeara los dos campos a mano en cada una.
  *
  * Las dos se completan SOLO si están vacías: si la liquidación imprimió su
- * letra o su punto de venta y la IA los leyó, gana el documento. Un default
+ * letra o su punto de venta y la IA los leyó, gana el documento -- las de
+ * Tarjeta Naranja, por ejemplo, traen el punto de venta '0632'. Un default
  * que pisa un dato real es peor que no tener default.
  *
- * El punto de venta se aprende y no se fija porque no hay una convención
- * única -- ver el comentario de `TipoAprendizaje` en
- * `aprendizajeImpuestos.ts`. La primera liquidación de un proveedor nuevo
- * la completa el operador; de ahí en más sale sola.
+ * `codProvee` ya no se usa: quedó cuando el punto de venta se aprendía por
+ * proveedor. Se mantiene en la firma porque el llamador lo tiene a mano y
+ * sacarlo obligaría a tocar el pipeline sin ganar nada.
  */
 export async function completarIdentificacionTarjetaEn(
   e: Ejecutor,
   id: number,
-  codProvee: string | null,
+  _codProvee?: string | null,
 ): Promise<void> {
   const detalle = await obtenerDetalleEn(e, id)
   const valorDe = (clave: string) =>
@@ -475,14 +493,10 @@ export async function completarIdentificacionTarjetaEn(
   }
 
   let ptovta: string | null = null
-  const prov = (codProvee ?? '').trim()
-  if (prov && !valorDe('ptovta')) {
-    const aprendido = (await cargarAprendidosEn(e, prov, 'ptovta'))['tarjeta']
-    if (aprendido) {
-      ptovta = aprendido
-      await guardarCampoEn(e, id, 'ptovta', ptovta, { corregidoPorUsuario: false })
-      await auditarEn(e, id, `Punto de venta aprendido para el proveedor: ${ptovta}`)
-    }
+  if (!valorDe('ptovta')) {
+    ptovta = PTOVTA_TARJETA
+    await guardarCampoEn(e, id, 'ptovta', ptovta, { corregidoPorUsuario: false })
+    await auditarEn(e, id, `Punto de venta completado para liquidación de tarjeta: ${ptovta}`)
   }
 
   if (!letra && !ptovta) return
