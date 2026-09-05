@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as pdfjs from 'pdfjs-dist'
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
 import { coincide } from '@/lib/resaltado'
@@ -23,6 +23,19 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
  * completa no tiene sentido dibujar canvases mas grandes que eso.
  */
 const ESCALA_MAX = 1.5
+
+/**
+ * Techo mas alto para comprobantes cortos. Con el panel angosto la escala la
+ * manda el ancho y este techo no se toca nunca; empieza a importar cuando el
+ * panel es grande -- con el formulario oculto, o en pantalla completa --,
+ * donde 1,5 deja una A4 en 892px y media pantalla vacia al costado.
+ *
+ * No se sube para todos porque cada hoja es un canvas vivo en el DOM: una
+ * A4 pesa 4,5 MB a escala 1,5 y 13,5 MB a 2,6. En un comprobante de 4 hojas
+ * son 54 MB, aceptable; en uno de 48 --los hay, ver TOPPER-- serian 650 MB.
+ */
+const ESCALA_MAX_DOC_CORTO = 2.6
+const PAGINAS_DOC_CORTO = 6
 
 /** Piso: por debajo preferimos que desborde y se scrollee antes que dibujar algo ilegible. */
 const ESCALA_MIN = 0.35
@@ -51,6 +64,49 @@ export function Visor({
   // DOM. Cada página que termina su capa de texto empuja este contador,
   // lo que dispara una nueva pasada de resaltado sobre el estado actual.
   const [paginasConTexto, setPaginasConTexto] = useState(0)
+
+  // Pantalla completa de verdad, con la API del navegador, y no un modo
+  // propio que agrande el panel dentro de la ventana: así el PDF usa todo
+  // el monitor -- barra del navegador incluida -- que es lo que sirve para
+  // cotejar un comprobante largo. Sale con Esc sin que haya que manejarlo
+  // acá, y no hace falta re-renderizar a mano: al agrandarse el panel, el
+  // ResizeObserver de abajo mide el ancho nuevo y las hojas se redibujan a
+  // la escala que ahora entra (con el techo de ESCALA_MAX).
+  const panel = useRef<HTMLDivElement>(null)
+  const [completa, setCompleta] = useState(false)
+
+  const alternarPantallaCompleta = useCallback(() => {
+    // `document.fullscreenElement` y no el estado propio: el navegador
+    // puede haber salido por su cuenta (Esc, cambio de pestaña) y el estado
+    // se entera recién por el evento de abajo.
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {})
+    } else {
+      // Si el navegador la rechaza (permisos, un iframe sin allowfullscreen)
+      // no se rompe nada: sigue viéndose en el panel como hasta ahora.
+      void panel.current?.requestFullscreen().catch(() => {})
+    }
+  }, [])
+
+  useEffect(() => {
+    const alCambiar = () => setCompleta(document.fullscreenElement === panel.current)
+    document.addEventListener('fullscreenchange', alCambiar)
+    return () => document.removeEventListener('fullscreenchange', alCambiar)
+  }, [])
+
+  // Ctrl+M, mismo criterio que el Ctrl+P de "Ocultar PDF" (ver pantalla.tsx):
+  // sin guard de foco, porque el operador tiene el cursor en un campo casi
+  // todo el tiempo y Ctrl no escribe un caracter literal.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault()
+        alternarPantallaCompleta()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [alternarPantallaCompleta])
 
   // Ancho util del panel, medido del DOM. `null` hasta la primera medicion:
   // sin ancho no se puede elegir la escala, asi que el render espera.
@@ -122,7 +178,8 @@ export function Visor({
           // hojas de distinto tamano (una A4 y un ticket largo), y lo que
           // tiene que entrar en el panel es cada una, no la primera.
           const base = pagina.getViewport({ scale: 1 })
-          const escala = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, anchoPanel / base.width))
+          const techo = doc.numPages <= PAGINAS_DOC_CORTO ? ESCALA_MAX_DOC_CORTO : ESCALA_MAX
+          const escala = Math.min(techo, Math.max(ESCALA_MIN, anchoPanel / base.width))
           const viewport = pagina.getViewport({ scale: escala })
 
           const hoja = document.createElement('div')
@@ -216,12 +273,20 @@ export function Visor({
   }, [resaltar, paginasConTexto])
 
   return (
-    <div className={styles.panel}>
+    <div className={styles.panel} ref={panel}>
       <div className={styles.barra}>
         <span className={styles.nombre}>{nombre}</span>
         <span className={styles.paginas}>
           {paginas === 0 ? 'Cargando…' : `${paginas} ${paginas === 1 ? 'página' : 'páginas'}`}
         </span>
+        <button
+          type="button"
+          className={styles.pantallaCompleta}
+          onClick={alternarPantallaCompleta}
+          title={completa ? 'Salir (Esc)' : 'Ver el PDF en pantalla completa (Ctrl+M)'}
+        >
+          {completa ? 'Salir' : 'Pantalla completa'}
+        </button>
       </div>
       {error && <p className={styles.error}>{error}</p>}
       <div className={styles.hojas} ref={contenedor} />
