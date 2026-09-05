@@ -255,6 +255,7 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
   // suite de tests.
   const aprendidosIva = codProvee ? await cargarAprendidosEn(e, codProvee, 'iva') : {}
   const aprendidosPercep = codProvee ? await cargarAprendidosEn(e, codProvee, 'percepcion') : {}
+  const aprendidosVarios = codProvee ? await cargarAprendidosEn(e, codProvee, 'varios') : {}
 
   const lineas: LineaAsiento[] = []
 
@@ -352,7 +353,7 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
       lineasOmitidas += 1
     }
   }
-  for (const l of resolverVarios(valores, codigosImpuesto)) {
+  for (const l of resolverVarios(valores, codigosImpuesto, aprendidosVarios)) {
     if (l.estado === 'registra') {
       genericas.set(l.codigo, Math.round(((genericas.get(l.codigo) ?? 0) + l.importe) * 100) / 100)
     } else if (l.estado === 'sin-codigo') {

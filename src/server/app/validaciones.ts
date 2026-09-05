@@ -212,7 +212,10 @@ export async function validarListoParaRegistrarEn(
   const percepcionIibb = validarPercepciones(
     resolverPercepciones(valores, valores.tipoFactura, aprendidosPercep),
   )
-  const varios = validarVarios(resolverVarios(valores, await listarCodigosImpuesto()))
+  const aprendidosVarios = await cargarAprendidosEn(e, codProvee, 'varios')
+  const varios = validarVarios(
+    resolverVarios(valores, await listarCodigosImpuesto(), aprendidosVarios),
+  )
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
   const fecha = validarFecha(valores.fecha)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)

@@ -36,7 +36,13 @@ type Ejecutor = { request(): sql.Request }
  * bien, que es lo unico que hace falta porque cada procesadora mantiene su
  * formato mes a mes. `COD_TANGO` guarda 'S' o 'N'.
  */
-export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion' | 'ptovta' | 'gravado'
+export type TipoAprendizaje =
+  | 'iva'
+  | 'percepcion'
+  | 'condicion'
+  | 'ptovta'
+  | 'gravado'
+  | 'varios'
 
 /**
  * Deja la `DESCRIPCION` de la tabla en la misma forma con la que después
@@ -47,7 +53,10 @@ export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion' | 'ptovta' | 'g
  */
 function normalizarDescripcion(tipo: TipoAprendizaje, descripcion: string): string {
   if (tipo === 'iva') return String(parsearImporte(descripcion))
-  if (tipo === 'percepcion') return normalizarJurisdiccion(descripcion)
+  // 'varios' usa la misma normalizacion que las percepciones porque la
+  // clave es de la misma naturaleza: el rotulo impreso del impuesto. Tiene
+  // que coincidir con la que usa resolverVarios para buscar.
+  if (tipo === 'percepcion' || tipo === 'varios') return normalizarJurisdiccion(descripcion)
   // En 'ptovta' la descripcion es la clave de un TipoFactura ('tarjeta'),
   // no un texto de la factura: ya viene canonica, solo se le sacan los
   // espacios. Pasarla por normalizarTextoCondicion daria lo mismo hoy,

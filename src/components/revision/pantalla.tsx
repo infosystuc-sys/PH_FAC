@@ -70,6 +70,7 @@ export function Pantalla({
   concepto,
   aprendidosIva,
   aprendidosPercepcion,
+  aprendidosVarios,
   remitosPendientes,
   codProvee,
   motivoObservacion,
@@ -100,6 +101,7 @@ export function Pantalla({
    */
   aprendidosIva: Record<string, string>
   aprendidosPercepcion: Record<string, string>
+  aprendidosVarios: Record<string, string>
   /**
    * Los remitos con saldo del proveedor. Los usa la tarjeta de renglones
    * para ofrecer, en cada uno, a qué renglón de remito reapuntarlo.
@@ -196,6 +198,7 @@ export function Pantalla({
           concepto={concepto}
           aprendidosIva={aprendidosIva}
           aprendidosPercepcion={aprendidosPercepcion}
+          aprendidosVarios={aprendidosVarios}
         />
         {/* Va antes de Renglones porque en tarjeta es la tarjeta con el
             detalle del comprobante, y en tarjeta no hay renglones. */}

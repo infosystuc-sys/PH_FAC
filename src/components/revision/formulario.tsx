@@ -55,11 +55,12 @@ const RE_SLOT_ALICUOTA = /^(?:porciva|impiva)([1-5])$/
 /** Las celdas que disparan la resolución contra Tango, una por familia. */
 const RE_PORC_ALICUOTA = /^porciva([1-5])$/
 const RE_PERCEP = /^percep([1-4])$/
-const RE_VARIOS = /^varios[12]$/
+const RE_VARIOS = /^varios([12])$/
 /** La corrección a mano de cada familia -- si el operador la completa,
  *  eso es lo que se aprende para el proveedor. */
 const RE_CORRECCION_IVA = /^codiva([1-5])$/
 const RE_CORRECCION_PERCEP = /^codpercep([1-4])$/
+const RE_CORRECCION_VARIOS = /^codvarios([12])$/
 
 type Opcion = { valor: string; label: string }
 
@@ -133,6 +134,7 @@ export function Formulario({
   concepto,
   aprendidosIva,
   aprendidosPercepcion,
+  aprendidosVarios,
 }: {
   comprobanteId: number
   iniciales: Record<string, ValorInicial>
@@ -160,6 +162,7 @@ export function Formulario({
   // resolver el registro real. Ver aprendizajeImpuestos.ts.
   aprendidosIva: Record<string, string>
   aprendidosPercepcion: Record<string, string>
+  aprendidosVarios: Record<string, string>
 }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(Object.entries(iniciales).map(([k, v]) => [k, v.valor])),
@@ -200,6 +203,8 @@ export function Formulario({
       if (iva) limpiarCorreccion(`codiva${iva[1]}`)
       const perc = RE_PERCEP.exec(clave)
       if (perc) limpiarCorreccion(`codpercep${perc[1]}`)
+      const varios = RE_VARIOS.exec(clave)
+      if (varios) limpiarCorreccion(`codvarios${varios[1]}`)
 
       // El operador corrigió a qué código de Tango va un porcentaje o una
       // jurisdicción que no se resolvió solo: se aprende para este
@@ -217,6 +222,21 @@ export function Formulario({
           const jurisdiccion = (valores[`percep${correccionPercep[1]}`] ?? '').trim()
           if (jurisdiccion) {
             void aprenderImpuestoTango(comprobanteId, codProvee, 'percepcion', jurisdiccion, v.trim())
+          }
+        }
+
+        // El operador eligió a qué impuesto de Tango va un "varios". Se
+        // aprende contra el rótulo impreso, igual que la jurisdicción de
+        // IIBB. Hasta 2026-09-04 esto no existía y la elección se perdía en
+        // cada comprobante: lo reportó el usuario con dos liquidaciones
+        // seguidas de Tarjeta Naranja.
+        const correccionVarios = RE_CORRECCION_VARIOS.exec(clave)
+        if (correccionVarios) {
+          const rotulo = (valores[`varios${correccionVarios[1]}`] ?? '').trim()
+          // Un rótulo que es solo dígitos viene de un comprobante viejo, que
+          // guardaba el código ahí: aprenderlo enseñaría "56 -> 56".
+          if (rotulo && !/^\d+$/.test(rotulo)) {
+            void aprenderImpuestoTango(comprobanteId, codProvee, 'varios', rotulo, v.trim())
           }
         }
 
@@ -347,13 +367,20 @@ export function Formulario({
                   ]
                 }
 
-                if (RE_VARIOS.test(def.clave)) {
+                const slotVarios = RE_VARIOS.exec(def.clave)
+                if (slotVarios) {
+                  const correccion = `codvarios${slotVarios[1]}`
                   return [
                     campo,
                     <CeldaVariosTango
                       key={`tango-${def.clave}`}
-                      codigo={valores[def.clave] ?? ''}
+                      texto={valores[def.clave] ?? ''}
+                      importe={valores[`impvarios${slotVarios[1]}`] ?? ''}
+                      correccion={valores[correccion] ?? ''}
                       codigos={codigosImpuesto}
+                      aprendidos={aprendidosVarios}
+                      bloqueado={soloLectura}
+                      onCambio={(v) => cambiar(correccion, v)}
                     />,
                   ]
                 }

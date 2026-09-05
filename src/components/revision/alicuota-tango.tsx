@@ -1,7 +1,8 @@
 'use client'
 
 import { resolverCodigoIva, CODIGO_IVA_PREFERIDO, type AlicuotaTango } from '@/lib/alicuotas'
-import { JURISDICCIONES_IIBB, resolverIibbPorTipo } from '@/lib/percepcionIibb'
+import { JURISDICCIONES_IIBB, resolverIibbPorTipo, normalizar } from '@/lib/percepcionIibb'
+import { codigosVarios } from '@/lib/percepciones'
 import { parsearImporte } from '@/lib/formato'
 import styles from './formulario.module.css'
 
@@ -249,24 +250,52 @@ export function CeldaPercepcionTango({
  * así que acá no hay nada que corregir -- solo se confirma qué es en Tango.
  */
 export function CeldaVariosTango({
-  codigo,
+  texto,
+  importe,
+  correccion,
   codigos,
+  aprendidos,
+  bloqueado,
+  onCambio,
 }: {
-  codigo: string
+  /** El rótulo impreso del impuesto, que es la clave de lo aprendido. */
+  texto: string
+  importe: string
+  correccion: string
   codigos: { codigo: number; descripcion: string }[]
+  /** Lo que este proveedor ya enseñó para estos rótulos. */
+  aprendidos: Record<string, string>
+  bloqueado: boolean
+  onCambio: (v: string) => void
 }) {
-  const crudo = codigo.trim()
-  const encontrado = codigos.find((c) => String(c.codigo) === crudo)
-  const texto = crudo === '' ? '—' : encontrado ? etiqueta(encontrado.codigo, encontrado.descripcion) : 'Sin código en Tango'
-  const tono: Tono = crudo === '' ? 'vacio' : encontrado ? 'ok' : 'error'
+  const opciones = codigosVarios(codigos).map((c) => ({
+    valor: String(c.codigo),
+    label: etiqueta(c.codigo, c.descripcion),
+  }))
+
+  // Mismo criterio que IVA y percepciones: sin importe no hay linea que
+  // registrar, y resolverVarios tambien la descarta.
+  const sinImporte = importe.trim() === '' || parsearImporte(importe) <= 0
+  const rotulo = texto.trim()
+  const vacio = sinImporte || (rotulo === '' && !correccion)
+
+  // Compatibilidad con los comprobantes anteriores al cambio, que tienen el
+  // codigo guardado en el campo del rotulo -- mismo criterio que
+  // resolverVarios, para que la celda muestre lo mismo que se va a registrar.
+  const codigoLegado =
+    /^\d+$/.test(rotulo) && opciones.some((o) => o.valor === rotulo) ? rotulo : ''
+
+  const elegido = vacio ? '' : correccion || codigoLegado || aprendidos[normalizar(rotulo)] || ''
 
   return (
-    <div className={styles.campo} style={{ gridColumn: 'span 2' }}>
-      <span className={styles.label}>En Tango</span>
-      <div className={`${styles.derivado} ${clasePorTono(tono)}`} title={texto}>
-        {texto}
-      </div>
-    </div>
+    <CeldaLista
+      opciones={opciones}
+      valor={elegido}
+      placeholder={vacio ? '—' : 'Elegí el impuesto'}
+      tono={elegido ? 'ok' : vacio ? 'vacio' : 'error'}
+      bloqueado={bloqueado}
+      onCambio={onCambio}
+    />
   )
 }
 

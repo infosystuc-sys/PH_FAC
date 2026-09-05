@@ -113,13 +113,14 @@ export default async function RevisionPage({
   // formulario propongan en vivo lo mismo que va a resolver el registro
   // real -- sin esto, una celda podía mostrar "Sin código en Tango" en
   // rojo para algo que el registro iba a resolver solo.
-  const [aprendidosIva, aprendidosPercepcion] =
+  const [aprendidosIva, aprendidosPercepcion, aprendidosVarios] =
     mostrarRevision && codProveeCampo
       ? await Promise.all([
           cargarAprendidos(codProveeCampo, 'iva'),
           cargarAprendidos(codProveeCampo, 'percepcion'),
+          cargarAprendidos(codProveeCampo, 'varios'),
         ])
-      : [{}, {}]
+      : [{}, {}, {}]
 
   return (
     <div className={styles.pantalla}>
@@ -173,6 +174,7 @@ export default async function RevisionPage({
           concepto={concepto}
           aprendidosIva={aprendidosIva}
           aprendidosPercepcion={aprendidosPercepcion}
+          aprendidosVarios={aprendidosVarios}
           remitosPendientes={remitosPendientes}
           codProvee={codProveeCampo}
           motivoObservacion={

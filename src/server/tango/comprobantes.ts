@@ -157,6 +157,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // reprodujo el cuelgue corriendo la suite de tests.
   const aprendidosIva = await cargarAprendidosEn(tx, codProvee, 'iva')
   const aprendidosPercep = await cargarAprendidosEn(tx, codProvee, 'percepcion')
+  const aprendidosVarios = await cargarAprendidosEn(tx, codProvee, 'varios')
 
   const letra = letraComprobante(valores.tipo ?? '')
   if (!letra) throw new Error('No se pudo determinar la letra del comprobante.')
@@ -397,7 +398,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     )
   }
 
-  const lineasVarios = resolverVarios(valores, await listarCodigosImpuesto())
+  const lineasVarios = resolverVarios(valores, await listarCodigosImpuesto(), aprendidosVarios)
   const variosSinCodigo = lineasVarios.find((l) => l.estado === 'sin-codigo')
   if (variosSinCodigo) {
     throw new Error(

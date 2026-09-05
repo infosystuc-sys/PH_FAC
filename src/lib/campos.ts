@@ -110,9 +110,9 @@ export const CAMPOS: DefCampo[] = [
   c('imppercep3',  'Importe percep. 3',     'importes',    2, 'decimal', true),
   c('percep4',     'Percepción 4',          'importes',    2, 'texto',   false),
   c('imppercep4',  'Importe percep. 4',     'importes',    2, 'decimal', true),
-  c('varios1',     'Impuestos varios 1',    'importes',    2, 'select',  false),
+  c('varios1',     'Impuestos varios 1',    'importes',    2, 'texto',   false),
   c('impvarios1',  'Importe varios 1',      'importes',    2, 'decimal', true),
-  c('varios2',     'Impuestos varios 2',    'importes',    2, 'select',  false),
+  c('varios2',     'Impuestos varios 2',    'importes',    2, 'texto',   false),
   c('impvarios2',  'Importe varios 2',      'importes',    2, 'decimal', true),
   c('total',       'Total del comprobante', 'importes',    3, 'decimal', true),
 
@@ -123,6 +123,13 @@ export const CAMPOS: DefCampo[] = [
   // quede un codigo viejo pegado a un dato que ya cambio.
   o('codiva1'),    o('codiva2'),    o('codiva3'),    o('codiva4'),    o('codiva5'),
   o('codpercep1'), o('codpercep2'), o('codpercep3'), o('codpercep4'),
+  // Los varios se sumaron tarde a este patrón. Hasta 2026-09-04 `variosN`
+  // guardaba directamente el código de Tango, así que no había ningún texto
+  // del comprobante contra el cual aprender, y la elección del operador se
+  // perdía comprobante a comprobante -- lo reportó el usuario con dos
+  // liquidaciones seguidas de Tarjeta Naranja. Ahora `variosN` guarda el
+  // rótulo impreso, como `percepN`, y el código elegido vive acá.
+  o('codvarios1'), o('codvarios2'),
   { clave: 'imputado', label: 'Total imputado', grupo: 'importes', span: 3,
     tipo: 'decimal', mono: true, extraePorIA: false, soloLectura: true },
 
@@ -184,7 +191,7 @@ export function camposIaPara(tipo: TipoFactura): DefCampo[] {
  * cuando el operador todavia no corrigio nada. Ocupan lugar en la grilla
  * igual -- son esa celda -- asi que sus spans si cuentan para el ancho.
  */
-export const OCULTOS_EN_GRILLA = /^(?:codiva[1-5]|codpercep[1-4])$/
+export const OCULTOS_EN_GRILLA = /^(?:codiva[1-5]|codpercep[1-4]|codvarios[12])$/
 
 const POR_CLAVE = new Map(CAMPOS.map((x) => [x.clave, x]))
 

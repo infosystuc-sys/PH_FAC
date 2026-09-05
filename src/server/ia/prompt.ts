@@ -111,12 +111,13 @@ hacer. Lo que no hay que hacer es forzarla a una de la lista.`,
 ].join('\n')
 
 const IMPUESTOS_VARIOS = `Todo impuesto que no sea IVA ni Ingresos Brutos
--- impuesto interno, impuesto a las ganancias, retenciones municipales y
-similares -- va en los dos pares variosN/impvariosN. impvariosN es el
-importe de esa línea, y variosN el código de Tango que le corresponde. Si
-no estás seguro de qué código va, dejá variosN vacío y completá solo el
-importe: el operador lo elige de una lista. Un código equivocado es peor
-que uno vacío.`
+-- impuesto interno, impuesto a las ganancias, retenciones municipales,
+tributos de emergencia y similares -- va en los dos pares
+variosN/impvariosN. impvariosN es el importe de esa línea, y variosN el
+NOMBRE del impuesto tal como está impreso ("Trib. emerg. munic.",
+"Retención TEM", "Impuesto a las ganancias"), no un código: el código de
+Tango lo resuelve el sistema, igual que con las percepciones de Ingresos
+Brutos. Copiá el rótulo como figura, sin traducirlo ni abreviarlo.`
 
 /**
  * Lo que cambia entre tipos: qué es el comprobante, qué hacer con los

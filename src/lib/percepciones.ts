@@ -2,6 +2,7 @@ import { parsearImporte } from './formato'
 import {
   JURISDICCIONES_IIBB,
   resolverIibbPorTipo,
+  normalizar,
   type CodigoIibb,
 } from './percepcionIibb'
 
@@ -36,8 +37,10 @@ export type LineaPercepcion = {
 
 export type LineaVarios = {
   slot: number
-  /** El código que eligió el operador (o sugirió la IA). */
+  /** El código de Tango resuelto: corregido, aprendido o legado. */
   codigo: string
+  /** El rótulo impreso del impuesto, que es la clave de lo aprendido. */
+  texto: string
   importe: number
   estado: EstadoLinea
   descripcion: string | null
@@ -96,15 +99,24 @@ export function resolverPercepciones(
 }
 
 /**
- * Resuelve los dos slots de impuestos varios. Acá el operador elige el
- * código de una lista, así que no hay nada que interpretar: solo se
- * verifica que el elegido siga siendo uno de los admitidos -- podría
- * venir de la IA, o haber quedado guardado de antes y ya no estar en
- * CPA14.
+ * Resuelve los dos slots de impuestos varios, con el mismo mecanismo que
+ * las percepciones: `variosN` trae el rótulo impreso ("Trib. emerg.
+ * munic.", "Retención TEM", "Deduc. Impositivas") y el código de Tango sale
+ * de la corrección del operador o de lo que ese proveedor ya enseñó.
+ *
+ * Hasta 2026-09-04 `variosN` guardaba el código directamente, así que no
+ * había ningún texto contra el cual aprender y la elección del operador se
+ * perdía en cada comprobante: lo reportó el usuario con dos liquidaciones
+ * seguidas de Tarjeta Naranja, donde eligió el impuesto municipal a mano en
+ * una y la siguiente volvió a venir sin código.
+ *
+ * El orden de precedencia es el mismo que en IVA e IIBB: lo que el operador
+ * corrigió en este comprobante gana sobre lo aprendido del proveedor.
  */
 export function resolverVarios(
   valores: Record<string, string | null | undefined>,
   codigosImpuesto: CodigoTango[],
+  aprendidos: Record<string, string> = {},
 ): LineaVarios[] {
   const admitidos = codigosVarios(codigosImpuesto)
   const lineas: LineaVarios[] = []
@@ -113,11 +125,25 @@ export function resolverVarios(
     const importe = parsearImporte(valores[`impvarios${slot}`])
     if (importe <= 0) continue
 
-    const codigo = (valores[`varios${slot}`] ?? '').trim()
+    const texto = (valores[`varios${slot}`] ?? '').trim()
+    const correccion = (valores[`codvarios${slot}`] ?? '').trim()
+
+    // Compatibilidad con los comprobantes anteriores al cambio, que tienen
+    // el codigo guardado en el campo del texto. Sin esto quedarian todos en
+    // 'sin-codigo' y bloquearian su registro, que es peor que la
+    // inconsistencia que arrastran.
+    const codigoLegado =
+      !correccion && /^\d+$/.test(texto) && admitidos.some((c) => String(c.codigo) === texto)
+        ? texto
+        : ''
+
+    const codigo =
+      correccion || codigoLegado || (texto ? (aprendidos[normalizar(texto)] ?? '') : '')
     const encontrado = admitidos.find((c) => String(c.codigo) === codigo)
     lineas.push({
       slot,
       codigo,
+      texto,
       importe,
       estado: encontrado ? 'registra' : 'sin-codigo',
       descripcion: encontrado ? encontrado.descripcion : null,

@@ -80,6 +80,15 @@ export function normalizar(texto: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    // Colapsar espacios se agrego al empezar a usar esta funcion tambien
+    // para el rotulo de los impuestos varios (2026-09-04): esos vienen del
+    // pie del comprobante con espaciado irregular --el propio modelo
+    // contable de esta empresa tiene un "PERCEPCION  10 %" con dos
+    // espacios-- y sin colapsar, dos escrituras del mismo impuesto no
+    // matchean. Es la misma regla que ya aplicaba normalizarTextoCondicion:
+    // las dos normalizaciones quedan alineadas en vez de diferir por un
+    // detalle.
+    .replace(/\s+/g, ' ')
     .trim()
 }
 

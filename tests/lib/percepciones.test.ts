@@ -130,6 +130,57 @@ describe('resolverVarios', () => {
     const r = resolverVarios({ varios1: '999', impvarios1: '1.000,00' }, CPA14_NO_IVA)
     expect(r[0].estado).toBe('sin-codigo')
   })
+
+  it('resuelve por el rotulo que el proveedor ya enseño', () => {
+    // El caso que motivo el cambio: el operador eligio el impuesto una vez
+    // en una liquidacion de Tarjeta Naranja y la siguiente tiene que salir
+    // sola. Antes `variosN` guardaba el codigo, asi que no habia rotulo
+    // contra el cual aprender y la eleccion se perdia.
+    const r = resolverVarios(
+      { varios1: 'Trib. emerg. munic.', impvarios1: '1.763,47' },
+      CPA14_NO_IVA,
+      { 'trib. emerg. munic.': '40' },
+    )
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].codigo).toBe('40')
+    expect(r[0].texto).toBe('Trib. emerg. munic.')
+  })
+
+  it('matchea el rotulo aprendido con otro casing o acentuacion', () => {
+    const r = resolverVarios(
+      { varios1: 'RETENCIÓN  TEM', impvarios1: '453,74' },
+      CPA14_NO_IVA,
+      { 'retencion tem': '40' },
+    )
+    expect(r[0].estado).toBe('registra')
+  })
+
+  it('la correccion del operador gana sobre lo aprendido', () => {
+    const r = resolverVarios(
+      { varios1: 'Trib. emerg. munic.', impvarios1: '1.000,00', codvarios1: '53' },
+      CPA14_NO_IVA,
+      { 'trib. emerg. munic.': '40' },
+    )
+    expect(r[0].codigo).toBe('53')
+  })
+
+  it('un rotulo sin aprender queda sin codigo, para que el operador lo elija', () => {
+    const r = resolverVarios(
+      { varios1: 'Un impuesto que nunca vimos', impvarios1: '1.000,00' },
+      CPA14_NO_IVA,
+    )
+    expect(r[0].estado).toBe('sin-codigo')
+    expect(r[0].texto).toBe('Un impuesto que nunca vimos')
+  })
+
+  it('sigue entendiendo los comprobantes viejos, que guardaban el codigo en el rotulo', () => {
+    // Compatibilidad: los comprobantes anteriores al cambio tienen "40" en
+    // `varios1`. Sin esta rama quedarian todos en 'sin-codigo' y no se
+    // podrian registrar, que es peor que la inconsistencia que arrastran.
+    const r = resolverVarios({ varios1: '40', impvarios1: '1.234,00' }, CPA14_NO_IVA)
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].codigo).toBe('40')
+  })
 })
 
 describe('validarPercepciones', () => {

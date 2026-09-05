@@ -6,6 +6,7 @@ import {
   campoPorClave,
   schemaExtraccion,
   camposIaPara,
+  OCULTOS_EN_GRILLA,
 } from '@/lib/campos'
 import {
   CAMPOS_NO_ANALIZADOS,
@@ -40,14 +41,12 @@ describe('catalogo de campos', () => {
       porGrupo.set(c.grupo, (porGrupo.get(c.grupo) ?? 0) + spanDe(tipo, c.clave, c.span))
     }
 
-    // Las filas de IVA y de percepcion ya tienen su celda del medio en el
-    // catalogo (codivaN / codpercepN): la pinta el formulario en vez del
-    // bucle, pero el span esta contado. La de "impuestos varios" no tiene
-    // contrapartida en el catalogo -- ahi la lista esta en la columna 1 y
-    // la del medio es solo confirmacion -- asi que se suma aparte, o el
-    // invariante dejaria de describir lo que el operador ve.
-    const derivadasVarios = CAMPOS.filter((c) => /^varios[12]$/.test(c.clave)).length * 2
-    porGrupo.set('importes', (porGrupo.get('importes') ?? 0) + derivadasVarios)
+    // Las tres familias -- IVA, percepcion y varios -- tienen su celda del
+    // medio en el catalogo (codivaN / codpercepN / codvariosN): la pinta el
+    // formulario en vez del bucle, pero el span esta contado. Los varios se
+    // sumaron a este patron el 2026-09-04, al pasar `variosN` a guardar el
+    // rotulo impreso en vez del codigo; hasta entonces su celda del medio no
+    // existia en el catalogo y habia que sumarla aparte aca.
 
     // Al lado del codigo de proveedor va el concepto que Tango le tiene
     // asociado. Sale del ERP, no se guarda en PHF_CAMPO, y lo pinta el
@@ -107,9 +106,20 @@ describe('catalogo de campos', () => {
     expect(campoPorClave('condcompra')?.tipo).toBe('select')
   })
 
-  it('los impuestos varios son selects que la IA sugiere', () => {
-    expect(campoPorClave('varios1')?.tipo).toBe('select')
+  it('los impuestos varios siguen el patron de las percepciones: texto de la IA + codigo aparte', () => {
+    // Hasta 2026-09-04 `variosN` era un select donde la IA sugeria el codigo
+    // de Tango. No habia entonces ningun texto del comprobante contra el
+    // cual aprender, asi que la eleccion del operador se perdia comprobante
+    // a comprobante -- lo reporto el usuario con dos liquidaciones seguidas
+    // de Tarjeta Naranja. Ahora `variosN` guarda el rotulo impreso, igual
+    // que `percepN`, y el codigo elegido vive en `codvariosN`.
+    expect(campoPorClave('varios1')?.tipo).toBe('texto')
     expect(campoPorClave('varios1')?.extraePorIA).toBe(true)
+
+    expect(campoPorClave('codvarios1')?.extraePorIA).toBe(false)
+    expect(campoPorClave('codvarios2')?.extraePorIA).toBe(false)
+    // La pinta la celda del medio de su fila, no el bucle del formulario.
+    expect(OCULTOS_EN_GRILLA.test('codvarios1')).toBe(true)
   })
 
   it('tipoFactura es un campo de tipo select', () => {
