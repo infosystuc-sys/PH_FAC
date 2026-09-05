@@ -11,15 +11,20 @@ export const MAX_SLOTS_VARIOS = 2
 
 /**
  * El codigo de "Impuestos varios" al que va el SIRTAC de un resumen de
- * tarjeta.
+ * tarjeta: el 63, "RET IIBB TUCUMAN".
  *
- * OJO: en CPA14 el 56 es "RETENCION MUNICIPAL" y existe un 67 que se llama
- * "RET SIRTAC". El 56 esta puesto a proposito -- decision de registracion
- * del usuario, confirmada el 2026-08-17 despues de mostrarle las dos
- * opciones. No es un error de tipeo: si alguien lo "corrige" al 67, cambia
- * la imputacion contable de todos los resumenes de tarjeta.
+ * OJO, porque hay tres codigos candidatos en CPA14 y el elegido no es el
+ * que lleva el nombre: el 67 se llama literalmente "RET SIRTAC" y el 56 es
+ * "RETENCION MUNICIPAL". El SIRTAC es un regimen de recaudacion de
+ * Ingresos Brutos, asi que contablemente va con el IIBB de Tucuman.
+ *
+ * Historia, para que nadie lo "corrija" de nuevo por parecido de nombre:
+ * el 2026-08-17 se habia definido el 56 (decision del usuario, con el 56 y
+ * el 67 a la vista), y el 2026-09-05 el usuario lo corrigio al 63 -- "el
+ * impuesto correcto es Ingresos Brutos Tucuman". Cambiarlo mueve la
+ * imputacion contable de todos los resumenes de tarjeta.
  */
-export const COD_VARIOS_SIRTAC = '56'
+export const COD_VARIOS_SIRTAC = '63'
 
 /** Un código de CPA14 tal como lo devuelve `listarCodigosImpuesto`. */
 export type CodigoTango = { codigo: number; descripcion: string }
@@ -137,8 +142,18 @@ export function resolverVarios(
         ? texto
         : ''
 
+    // El SIRTAC lo resuelve la app sin que nadie se lo enseñe: es un
+    // regimen conocido que aparece en casi todos los resumenes de tarjeta.
+    // Va despues de lo aprendido a proposito -- si un proveedor enseño otra
+    // cosa para ese mismo rotulo, esa correccion del operador es mas
+    // especifica que esta regla general y tiene que ganar.
+    const esSirtac = texto !== '' && normalizar(texto).includes('sirtac')
+
     const codigo =
-      correccion || codigoLegado || (texto ? (aprendidos[normalizar(texto)] ?? '') : '')
+      correccion ||
+      codigoLegado ||
+      (texto ? (aprendidos[normalizar(texto)] ?? '') : '') ||
+      (esSirtac ? COD_VARIOS_SIRTAC : '')
     const encontrado = admitidos.find((c) => String(c.codigo) === codigo)
     lineas.push({
       slot,

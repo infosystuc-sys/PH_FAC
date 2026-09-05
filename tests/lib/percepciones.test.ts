@@ -272,10 +272,35 @@ describe('resolverPercepciones en resumen de tarjeta', () => {
 })
 
 describe('COD_VARIOS_SIRTAC', () => {
-  it('es el 56 y no el 67, a proposito', () => {
-    // En CPA14 el 56 es "RETENCION MUNICIPAL" y el 67 "RET SIRTAC". El 56
-    // esta elegido deliberadamente (usuario, 2026-08-17). Este test existe
-    // para que cambiarlo sea una decision y no un descuido.
-    expect(COD_VARIOS_SIRTAC).toBe('56')
+  it('es el 63 (IIBB Tucuman), no el 67 ni el 56, a proposito', () => {
+    // Hay tres candidatos en CPA14 y el elegido no es el que lleva el
+    // nombre: el 67 se llama "RET SIRTAC" y el 56 es "RETENCION MUNICIPAL".
+    // El SIRTAC es un regimen de recaudacion de Ingresos Brutos, asi que va
+    // con el IIBB de Tucuman. Estuvo en el 56 desde el 2026-08-17 y el
+    // usuario lo corrigio al 63 el 2026-09-05. Este test existe para que
+    // cambiarlo sea una decision y no un descuido.
+    expect(COD_VARIOS_SIRTAC).toBe('63')
+  })
+
+  it('se resuelve solo por el rotulo, sin que nadie se lo enseñe', () => {
+    // Es un regimen conocido que aparece en casi todos los resumenes de
+    // tarjeta: no tiene sentido que el operador lo elija la primera vez.
+    const r = resolverVarios(
+      { varios1: 'Retencion I.B. /SIRTAC', impvarios1: '1.749,47' },
+      CPA14_NO_IVA,
+    )
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].codigo).toBe(COD_VARIOS_SIRTAC)
+  })
+
+  it('lo aprendido del proveedor le gana a la regla del SIRTAC', () => {
+    // La correccion del operador para ese proveedor es mas especifica que
+    // una regla general de la app.
+    const r = resolverVarios(
+      { varios1: 'Ret. SIRTAC', impvarios1: '1.000,00' },
+      CPA14_NO_IVA,
+      { 'ret. sirtac': '56' },
+    )
+    expect(r[0].codigo).toBe('56')
   })
 })

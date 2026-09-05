@@ -1,7 +1,6 @@
 import { camposIaPara } from '@/lib/campos'
 import { JURISDICCIONES_IIBB } from '@/lib/percepcionIibb'
 import { TIPOS_FACTURA, analizaCampo, type TipoFactura } from '@/lib/tipoFactura'
-import { COD_VARIOS_SIRTAC } from '@/lib/percepciones'
 
 /**
  * Numera las reglas al armar el prompt en vez de tener el número escrito a
@@ -224,8 +223,10 @@ comprobante, con la jurisdicción tal como figure. La app se encarga de
 imputarlas; vos solo transcribí lo que dice.
 Prestá atención a dos siglas que aparecen casi solo acá:
 - SIRCREB: ponelo como jurisdicción en percepN, tal cual.
-- SIRTAC: NO va en percepN. Va en los pares variosN/impvariosN, con
-  variosN = ${COD_VARIOS_SIRTAC} e impvariosN el importe de esa línea.`,
+- SIRTAC: NO va en percepN. Va en los pares variosN/impvariosN, con el
+  rótulo tal como esté impreso en variosN ("Retención I.B. /SIRTAC",
+  "Ret. SIRTAC", lo que figure) y el importe en impvariosN. El código de
+  Tango lo pone la app: vos transcribí el texto.`,
 }
 
 function armar(tipo: TipoFactura): string {
