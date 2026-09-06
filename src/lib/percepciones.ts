@@ -108,6 +108,59 @@ export function resolverPercepciones(
 }
 
 /**
+ * A qué código de Tango va UNA línea de impuestos varios.
+ *
+ * Existe como función aparte porque la usan los dos lados -- `resolverVarios`,
+ * que arma CPA18, y la celda "En Tango" del formulario -- y hasta el
+ * 2026-09-06 la celda repetía esta precedencia a mano y se le había quedado
+ * afuera el último término, el del SIRTAC. El efecto era que en una
+ * liquidación que nadie hubiera corregido todavía el desplegable aparecía
+ * vacío y en rojo mientras el registro imputaba bien al 67: la pantalla
+ * decía una cosa y Tango recibía otra. Lo reportó el usuario con las
+ * liquidaciones de Galicia, BBVA y Credicoop -- en las de Banco Macro no se
+ * veía, porque ahí ya había una corrección guardada que tapaba el hueco.
+ *
+ * El orden es el mismo que en IVA e IIBB: lo que el operador corrigió en
+ * este comprobante gana sobre lo aprendido del proveedor, y lo aprendido
+ * gana sobre la regla general del SIRTAC -- una corrección para ese
+ * proveedor es más específica que una regla para todos.
+ *
+ * Devuelve '' si no resuelve a nada, que es lo que deja la línea en
+ * `sin-codigo`.
+ */
+export function resolverCodigoVarios(
+  texto: string,
+  correccion: string,
+  admitidos: { codigo: number }[],
+  aprendidos: Record<string, string> = {},
+): string {
+  const t = texto.trim()
+  const corregido = correccion.trim()
+
+  // Compatibilidad con los comprobantes anteriores al cambio, que tienen el
+  // codigo guardado en el campo del texto. Sin esto quedarian todos en
+  // 'sin-codigo' y bloquearian su registro, que es peor que la
+  // inconsistencia que arrastran.
+  const codigoLegado =
+    !corregido && /^\d+$/.test(t) && admitidos.some((c) => String(c.codigo) === t) ? t : ''
+
+  // El SIRTAC lo resuelve la app sin que nadie se lo enseñe: es un regimen
+  // conocido que aparece en casi todos los resumenes de tarjeta, de
+  // cualquier banco o procesadora. Se reconoce por la sigla, que es lo unico
+  // estable -- el resto del rotulo cambia con cada emisor ("Ret.IB SIRTAC",
+  // "RETENCION IIBB SIRTAC", "Retencion I.B. /SIRTAC", "Regimen de
+  // Retencion SIRTAC", todas vistas en comprobantes reales).
+  const esSirtac = t !== '' && normalizar(t).includes('sirtac')
+
+  return (
+    corregido ||
+    codigoLegado ||
+    (t ? (aprendidos[normalizar(t)] ?? '') : '') ||
+    (esSirtac ? COD_VARIOS_SIRTAC : '')
+  )
+}
+
+/**
  * Resuelve los dos slots de impuestos varios, con el mismo mecanismo que
  * las percepciones: `variosN` trae el rótulo impreso ("Trib. emerg.
  * munic.", "Retención TEM", "Deduc. Impositivas") y el código de Tango sale
@@ -137,27 +190,7 @@ export function resolverVarios(
     const texto = (valores[`varios${slot}`] ?? '').trim()
     const correccion = (valores[`codvarios${slot}`] ?? '').trim()
 
-    // Compatibilidad con los comprobantes anteriores al cambio, que tienen
-    // el codigo guardado en el campo del texto. Sin esto quedarian todos en
-    // 'sin-codigo' y bloquearian su registro, que es peor que la
-    // inconsistencia que arrastran.
-    const codigoLegado =
-      !correccion && /^\d+$/.test(texto) && admitidos.some((c) => String(c.codigo) === texto)
-        ? texto
-        : ''
-
-    // El SIRTAC lo resuelve la app sin que nadie se lo enseñe: es un
-    // regimen conocido que aparece en casi todos los resumenes de tarjeta.
-    // Va despues de lo aprendido a proposito -- si un proveedor enseño otra
-    // cosa para ese mismo rotulo, esa correccion del operador es mas
-    // especifica que esta regla general y tiene que ganar.
-    const esSirtac = texto !== '' && normalizar(texto).includes('sirtac')
-
-    const codigo =
-      correccion ||
-      codigoLegado ||
-      (texto ? (aprendidos[normalizar(texto)] ?? '') : '') ||
-      (esSirtac ? COD_VARIOS_SIRTAC : '')
+    const codigo = resolverCodigoVarios(texto, correccion, admitidos, aprendidos)
     const encontrado = admitidos.find((c) => String(c.codigo) === codigo)
     lineas.push({
       slot,

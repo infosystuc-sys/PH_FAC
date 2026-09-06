@@ -1,8 +1,8 @@
 'use client'
 
 import { resolverCodigoIva, CODIGO_IVA_PREFERIDO, type AlicuotaTango } from '@/lib/alicuotas'
-import { JURISDICCIONES_IIBB, resolverIibbPorTipo, normalizar } from '@/lib/percepcionIibb'
-import { codigosVarios } from '@/lib/percepciones'
+import { JURISDICCIONES_IIBB, resolverIibbPorTipo } from '@/lib/percepcionIibb'
+import { codigosVarios, resolverCodigoVarios } from '@/lib/percepciones'
 import { parsearImporte } from '@/lib/formato'
 import styles from './formulario.module.css'
 
@@ -268,7 +268,8 @@ export function CeldaVariosTango({
   bloqueado: boolean
   onCambio: (v: string) => void
 }) {
-  const opciones = codigosVarios(codigos).map((c) => ({
+  const admitidos = codigosVarios(codigos)
+  const opciones = admitidos.map((c) => ({
     valor: String(c.codigo),
     label: etiqueta(c.codigo, c.descripcion),
   }))
@@ -279,13 +280,11 @@ export function CeldaVariosTango({
   const rotulo = texto.trim()
   const vacio = sinImporte || (rotulo === '' && !correccion)
 
-  // Compatibilidad con los comprobantes anteriores al cambio, que tienen el
-  // codigo guardado en el campo del rotulo -- mismo criterio que
-  // resolverVarios, para que la celda muestre lo mismo que se va a registrar.
-  const codigoLegado =
-    /^\d+$/.test(rotulo) && opciones.some((o) => o.valor === rotulo) ? rotulo : ''
-
-  const elegido = vacio ? '' : correccion || codigoLegado || aprendidos[normalizar(rotulo)] || ''
+  // La misma funcion que usa resolverVarios para armar CPA18, no una copia
+  // de su precedencia: esta celda la repetia a mano y se le habia quedado
+  // afuera el SIRTAC, asi que mostraba el desplegable vacio y en rojo
+  // mientras el registro imputaba bien al 67.
+  const elegido = vacio ? '' : resolverCodigoVarios(rotulo, correccion, admitidos, aprendidos)
 
   return (
     <CeldaLista

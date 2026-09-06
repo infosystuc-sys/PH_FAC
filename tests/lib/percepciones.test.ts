@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   resolverPercepciones,
   resolverVarios,
+  resolverCodigoVarios,
   codigosVarios,
   COD_VARIOS_SIRTAC,
 } from '@/lib/percepciones'
@@ -268,6 +269,60 @@ describe('resolverPercepciones en resumen de tarjeta', () => {
       imppercep1: '300,00',
     })
     expect(l[0].codigo?.codigo).toBe('64')
+  })
+})
+
+describe('resolverCodigoVarios', () => {
+  // La celda "En Tango" del formulario y resolverVarios llaman a esta misma
+  // funcion. Hasta el 2026-09-06 la celda repetia la precedencia a mano y se
+  // le habia quedado afuera el SIRTAC: mostraba el desplegable vacio y en
+  // rojo mientras el registro imputaba bien al 67. Estos casos fijan la
+  // precedencia entera para que las dos no puedan volver a separarse.
+
+  it('reconoce el SIRTAC de cualquier emisor, sin que nadie se lo enseñe', () => {
+    // Los cuatro rotulos, tal como los imprimen comprobantes reales de
+    // Macro, Credicoop, Santiago del Estero y Naranja.
+    for (const rotulo of [
+      'Ret.IB SIRTAC',
+      'RETENCION IIBB SIRTAC',
+      'Retencion I.B. /SIRTAC',
+      'Régimen de Retención SIRTAC',
+    ]) {
+      expect(resolverCodigoVarios(rotulo, '', CPA14_NO_IVA, {})).toBe(COD_VARIOS_SIRTAC)
+    }
+  })
+
+  it('no depende de que el proveedor lo tenga aprendido', () => {
+    // El caso que reporto el usuario: en Banco Macro andaba porque habia una
+    // correccion guardada, y en Galicia, BBVA y Credicoop --sin nada
+    // aprendido-- el desplegable salia vacio.
+    expect(resolverCodigoVarios('Ret.IB SIRTAC', '', CPA14_NO_IVA)).toBe(COD_VARIOS_SIRTAC)
+  })
+
+  it('la correccion del operador gana sobre la regla del SIRTAC', () => {
+    expect(resolverCodigoVarios('Ret.IB SIRTAC', '56', CPA14_NO_IVA, {})).toBe('56')
+  })
+
+  it('lo aprendido del proveedor gana sobre la regla del SIRTAC', () => {
+    const r = resolverCodigoVarios('Ret.IB SIRTAC', '', CPA14_NO_IVA, { 'ret.ib sirtac': '63' })
+    expect(r).toBe('63')
+  })
+
+  it('acepta el codigo guardado en el campo del rotulo, de los comprobantes viejos', () => {
+    expect(resolverCodigoVarios('56', '', CPA14_NO_IVA, {})).toBe('56')
+  })
+
+  it('devuelve vacio para un rotulo que no resuelve a nada', () => {
+    expect(resolverCodigoVarios('Trib. emerg. munic.', '', CPA14_NO_IVA, {})).toBe('')
+    expect(resolverCodigoVarios('', '', CPA14_NO_IVA, {})).toBe('')
+  })
+
+  it('resuelve lo mismo que resolverVarios, que es el punto de que exista', () => {
+    const valores = { varios1: 'Ret.IB SIRTAC', impvarios1: '1.000,00' }
+    const porLinea = resolverVarios(valores, CPA14_NO_IVA, {})[0]
+    const suelto = resolverCodigoVarios('Ret.IB SIRTAC', '', codigosVarios(CPA14_NO_IVA), {})
+    expect(porLinea.codigo).toBe(suelto)
+    expect(porLinea.estado).toBe('registra')
   })
 })
 
