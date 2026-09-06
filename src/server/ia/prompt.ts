@@ -83,7 +83,21 @@ imponible sobre la que se calculó. neto es el neto gravado TOTAL del
 comprobante: si hay más de una base imponible, sumalas todas ahí, no
 las repartas entre los pares. Una percepción de IVA ocupa un par como
 cualquier alícuota; las percepciones de ingresos brutos y los demás
-impuestos van aparte, en sus propios pares (ver más abajo).`
+impuestos van aparte, en sus propios pares (ver más abajo).
+
+Una percepción de IVA va SIEMPRE en un par porcivaN/impivaN, nunca en
+variosN. Es percepción de IVA toda línea que diga percepción y además
+mencione IVA, la AFIP o la DGI, o el número de un régimen de percepción
+de IVA: "Percepción IVA", "Perc. IVA RG 2408", "Percepción R.G. 3337",
+"Percep./Retenc. AFIP - DGI". Muchas de estas líneas no imprimen
+porcentaje: en ese caso dejá porcivaN VACÍO y poné el importe igual en
+impivaN. No inventes el porcentaje ni pongas "0" -- un porcentaje vacío
+le dice a la app que resuelva el código de percepción, y un "0" le dice
+que es una alícuota de tasa cero y que no la registre.
+
+Ojo con dos que se le parecen y NO son percepción de IVA: las de
+Ingresos Brutos (van en percepN, aunque digan AFIP) y el impuesto sobre
+los débitos y créditos.`
 
 /**
  * El código de Ingresos Brutos que la app manda a CPA18. Los criterios
@@ -109,9 +123,10 @@ figura: el operador la va a ver marcada como no reconocida y decide qué
 hacer. Lo que no hay que hacer es forzarla a una de la lista.`,
 ].join('\n')
 
-const IMPUESTOS_VARIOS = `Todo impuesto que no sea IVA ni Ingresos Brutos
--- impuesto interno, impuesto a las ganancias, retenciones municipales,
-tributos de emergencia y similares -- va en los dos pares
+const IMPUESTOS_VARIOS = `Todo impuesto que no sea IVA -- ni alícuota ni
+percepción de IVA -- ni Ingresos Brutos: impuesto interno, impuesto a las
+ganancias, retenciones municipales, impuesto sobre los débitos y créditos,
+tributos de emergencia y similares. Van en los dos pares
 variosN/impvariosN. impvariosN es el importe de esa línea, y variosN el
 NOMBRE del impuesto tal como está impreso ("Trib. emerg. munic.",
 "Retención TEM", "Impuesto a las ganancias"), no un código: el código de
@@ -218,12 +233,18 @@ Ingresos Brutos en el pie, y a veces varias juntas. Leelas con
 atención: van en los pares percepN/imppercepN como en cualquier otro
 comprobante, con la jurisdicción tal como figure. La app se encarga de
 imputarlas; vos solo transcribí lo que dice.
-Prestá atención a dos siglas que aparecen casi solo acá:
+Prestá atención a tres líneas que aparecen casi solo acá:
 - SIRCREB: ponelo como jurisdicción en percepN, tal cual.
 - SIRTAC: NO va en percepN. Va en los pares variosN/impvariosN, con el
   rótulo tal como esté impreso en variosN ("Retención I.B. /SIRTAC",
   "Ret. SIRTAC", lo que figure) y el importe en impvariosN. El código de
-  Tango lo pone la app: vos transcribí el texto.`,
+  Tango lo pone la app: vos transcribí el texto.
+- La percepción de la AFIP/DGI, que estas liquidaciones imprimen como
+  "Percep./Retenc. AFIP - DGI", "Perc. IVA RG 2408" o parecido: es una
+  PERCEPCIÓN DE IVA. NO va en variosN ni en percepN: va en un par
+  porcivaN/impivaN, con el importe en impivaN y porcivaN vacío, porque no
+  trae porcentaje propio. Es distinta del SIRTAC y de las líneas de
+  Ingresos Brutos, aunque figuren una al lado de la otra en el mismo pie.`,
 }
 
 function armar(tipo: TipoFactura): string {
@@ -266,4 +287,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v6'
+export const VERSION_PROMPT = 'v7'

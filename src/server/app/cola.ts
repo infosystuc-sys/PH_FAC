@@ -16,11 +16,15 @@ import {
 import { normalizarCuit, parsearImporte, parsearImporteONulo } from '@/lib/formato'
 import {
   tipoFacturaODefault,
+  analizaCampo,
   CLAVES_REMITO,
   TIPOS_FACTURA,
   TIPO_FACTURA_DEFAULT,
   type TipoFactura,
 } from '@/lib/tipoFactura'
+import { planificarPercepcionIva } from '@/lib/percepcionIva'
+import { MAX_SLOTS_IVA } from '@/lib/alicuotas'
+import { MAX_SLOTS_VARIOS } from '@/lib/percepciones'
 import {
   MOTIVO_SIN_CONCEPTO,
   MOTIVO_REMITO_SIN_SALDO,
@@ -385,6 +389,67 @@ export async function ajustarNetoConIvaEn(
     corregidoPorUsuario: false,
   })
   return { ajustado: true, neto: esperado, sumaCargos: actual }
+}
+
+/**
+ * Manda a los slots de IVA las percepciones de IVA que la IA dejó en los de
+ * impuestos varios (ver `src/lib/percepcionIva.ts` para el porqué).
+ *
+ * Corre en los tres tipos, no solo en tarjeta: el callejón sin salida que
+ * arregla --el desplegable de varios no ofrece, ni puede ofrecer, los
+ * códigos de percepción de IVA-- es el mismo en una factura de conceptos.
+ *
+ * Es una red, no el arreglo principal: el prompt ya le pide al modelo que
+ * las ponga donde van. Existe porque este es justo el dato que el modelo
+ * lee peor -- en la liquidación que lo destapó lo devolvió con 0,60 de
+ * confianza, la más baja del comprobante.
+ *
+ * Devuelve cuántas mudó. Lo que reconoció pero no pudo mudar por falta de
+ * par de IVA libre queda en la auditoría: es un caso que nadie vio todavía
+ * y no conviene que pase en silencio.
+ */
+export async function mudarPercepcionIvaEn(
+  e: Ejecutor,
+  id: number,
+  tipoFactura: TipoFactura,
+): Promise<number> {
+  const detalle = await obtenerDetalleEn(e, id)
+  const valores: Record<string, string | null | undefined> = {}
+  for (const c of detalle.campos) valores[c.clave] = c.valorFinal
+
+  const slots = (max: number, prefijo: string) =>
+    Array.from({ length: max }, (_, i) => i + 1).filter((n) =>
+      analizaCampo(tipoFactura, `${prefijo}${n}`),
+    )
+
+  const plan = planificarPercepcionIva(
+    valores,
+    slots(MAX_SLOTS_IVA, 'impiva'),
+    slots(MAX_SLOTS_VARIOS, 'varios'),
+  )
+
+  for (const { clave, valor } of plan.escrituras) {
+    await guardarCampoEn(e, id, clave, valor, { corregidoPorUsuario: false })
+  }
+
+  if (plan.mudados.length > 0) {
+    await auditarEn(
+      e,
+      id,
+      `Percepción de IVA movida de impuestos varios a los slots de alícuota: ` +
+        plan.mudados.join(', ').slice(0, 150),
+    )
+  }
+  if (plan.sinLugar > 0) {
+    await auditarEn(
+      e,
+      id,
+      `${plan.sinLugar} percepción(es) de IVA quedaron en impuestos varios: ` +
+        `no hay par de alícuota libre para moverlas`,
+    )
+  }
+
+  return plan.mudados.length
 }
 
 /**
@@ -927,6 +992,14 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       await desnormalizarBandejaEn(tx, id, r.extraccion)
       const cod = await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
       await resolverCondicionCompraEn(tx, id, cod, r.extraccion.campos.condpago?.valor ?? null)
+
+      // Antes del bloque de tarjeta: `ajustarNetoConIvaEn` deriva el neto de
+      // las lineas de IVA, asi que tiene que ver los slots ya acomodados. Que
+      // una percepcion se sume a los slots de IVA no le mueve el neto --
+      // `esIvaSobreLaBase` la deja afuera-- pero el orden correcto es que la
+      // mudanza termine antes de que alguien lea de ahi.
+      await mudarPercepcionIvaEn(tx, id, tipoFactura)
+
       // Va despues de resolverProveedorEn porque el punto de venta se
       // aprende por proveedor: sin `cod` no hay a quien preguntarle.
       if (tipoFactura === 'tarjeta') {
