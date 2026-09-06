@@ -58,9 +58,9 @@ describe('mapearAlicuotaIva', () => {
     expect(r!.codigo).toBe(3)
   })
 
-  it('al 3% (ambiguo entre 15 y 16), siempre resuelve al 15', async () => {
+  it('al 3% (ambiguo entre 15 y 16), siempre resuelve al 16', async () => {
     const r = await mapearAlicuotaIva(3)
-    expect(r!.codigo).toBe(15)
+    expect(r!.codigo).toBe(16)
   })
 
   it('devuelve null si el porcentaje no matchea ningun codigo', async () => {
@@ -222,7 +222,7 @@ describe('registrarComprobanteEn', () => {
     })
   }, 90000)
 
-  it('una linea de IVA sin porcentaje impreso se registra al codigo 15, no se omite', async () => {
+  it('una linea de IVA sin porcentaje impreso se registra al codigo 16, no se omite', async () => {
     // Caso real (Banco Macro, resumen NaranjaX/VISA, comprobante 10643):
     // "Percepcion IVA RG 2408" trae importe pero ningun porcentaje en el
     // PDF. Antes del fix caia en la regla del 0% (parsearImporte('') es 0,
@@ -258,7 +258,7 @@ describe('registrarComprobanteEn', () => {
       const cpa04 = await tx.request()
         .input('n', sql.Float, registro.ncompInC)
         .query(`SELECT COD_IVA1, PORC_IVA1, IMP_IVA1 FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
-      expect(Number(cpa04.recordset[0].COD_IVA1)).toBe(15)
+      expect(Number(cpa04.recordset[0].COD_IVA1)).toBe(16)
       expect(Number(cpa04.recordset[0].IMP_IVA1)).toBe(147092.39)
     })
   }, 90000)

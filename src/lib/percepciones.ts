@@ -11,20 +11,24 @@ export const MAX_SLOTS_VARIOS = 2
 
 /**
  * El codigo de "Impuestos varios" al que va el SIRTAC de un resumen de
- * tarjeta: el 63, "RET IIBB TUCUMAN".
+ * tarjeta: el 67, "RET SIRTAC".
  *
- * OJO, porque hay tres codigos candidatos en CPA14 y el elegido no es el
- * que lleva el nombre: el 67 se llama literalmente "RET SIRTAC" y el 56 es
- * "RETENCION MUNICIPAL". El SIRTAC es un regimen de recaudacion de
- * Ingresos Brutos, asi que contablemente va con el IIBB de Tucuman.
+ * Hay tres codigos candidatos en CPA14 -- el 56 ("RETENCION MUNICIPAL"),
+ * el 63 ("RET IIBB TUCUMAN") y el 67 ("RET SIRTAC") -- y este dio tres
+ * vueltas antes de quedar en el que lleva el nombre:
  *
- * Historia, para que nadie lo "corrija" de nuevo por parecido de nombre:
- * el 2026-08-17 se habia definido el 56 (decision del usuario, con el 56 y
- * el 67 a la vista), y el 2026-09-05 el usuario lo corrigio al 63 -- "el
- * impuesto correcto es Ingresos Brutos Tucuman". Cambiarlo mueve la
- * imputacion contable de todos los resumenes de tarjeta.
+ *   2026-08-17  el 56, con el 56 y el 67 a la vista
+ *   2026-09-05  el 63 -- "el impuesto correcto es Ingresos Brutos Tucuman"
+ *   2026-09-06  el 67, corrigiendo lo anterior ("error mio")
+ *
+ * Las tres son decisiones explicitas del usuario. Queda escrito el
+ * recorrido porque el argumento del 63 --que el SIRTAC es un regimen de
+ * recaudacion de Ingresos Brutos-- sigue siendo cierto y podria tentar a
+ * "corregirlo" una cuarta vez: la imputacion elegida es la cuenta propia
+ * del regimen, no la de IIBB Tucuman. Cambiarlo mueve la imputacion
+ * contable de todos los resumenes de tarjeta.
  */
-export const COD_VARIOS_SIRTAC = '63'
+export const COD_VARIOS_SIRTAC = '67'
 
 /** Un código de CPA14 tal como lo devuelve `listarCodigosImpuesto`. */
 export type CodigoTango = { codigo: number; descripcion: string }

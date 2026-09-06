@@ -18,8 +18,8 @@ import { normalizar } from './percepcionIibb'
  *
  * Este módulo detecta esas líneas por el rótulo impreso y las manda al par
  * porcivaN/impivaN que les corresponde. Ahí `resolverAlicuotas` ya sabe
- * qué hacer con ellas: un importe sin porcentaje impreso resuelve al
- * código 15, la norma que definió el usuario el 2026-08-21.
+ * qué hacer con ellas: un importe sin porcentaje impreso resuelve a
+ * `CODIGO_IVA_PREFERIDO`.
  */
 
 /**
@@ -27,11 +27,17 @@ import { normalizar } from './percepcionIibb'
  * que es una PERCEPCIÓN y además que sea de IVA, por sigla o por número de
  * régimen -- las dos condiciones, no una.
  *
- * Que haga falta el "perc" deja afuera a propósito la retención de IVA
- * (CPA14 17, "RETENCION IVA"): también es TIPO_ALI = 'IV' y también
- * debería viajar en estos slots, pero resolvería al 15 -- una percepción
- * -- y quedaría mal imputada. Preferimos que una retención de IVA siga
- * quedando visible sin código antes que moverla a un código equivocado.
+ * Un rótulo que nombra las dos cosas a la vez ("Percep./Retenc. AFIP -
+ * DGI", "Ret./Perc. IVA") cuenta como percepción: no está diciendo que sea
+ * una retención, está cubriendo los dos casos con una sola leyenda.
+ * Decisión del usuario, 2026-09-06.
+ *
+ * Que haga falta el "perc" deja afuera, en cambio, a la línea que dice
+ * SOLO retención. La retención de IVA (CPA14 17, "RETENCION IVA") también
+ * es TIPO_ALI = 'IV' y también debería viajar en estos slots, pero
+ * resolvería a `CODIGO_IVA_PREFERIDO` -- una percepción -- y quedaría mal
+ * imputada. Preferimos que siga quedando visible sin código antes que
+ * moverla a un código equivocado.
  */
 const DICE_PERCEPCION = /\bperc/
 const DICE_IVA = /\biva\b|\bafip\b|\bdgi\b|\b2408\b|\b3337\b/

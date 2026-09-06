@@ -3,11 +3,23 @@ import { parsearImporte, parsearImporteONulo } from './formato'
 export const MAX_SLOTS_IVA = 5
 
 /**
- * El 3% es el único porcentaje ambiguo de CPA14: lo tienen el 15
- * ("PERCEPCION R.G.3337") y el 16 ("PERCEP. DE IVA"). La norma es usar
- * siempre el 15, sin pedirle al operador que elija.
+ * A qué código resuelve una percepción de IVA, que es el único caso donde
+ * los slots de IVA necesitan desempate. Se usa en las dos situaciones que
+ * lo piden, y las dos son percepciones:
+ *
+ * - El 3% es el único porcentaje ambiguo de CPA14: lo tienen el 15
+ *   ("PERCEPCION R.G.3337") y el 16 ("PERCEP. DE IVA").
+ * - Un importe sin porcentaje impreso, típico de las percepciones que las
+ *   liquidaciones de tarjeta cobran sin declarar tasa.
+ *
+ * **Es el 16**, decisión del usuario del 2026-09-06. Hasta esa fecha era
+ * el 15: la norma se había fijado el 2026-08-21 cuando el único caso a la
+ * vista era el 3% ambiguo, y se revisó al aparecer la línea
+ * "Percep./Retenc.AFIP - DGI" de las liquidaciones de tarjeta, que es una
+ * percepción de IVA lisa y llana y le corresponde el código que se llama
+ * así. Cambiarlo mueve la imputación contable de toda percepción de IVA.
  */
-export const CODIGO_IVA_PREFERIDO = 15
+export const CODIGO_IVA_PREFERIDO = 16
 
 /**
  * Los COD_IVA de CPA14 que son IVA de verdad sobre la base gravada.
@@ -127,10 +139,9 @@ export function resolverAlicuotas(
 
     // Sin porcentaje impreso (no es 0%, es que no hay dato): casi siempre
     // una percepcion de IVA sin tasa propia, no una alicuota real. Se
-    // resuelve directo al codigo preferido (15), mismo criterio que ya usa
-    // el 3% ambiguo -- decision del usuario, 2026-08-21. El porcentaje que
-    // se graba es el que ese codigo tiene en Tango (CPA14), no un valor
-    // inventado.
+    // resuelve directo a CODIGO_IVA_PREFERIDO, mismo criterio que ya usa el
+    // 3% ambiguo. El porcentaje que se graba es el que ese codigo tiene en
+    // Tango (CPA14), no un valor inventado.
     if (porcentajeLeido === null) {
       const preferida = alicuotas.find((a) => a.codigo === CODIGO_IVA_PREFERIDO) ?? null
       lineas.push({

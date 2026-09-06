@@ -42,7 +42,16 @@ describe('esPercepcionDeIva', () => {
     expect(esPercepcionDeIva('Deduc. Impositivas')).toBe(false)
   })
 
-  it('exige que diga percepcion: una retencion de IVA resolveria al codigo equivocado', () => {
+  it('trata como percepcion el rotulo que nombra las dos cosas', () => {
+    // No esta diciendo que sea una retencion: esta cubriendo los dos casos
+    // con una sola leyenda. Decision del usuario, 2026-09-06.
+    expect(esPercepcionDeIva('Percep./Retenc.AFIP - DGI')).toBe(true)
+    expect(esPercepcionDeIva('Ret./Perc. IVA')).toBe(true)
+  })
+
+  it('exige que diga percepcion: una retencion sola resolveria al codigo equivocado', () => {
+    // "RETENCION IVA" es el codigo 17 de CPA14, no una percepcion. Moverla
+    // la mandaria a CODIGO_IVA_PREFERIDO, que es una percepcion.
     expect(esPercepcionDeIva('Retención IVA')).toBe(false)
   })
 

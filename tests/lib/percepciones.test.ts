@@ -272,14 +272,14 @@ describe('resolverPercepciones en resumen de tarjeta', () => {
 })
 
 describe('COD_VARIOS_SIRTAC', () => {
-  it('es el 63 (IIBB Tucuman), no el 67 ni el 56, a proposito', () => {
-    // Hay tres candidatos en CPA14 y el elegido no es el que lleva el
-    // nombre: el 67 se llama "RET SIRTAC" y el 56 es "RETENCION MUNICIPAL".
-    // El SIRTAC es un regimen de recaudacion de Ingresos Brutos, asi que va
-    // con el IIBB de Tucuman. Estuvo en el 56 desde el 2026-08-17 y el
-    // usuario lo corrigio al 63 el 2026-09-05. Este test existe para que
-    // cambiarlo sea una decision y no un descuido.
-    expect(COD_VARIOS_SIRTAC).toBe('63')
+  it('es el 67 (RET SIRTAC), no el 63 ni el 56, a proposito', () => {
+    // Hay tres candidatos en CPA14: el 56 ("RETENCION MUNICIPAL"), el 63
+    // ("RET IIBB TUCUMAN") y el 67 ("RET SIRTAC"). Paso por los tres --56 el
+    // 2026-08-17, 63 el 2026-09-05, 67 el 2026-09-06-- y las tres veces por
+    // decision explicita del usuario. Este test existe para que una cuarta
+    // vez sea una decision y no un descuido: el argumento del 63 (que el
+    // SIRTAC es un regimen de Ingresos Brutos) es cierto y podria tentar.
+    expect(COD_VARIOS_SIRTAC).toBe('67')
   })
 
   it('se resuelve solo por el rotulo, sin que nadie se lo enseñe', () => {

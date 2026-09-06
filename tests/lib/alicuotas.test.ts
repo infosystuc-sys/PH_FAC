@@ -21,8 +21,8 @@ describe('resolverCodigoIva', () => {
     expect(resolverCodigoIva(10.5, CPA14)?.codigo).toBe(3)
   })
 
-  it('desempata el 3% al codigo 15, no al 16', () => {
-    expect(resolverCodigoIva(3, CPA14)?.codigo).toBe(15)
+  it('desempata el 3% al codigo 16, no al 15', () => {
+    expect(resolverCodigoIva(3, CPA14)?.codigo).toBe(16)
   })
 
   it('devuelve null para un porcentaje que Tango no tiene', () => {
@@ -59,12 +59,12 @@ describe('resolverAlicuotas', () => {
     expect(r[0]).toMatchObject({ slot: 1, porcentaje: 21, estado: 'registra' })
     expect(r[0].alicuota?.codigo).toBe(1)
     expect(r[1]).toMatchObject({ slot: 2, porcentaje: 3, estado: 'registra' })
-    expect(r[1].alicuota?.codigo).toBe(15)
+    expect(r[1].alicuota?.codigo).toBe(16)
   })
 
   it('marca la alicuota 0% como omitida en vez de resolverla', () => {
     // Norma de registracion: la 0% no se registra. Antes caia en el
-    // desempate del 3% (buscaba el codigo 15), no lo encontraba y el
+    // desempate del 3% (buscaba el codigo preferido), no lo encontraba y el
     // registro fallaba con "no se pudo resolver el codigo de IVA".
     const r = resolverAlicuotas({ porciva1: '0', impiva1: '1.000,00' }, CPA14)
     expect(r).toHaveLength(1)
@@ -91,14 +91,14 @@ describe('resolverAlicuotas', () => {
 
 describe('correccion manual del codigo', () => {
   it('el codigo elegido a mano gana sobre el que resuelve el porcentaje', () => {
-    // El caso real: el 3% resuelve al 15 por norma, pero el operador
-    // necesita el 16 ("PERCEP. DE IVA") para este comprobante puntual.
+    // El caso real: el 3% resuelve al 16 por norma, pero el operador
+    // necesita el 15 ("PERCEPCION R.G.3337") para este comprobante puntual.
     const r = resolverAlicuotas(
-      { porciva1: '3', impiva1: '1.000,00', codiva1: '16' },
+      { porciva1: '3', impiva1: '1.000,00', codiva1: '15' },
       CPA14,
     )
     expect(r[0].estado).toBe('registra')
-    expect(r[0].alicuota?.codigo).toBe(16)
+    expect(r[0].alicuota?.codigo).toBe(15)
   })
 
   it('gana tambien sobre la regla del 0%, que si no se omitiria', () => {
@@ -142,8 +142,8 @@ describe('validarAlicuotas', () => {
     expect(r.estado).toBe('ok')
     expect(r.mensaje).toContain('IVA 21%')
     expect(r.mensaje).toContain('cód. 1')
-    expect(r.mensaje).toContain('PERCEPCION R.G.3337')
-    expect(r.mensaje).toContain('cód. 15')
+    expect(r.mensaje).toContain('PERCEP. DE IVA')
+    expect(r.mensaje).toContain('cód. 16')
   })
 
   it('advierte que la 0% no se registra, sin bloquear', () => {
@@ -181,12 +181,12 @@ describe('linea sin porcentaje impreso', () => {
   // del PDF -- a diferencia de las alicuotas reales, que si imprimen
   // "Tasa 21,00%"/"Tasa 10,50%". Antes del fix esto caia en la regla del
   // 0% (parsearImporte('') tambien da 0) y quedaba omitida del registro.
-  it('sin porcentaje pero con importe, resuelve directo al codigo preferido (15)', () => {
+  it('sin porcentaje pero con importe, resuelve directo al codigo preferido (16)', () => {
     const r = resolverAlicuotas({ porciva3: undefined, impiva3: '147.092,39' }, CPA14)
     expect(r).toHaveLength(1)
     expect(r[0].estado).toBe('registra')
-    expect(r[0].alicuota?.codigo).toBe(15)
-    // El porcentaje que se graba es el que Tango define para el 15 (3%),
+    expect(r[0].alicuota?.codigo).toBe(16)
+    // El porcentaje que se graba es el que Tango define para el 16 (3%),
     // no un 0% inventado.
     expect(r[0].porcentaje).toBe(3)
   })
@@ -194,7 +194,7 @@ describe('linea sin porcentaje impreso', () => {
   it('un string vacio de porcentaje se trata igual que ausente', () => {
     const r = resolverAlicuotas({ porciva1: '', impiva1: '500,00' }, CPA14)
     expect(r[0].estado).toBe('registra')
-    expect(r[0].alicuota?.codigo).toBe(15)
+    expect(r[0].alicuota?.codigo).toBe(16)
   })
 
   it('la correccion manual sigue ganando aunque no haya porcentaje', () => {
