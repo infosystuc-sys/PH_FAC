@@ -475,54 +475,72 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         )`)
   }
 
-  // 7. Renglones con remito asignado (solo si hay).
-  const renglonesConRemito = detalle.renglones.filter((r) => r.remitoNcompInS && r.remitoNRenglS)
-  const remitosAfectados = new Set<string>()
+  // 7. Renglones imputados a una orden de compra (solo si hay).
+  //
+  // Desde 2026-09-06 las facturas de articulos se imputan a una OC y no se
+  // cotejan contra un remito -- decision del usuario. La estructura es la
+  // misma que tenia el circuito de remito, con dos cambios de destino:
+  // el vinculo va a CPA_OC_FACTURA en vez de CPA48, y los contadores que se
+  // descuentan son los de CPA36 en vez de los de STA20.
+  const renglonesConOc = detalle.renglones.filter((r) => r.ocNOrdenCo && r.ocNRenglOc)
+  const ocsAfectadas = new Set<string>()
 
-  for (const renglon of renglonesConRemito) {
-    const remitoNcompInS = renglon.remitoNcompInS!
-    const remitoNRenglS = renglon.remitoNRenglS!
+  for (const renglon of renglonesConOc) {
+    const nOrdenCo = renglon.ocNOrdenCo!
+    const nRenglOc = renglon.ocNRenglOc!
 
-    const staRow = await tx.request()
-      .input('n', sql.VarChar(8), remitoNcompInS).input('r', sql.Int, remitoNRenglS)
+    // Se relee la OC de Tango en vez de confiar en lo que quedo congelado al
+    // elegirla: entre que el operador la imputo y este momento, otra factura
+    // pudo haber consumido parte de lo pendiente.
+    const ocRow = await tx.request()
+      .input('oc', sql.VarChar(14), nOrdenCo).input('r', sql.Int, nRenglOc)
       .query(`
-        SELECT r.COD_ARTICU, r.COD_DEPOSI, r.CANTIDAD, r.CANT_FACTU, r.CANT_PEND, r.PRECIO_REM, h.NRO_SUCURS
-        FROM STA20 r JOIN STA14 h ON h.TCOMP_IN_S=r.TCOMP_IN_S AND h.NCOMP_IN_S=r.NCOMP_IN_S
-        WHERE r.TCOMP_IN_S='RP' AND r.NCOMP_IN_S=@n AND r.N_RENGL_S=@r`)
-    if (staRow.recordset.length === 0) {
-      throw new Error(`El renglón ${remitoNRenglS} del remito ${remitoNcompInS} ya no existe.`)
+        SELECT r.COD_ARTICU, r.COD_DEPOSI, r.PRECIO,
+               ISNULL(r.CANTIDAD_FACTURADA, 0) AS CANTIDAD_FACTURADA,
+               ISNULL(r.PENDIENTE_FACTURAR, 0) AS PENDIENTE_FACTURAR,
+               h.NRO_SUCURS, h.TALONARIO
+        FROM CPA36 r JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
+        WHERE r.N_ORDEN_CO=@oc AND r.N_RENGL_OC=@r`)
+    if (ocRow.recordset.length === 0) {
+      throw new Error(`El renglón ${nRenglOc} de la orden de compra ${nOrdenCo.trim()} ya no existe.`)
     }
-    const sta = staRow.recordset[0]
-    // CPA46 son los renglones del COMPROBANTE DE COMPRA -- la factura --, no
-    // del remito. Lo unico que se toma de STA20 al armarlos es el articulo y
-    // el deposito; la cantidad y el precio salen de la factura.
-    //
-    // La cantidad, en particular, nunca sale del remito: usar CANT_PEND o
-    // CANTIDAD facturaria lo que el remito tiene pendiente y no lo que el
-    // documento real dice, y romperia si el remito ya estaba parcialmente
-    // facturado por otro comprobante (se re-facturaria lo ya facturado).
+    const sta = ocRow.recordset[0]
+
     const cantidad = parsearImporte(renglon.cantidad)
     if (cantidad <= 0) {
-      throw new Error(`El renglón no tiene una cantidad válida para facturar contra el remito ${remitoNcompInS}.`)
+      throw new Error(
+        `El renglón no tiene una cantidad válida para facturar contra la orden ${nOrdenCo.trim()}.`,
+      )
     }
-    // El articulo sale del remito, salvo que el operador lo haya corregido a
-    // mano porque el emparejamiento automatico se equivoco. Sin esto, la
-    // correccion se veria en pantalla y no llegaria a Tango, que es peor que
-    // no ofrecerla: el operador creeria haberla arreglado.
+    // El tope se chequea contra lo que la OC tiene pendiente AHORA. La
+    // pantalla ya lo valida al revisar (ver validarCotejoOc), pero eso fue
+    // contra el pendiente congelado al imputar: este es el chequeo que no
+    // se puede saltear, porque corre dentro de la misma transaccion que
+    // descuenta.
+    const pendiente = Number(sta.PENDIENTE_FACTURAR)
+    if (cantidad - pendiente > 0.00005) {
+      throw new Error(
+        `El artículo ${String(sta.COD_ARTICU).trim()} factura ${cantidad} y la orden ` +
+          `${nOrdenCo.trim()} tiene ${pendiente} pendiente(s) de facturar.`,
+      )
+    }
+
+    // El articulo sale de la OC, salvo que el operador lo haya corregido a
+    // mano. Sin esto, la correccion se veria en pantalla y no llegaria a
+    // Tango, que es peor que no ofrecerla.
     const codArticu = renglon.codigoFinal?.trim() || String(sta.COD_ARTICU).trim()
     const codDeposi = String(sta.COD_DEPOSI ?? '').trim()
 
-    // El precio sale de la FACTURA, no del remito (decision del usuario,
-    // 2026-08-20): el remito no es valorizado -- dice que entro y cuanto.
-    // Se cae al del remito solo si la factura no lo trajo, y si no hay
-    // ninguno de los dos se corta: grabar una compra a precio cero deja la
-    // cuenta corriente del proveedor mal y no lo señala nada.
-    const precioFactura = parsearImporte(renglon.precioUnitario)
-    const precioLista = precioFactura > 0 ? precioFactura : Number(sta.PRECIO_REM)
+    // El precio es el pactado en la OC. Se cae al que quedo guardado en el
+    // renglon solo si la OC no lo trae, y si no hay ninguno de los dos se
+    // corta: grabar una compra a precio cero deja la cuenta corriente del
+    // proveedor mal y no lo señala nada.
+    const precioOc = Number(sta.PRECIO)
+    const precioLista = precioOc > 0 ? precioOc : parsearImporte(renglon.precioUnitario)
     if (!(precioLista > 0)) {
       throw new Error(
         `El renglón del artículo ${codArticu} no tiene precio unitario: ` +
-          `no figura en la factura ni en el remito ${remitoNcompInS}.`,
+          `no figura en la orden de compra ${nOrdenCo.trim()} ni en la factura.`,
       )
     }
 
@@ -542,7 +560,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     const precioNeto = Math.round(precioLista * (1 - bonificacion / 100) * 10000) / 10000
     const importeNetoRenglon = Math.round(cantidad * precioNeto * 100) / 100
 
-    const nRenglC = renglonesConRemito.indexOf(renglon) + 1
+    const nRenglC = renglonesConOc.indexOf(renglon) + 1
 
     await tx.request()
       .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
@@ -588,30 +606,53 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
           0, '', '', 0, 'P'
         )`)
 
+    // El vinculo entre el renglon de la factura y el de la orden de compra.
+    // `TALONARIO_OC` sale de CPA35.TALONARIO -- verificado sobre las 9.975
+    // filas reales de CPA_OC_FACTURA, coincide siempre.
+    //
+    // `ID_CPA_OC_FACTURA` es IDENTITY: no se especifica.
     await tx.request()
       .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
-      .input('nRenglC', sql.Int, nRenglC).input('nRenglS', sql.Int, remitoNRenglS)
-      .input('ncompInS', sql.VarChar(8), remitoNcompInS).input('cantidad', sql.Decimal(18, 4), cantidad)
+      .input('nRenglC', sql.Int, nRenglC).input('nRenglOc', sql.Int, nRenglOc)
+      .input('oc', sql.VarChar(14), nOrdenCo)
+      .input('talonario', sql.SmallInt, Number(sta.TALONARIO) || 0)
+      .input('cantidad', sql.Decimal(18, 4), cantidad)
       .query(`
-        INSERT INTO CPA48 (TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, N_RENGL_S, NCOMP_IN_S, TCOMP_IN_S, CANTIDAD, FILLER, CANTIDAD_2)
-        VALUES (@tcompInC, @ncompInC, @nRenglC, @nRenglS, @ncompInS, 'RP', @cantidad, '', 0)`)
+        INSERT INTO CPA_OC_FACTURA
+          (TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, TALONARIO_OC, N_ORDEN_CO, N_RENGL_OC, CANTIDAD, CANTIDAD_2)
+        VALUES (@tcompInC, @ncompInC, @nRenglC, @talonario, @oc, @nRenglOc, @cantidad, 0)`)
 
-    const nuevoPend = Math.max(0, Number(sta.CANT_PEND) - cantidad)
+    // Los contadores de la OC. No hay ningun trigger que los mantenga --
+    // verificado sobre CPA36 y CPA_OC_FACTURA --: los lleva el cliente de
+    // Tango, asi que si esta app no los actualiza la orden quedaria
+    // mostrando todo como pendiente para siempre. Decision del usuario,
+    // 2026-09-06.
+    //
+    // Solo estas dos columnas: CPA36 tiene ademas variantes _2 y
+    // PENDIENTE_FACTURAR_RECIBIDA, que miden otra cosa (lo pendiente contra
+    // lo RECIBIDO, no contra lo pedido) y esta app no usa.
     await tx.request()
-      .input('n', sql.VarChar(8), remitoNcompInS).input('r', sql.Int, remitoNRenglS)
-      .input('cantFactu', sql.Decimal(18, 4), Number(sta.CANT_FACTU) + cantidad)
-      .input('cantPend', sql.Decimal(18, 4), nuevoPend)
-      .query(`UPDATE STA20 SET CANT_FACTU=@cantFactu, CANT_PEND=@cantPend WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n AND N_RENGL_S=@r`)
+      .input('oc', sql.VarChar(14), nOrdenCo).input('r', sql.Int, nRenglOc)
+      .input('facturada', sql.Decimal(18, 4), Number(sta.CANTIDAD_FACTURADA) + cantidad)
+      .input('pend', sql.Decimal(18, 4), Math.max(0, pendiente - cantidad))
+      .query(`
+        UPDATE CPA36 SET CANTIDAD_FACTURADA=@facturada, PENDIENTE_FACTURAR=@pend
+        WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
 
-    remitosAfectados.add(remitoNcompInS)
+    ocsAfectadas.add(nOrdenCo)
   }
 
-  for (const ncompInS of remitosAfectados) {
-    const pendiente = await tx.request().input('n', sql.VarChar(8), ncompInS).query(`
-      SELECT SUM(CANT_PEND) AS pend FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+  // Una OC sin nada pendiente pasa a Cumplida (estado 10 de
+  // ESTADO_ORDEN_COMPRA). Mismo criterio que tenia el remito al quedar sin
+  // saldo. No se tocan las anuladas ni las ya cerradas: si la OC ya estaba
+  // en un estado terminal, facturarle el saldo no la "descierra".
+  for (const oc of ocsAfectadas) {
+    const pendiente = await tx.request().input('oc', sql.VarChar(14), oc).query(`
+      SELECT SUM(ISNULL(PENDIENTE_FACTURAR, 0)) AS pend FROM CPA36 WHERE N_ORDEN_CO=@oc`)
     if (Number(pendiente.recordset[0].pend) <= 0) {
-      await tx.request().input('n', sql.VarChar(8), ncompInS).query(`
-        UPDATE STA14 SET ESTADO_MOV='F' WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+      await tx.request().input('oc', sql.VarChar(14), oc).query(`
+        UPDATE CPA35 SET ESTADO=10, ID_ESTADO_ORDEN_COMPRA=10
+        WHERE N_ORDEN_CO=@oc AND ESTADO IN (1, 2, 3, 9)`)
     }
   }
 
