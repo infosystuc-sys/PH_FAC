@@ -22,14 +22,41 @@ export function letraComprobante(tipo: string): string | null {
 }
 
 /**
+ * Le saca al numero (o al punto de venta) los ceros de relleno de la
+ * izquierda, dejando al menos un digito.
+ *
+ * Hace falta porque hay comprobantes que imprimen el numero rellenado a mas
+ * digitos de los que Tango guarda: los resumenes de Banco Macro, BBVA,
+ * Galicia y Ciudad lo traen a 12 ("000020984549"), y CPA04 lo almacena a 8.
+ * Sin esto, esos 13 comprobantes quedaban bloqueados por "el numero tiene
+ * 12 digitos, el maximo son 8" pese a que el numero entra perfecto: es
+ * relleno, no dato.
+ *
+ * Es reversible: `nComp` vuelve a rellenar a 8, asi que el N_COMP final es
+ * identico al que Tango guarda. Y no esconde un numero que de verdad no
+ * entra -- si despues de sacar los ceros quedan mas de 8 digitos,
+ * `validarFormatoNComp` lo sigue rechazando.
+ */
+export function sinCerosDeRelleno(valor: string): string {
+  return valor.trim().replace(/^0+(?=\d)/, '')
+}
+
+/**
  * Reconstruye el N_COMP tal como Tango lo guarda en CPA04: letra + punto
  * de venta a 5 digitos + numero a 8 digitos (verificado contra 5 años de
- * facturas reales de un mismo proveedor, ver plan Task 2). Si ptovta o
- * nro ya vienen mas largos que el padding no se truncan -- un dato mas
- * largo que lo esperado tiene que fallar el match, no esconderse.
+ * facturas reales de un mismo proveedor, ver plan Task 2).
+ *
+ * Los ceros de relleno de mas se sacan antes de repadear (ver
+ * `sinCerosDeRelleno`), con la misma funcion que usa
+ * `validarFormatoNComp`: si las dos no coincidieran, la pantalla podria
+ * decir "listo" y el registro armar un numero distinto. Lo que sigue sin
+ * truncarse es un dato genuinamente mas largo que el padding -- eso tiene
+ * que fallar el match, no esconderse.
  */
 export function nComp(letra: string, ptovta: string, nro: string): string {
-  return `${letra}${ptovta.padStart(5, '0')}${nro.padStart(8, '0')}`
+  const pv = sinCerosDeRelleno(ptovta).padStart(5, '0')
+  const n = sinCerosDeRelleno(nro).padStart(8, '0')
+  return `${letra}${pv}${n}`
 }
 
 export function validarProveedor(cantidadMatches: number): ResultadoValidacion {
@@ -256,15 +283,22 @@ export function validarFormatoNComp(
   ptovta: string | null | undefined,
   nro: string | null | undefined,
 ): ResultadoValidacion {
-  const pv = (ptovta ?? '').trim()
-  const n = (nro ?? '').trim()
+  const crudoPv = (ptovta ?? '').trim()
+  const crudoN = (nro ?? '').trim()
 
-  if (!pv || !n) {
+  if (!crudoPv || !crudoN) {
     return { estado: 'error', mensaje: 'Falta punto de venta o número de comprobante.' }
   }
-  if (!/^\d+$/.test(pv) || !/^\d+$/.test(n)) {
+  if (!/^\d+$/.test(crudoPv) || !/^\d+$/.test(crudoN)) {
     return { estado: 'error', mensaje: 'El punto de venta y el número tienen que ser numéricos.' }
   }
+
+  // Se miden sin los ceros de relleno, que es como los va a armar `nComp`:
+  // un numero impreso a 12 digitos como "000020984549" entra sin problema
+  // en los 8 que guarda Tango.
+  const pv = sinCerosDeRelleno(crudoPv)
+  const n = sinCerosDeRelleno(crudoN)
+
   if (pv.length > 5) {
     return { estado: 'error', mensaje: `El punto de venta tiene ${pv.length} dígitos, el máximo son 5.` }
   }

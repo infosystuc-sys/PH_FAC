@@ -12,6 +12,7 @@ import {
   validarCondCompra,
   validarTipoFactura,
   parsearFechaArg,
+  sinCerosDeRelleno,
   validarNetoContraIva,
 } from '@/lib/validaciones'
 import type { LineaAlicuota } from '@/lib/alicuotas'
@@ -203,6 +204,37 @@ describe('validarTipoFactura', () => {
     for (const t of TIPOS_FACTURA) {
       expect(validarTipoFactura(t.clave).estado, t.clave).toBe('ok')
     }
+  })
+})
+
+describe('numeros rellenados con ceros', () => {
+  // Los resumenes de Banco Macro, BBVA, Galicia y Ciudad imprimen el numero
+  // a 12 digitos ("000020984549") y Tango lo guarda a 8. Antes esos 13
+  // comprobantes quedaban bloqueados por "el numero tiene 12 digitos, el
+  // maximo son 8" pese a que el numero entra: era relleno, no dato.
+  it('nComp saca el relleno y vuelve a padear a los 8 de Tango', () => {
+    expect(nComp('A', '00001', '000020984549')).toBe('A0000120984549')
+    // El mismo numero sin relleno da identico: es la prueba de que la
+    // normalizacion no cambia el N_COMP, solo tolera como viene escrito.
+    expect(nComp('A', '00001', '20984549')).toBe(nComp('A', '00001', '000020984549'))
+  })
+
+  it('valida contra el largo sin relleno', () => {
+    expect(validarFormatoNComp('00001', '000020984549').estado).toBe('ok')
+    expect(validarFormatoNComp('00001', '000000886327').estado).toBe('ok')
+  })
+
+  it('sigue rechazando un numero que de verdad no entra', () => {
+    // Nueve digitos significativos no son relleno: no hay forma de meterlos
+    // en los 8 de CPA04 sin perder informacion.
+    const r = validarFormatoNComp('00001', '000123456789')
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('9 dígitos')
+  })
+
+  it('no se come un numero que es todo ceros', () => {
+    expect(sinCerosDeRelleno('0000')).toBe('0')
+    expect(nComp('A', '00001', '0000')).toBe('A0000100000000')
   })
 })
 
