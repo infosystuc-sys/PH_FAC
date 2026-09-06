@@ -165,6 +165,34 @@ const DEFINICIONES: Definicion[] = [
     `,
   },
   {
+    // Los renglones tal como los lee la IA del PDF de una factura de
+    // articulos: solo codigo y cantidad. Sirven para UNA cosa -- cotejarlos
+    // contra la orden de compra imputada -- y no se graban en Tango.
+    //
+    // Tabla propia y no PHF_RENGLON: ahi viven los renglones que SI se van
+    // a facturar, que desde 2026-09-06 salen de la OC. Son dos cosas
+    // distintas y ademas incompatibles en la misma tabla: PHF_RENGLON tiene
+    // UNIQUE (COMPROBANTE_ID, ORDEN) y las dos numeran desde 1, asi que
+    // compartirla haria chocar la lectura del PDF contra el detalle a
+    // facturar.
+    tabla: 'PHF_RENGLON_PDF',
+    ddlTabla: `
+      CREATE TABLE PHF_RENGLON_PDF (
+        ID              INT IDENTITY(1,1) NOT NULL,
+        COMPROBANTE_ID  INT            NOT NULL,
+        ORDEN           INT            NOT NULL,
+        -- El codigo tal como lo imprime el proveedor, sin interpretar: puede
+        -- ser el nuestro o el de el (ver CPA15.COD_SINONI).
+        CODIGO          NVARCHAR(60)   NULL,
+        CANTIDAD        DECIMAL(19,4)  NULL,
+        CONSTRAINT PK_PHF_RENGLON_PDF PRIMARY KEY (ID),
+        CONSTRAINT UQ_PHF_RENGLON_PDF UNIQUE (COMPROBANTE_ID, ORDEN),
+        CONSTRAINT FK_PHF_RENGLON_PDF_COMP FOREIGN KEY (COMPROBANTE_ID)
+          REFERENCES PHF_COMPROBANTE (ID) ON DELETE CASCADE
+      );
+    `,
+  },
+  {
     tabla: 'PHF_RENGLON',
     ddlTabla: `
       CREATE TABLE PHF_RENGLON (

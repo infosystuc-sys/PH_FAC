@@ -137,20 +137,17 @@ percepciones del pie: son los únicos datos que se imputan.`,
 
   articulos: `Este comprobante es una FACTURA DE ARTÍCULOS: una compra de mercadería
 con detalle de renglones.
-No se te pide ese detalle. Por más que el comprobante enumere veinte
-artículos con su código, cantidad y precio unitario, no hay campos de
-renglón en la lista de abajo. La mercadería se saca del remito, que es lo
-que dice qué entró de verdad al depósito.
-Lo que sí tenés que buscar es el NÚMERO DE REMITO. Suele estar en la
-cabecera o al pie, con etiquetas como "Remito", "Rem.", "Remito Nº",
-"Según remito" o "Comprobantes asociados". Devolvelo tal como está impreso
--- "0001-00029869", "R 0001-00029869", lo que figure -- en remito1. Si la
-factura menciona un segundo remito, ese va en remito2. Si menciona más de
-dos, poné los dos primeros: el operador agrega el resto.
-No confundas el remito con la orden de compra ni con el número de la
-factura misma. Si no encontrás ningún remito, dejá remito1 y remito2
-vacíos: es un dato que el operador puede cargar, y uno inventado manda a
-buscar mercadería que no existe.
+Transcribí ese detalle en el array "renglones_pdf": una entrada por cada
+artículo que la factura cobra, con el CÓDIGO tal como está impreso en
+"codigo" y la CANTIDAD en "cantidad". No se te piden el precio, la
+descripción ni el importe: el sistema los toma de la orden de compra.
+El código es el que imprime el proveedor. A veces es el mismo que usamos
+nosotros y a veces es el suyo propio; copiá el que figure, sin traducirlo.
+Si un renglón no trae código, dejá "codigo" vacío y completá la cantidad
+igual: una línea sin código sigue sirviendo para saber cuántos renglones
+cobra la factura.
+No metas en ese array los totales, subtotales, descuentos generales ni las
+líneas de impuestos del pie: solo la mercadería.
 También buscá la CONDICIÓN DE PAGO O DE VENTA, con etiquetas como
 "Condición de Venta", "Condiciones de Pago", "Forma de Pago" o similar.
 Devolvela tal como está impresa en condpago -- "Cuenta Corriente", "D026",

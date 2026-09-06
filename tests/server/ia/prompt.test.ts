@@ -17,12 +17,20 @@ describe('PROMPTS_EXTRACCION', () => {
     expect(new Set(textos).size).toBe(textos.length)
   })
 
-  it('el de articulos avisa que no se pide el detalle de renglones', () => {
-    // Es el tipo donde el modelo tiene mas tentacion de listarlos: la
-    // factura los enumera. El schema no los acepta, pero el prompt tiene que
-    // decirlo igual o el modelo gasta atencion en un dato que se descarta.
+  it('el de articulos pide el detalle de renglones para cotejar contra la OC', () => {
+    // Hasta 2026-09-06 se le pedia lo contrario --que NO los listara-- porque
+    // el detalle salia del remito. Ahora las facturas de articulos se imputan
+    // a una orden de compra y estos renglones son con lo que se cotejan.
     expect(PROMPTS_EXTRACCION.articulos).toContain('FACTURA DE ARTÍCULOS')
-    expect(PROMPTS_EXTRACCION.articulos).toContain('No se te pide ese detalle')
+    expect(PROMPTS_EXTRACCION.articulos).toContain('renglones_pdf')
+    // Solo codigo y cantidad: el precio y la descripcion salen de la OC, y
+    // pedirlos no entraria en el techo del schema (medido contra la API).
+    expect(PROMPTS_EXTRACCION.articulos).toContain('No se te piden el precio')
+  })
+
+  it('no le pide renglones a los tipos que no los usan', () => {
+    expect(PROMPTS_EXTRACCION.conceptos).not.toContain('renglones_pdf')
+    expect(PROMPTS_EXTRACCION.tarjeta).not.toContain('renglones_pdf')
   })
 
   it.each(TIPOS_FACTURA.map((t) => t.clave))(

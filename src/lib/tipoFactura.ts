@@ -140,7 +140,12 @@ const SLOTS_LIBERADOS_TARJETA = [
 
 export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
   conceptos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, ...CONDICION_PAGO],
-  articulos: NO_ANALIZADOS_COMUNES,
+  // Los remitos salieron de articulos el 2026-09-06, cuando las facturas de
+  // articulos pasaron a imputarse a una orden de compra en vez de cotejarse
+  // contra un remito. No es solo que dejaran de usarse: hacen falta los dos
+  // campos para que entre el array de renglones que ahora lee la IA --
+  // medido contra la API, 34 campos + array lo rechaza y 32 lo acepta.
+  articulos: [...NO_ANALIZADOS_COMUNES, ...REMITOS],
   tarjeta: [
     ...NO_ANALIZADOS_COMUNES,
     ...REMITOS,
@@ -163,6 +168,21 @@ export const ANALIZA_CARGOS: Record<TipoFactura, boolean> = {
   conceptos: false,
   articulos: false,
   tarjeta: true,
+}
+
+/**
+ * Si el tipo pide los renglones del PDF para cotejarlos contra la orden de
+ * compra (ver `src/lib/renglonesPdf.ts`). Solo articulos: es el unico que
+ * se imputa a una OC.
+ *
+ * Distinto de ANALIZA_RENGLONES, que es el array de cinco datos del
+ * circuito de remito -- ese sigue en false en los tres y desaparece con el
+ * remito en la etapa siguiente.
+ */
+export const ANALIZA_RENGLONES_PDF: Record<TipoFactura, boolean> = {
+  conceptos: false,
+  articulos: true,
+  tarjeta: false,
 }
 
 /** Las claves de remito que la IA lee, en orden. */

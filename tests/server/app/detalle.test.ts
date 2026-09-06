@@ -34,6 +34,7 @@ function extraccionDePrueba(): Extraccion {
         precioUnitario: '80.745,57', importe: '322.982,28' },
     ],
     cargos: [],
+    renglonesPdf: [],
   }
 }
 

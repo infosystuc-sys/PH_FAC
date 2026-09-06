@@ -327,6 +327,9 @@ describe('validarListoParaRegistrarEn', () => {
   })
 
   it('no bloqueante si todo esta completo', async () => {
+    // En conceptos, que desde 2026-09-06 es donde este fixture no necesita
+    // una orden de compra: las de articulos se imputan a una OC y sin ella
+    // bloquean (ver el test de abajo).
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
       await guardarCampoEn(tx, id, 'tipo', 'FAC A')
@@ -343,7 +346,34 @@ describe('validarListoParaRegistrarEn', () => {
       expect(r.percepcionIibb.estado).toBe('ok')
       expect(r.formatoComp.estado).toBe('ok')
       expect(r.fecha.estado).toBe('ok')
-      expect(r.bloqueante).toBe(false)
+      // Lo unico que falta es la OC, que este fixture no imputa.
+      expect(r.ordenCompra.estado).toBe('error')
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+
+  it('una factura de articulos sin orden de compra imputada bloquea', async () => {
+    // Toda factura de articulos se imputa a una OC (decision del usuario,
+    // 2026-09-06): no tenerla no es un caso valido sino un paso que falta.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.ordenCompra.estado).toBe('error')
+      expect(r.ordenCompra.mensaje).toContain('Falta imputar')
+      expect(r.bloqueante).toBe(true)
+    })
+  })
+
+  it('en conceptos y tarjeta el cotejo contra la OC no aplica', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+
+      const r = await validarListoParaRegistrarEn(tx, id)
+      expect(r.ordenCompra.estado).toBe('ok')
+      expect(r.ordenCompra.mensaje).toContain('No aplica')
     })
   })
 

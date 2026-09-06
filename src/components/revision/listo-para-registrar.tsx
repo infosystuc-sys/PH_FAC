@@ -53,6 +53,9 @@ export function ListoParaRegistrar({
     resultado.fecha,
     resultado.tipoFactura,
     resultado.concepto,
+    // El cotejo contra la orden de compra va último porque es el que el
+    // operador resuelve arriba, en la tarjeta de la OC, no acá.
+    resultado.ordenCompra,
   ]
 
   return (

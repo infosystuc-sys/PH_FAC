@@ -63,10 +63,20 @@ export type CargoGuardado = {
   gravado: boolean
 }
 
+/** Un renglón leído del PDF, ya guardado. Solo sirve para cotejar contra la OC. */
+export type RenglonPdfGuardado = {
+  id: number
+  orden: number
+  codigo: string | null
+  cantidad: string | null
+}
+
 export type Detalle = {
   campos: CampoGuardado[]
   renglones: RenglonGuardado[]
   cargos: CargoGuardado[]
+  /** Lo que dice el papel, para cotejar contra `renglones`, que es lo que se factura. */
+  renglonesPdf: RenglonPdfGuardado[]
   auditoria: EntradaAuditoria[]
 }
 
@@ -92,6 +102,8 @@ export async function guardarExtraccionEn(
     .query('DELETE FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id')
   await e.request().input('id', sql.Int, comprobanteId)
     .query('DELETE FROM PHF_CARGO WHERE COMPROBANTE_ID = @id')
+  await e.request().input('id', sql.Int, comprobanteId)
+    .query('DELETE FROM PHF_RENGLON_PDF WHERE COMPROBANTE_ID = @id')
 
   const conValor: number[] = []
 
@@ -153,6 +165,24 @@ export async function guardarExtraccionEn(
       `)
   }
 
+  // Los renglones leidos del PDF (solo articulos). Van a su propia tabla y
+  // no a PHF_RENGLON: ahi viven los que se van a facturar, que salen de la
+  // orden de compra. Ver el comentario de PHF_RENGLON_PDF en migrate.ts.
+  let ordenPdf = 0
+  for (const r of extraccion.renglonesPdf) {
+    ordenPdf += 1
+    await e
+      .request()
+      .input('id', sql.Int, comprobanteId)
+      .input('orden', sql.Int, ordenPdf)
+      .input('codigo', sql.NVarChar(60), r.codigo)
+      .input('cant', sql.Decimal(19, 4), parsearImporteONulo(r.cantidad))
+      .query(`
+        INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, CANTIDAD)
+        VALUES (@id, @orden, @codigo, @cant)
+      `)
+  }
+
   if (conValor.length === 0) return 0
   return conValor.reduce((a, b) => a + b, 0) / conValor.length
 }
@@ -176,9 +206,12 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
 
       SELECT ID, ORDEN, CONCEPTO, IMPORTE, GRAVADO
       FROM PHF_CARGO WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
+
+      SELECT ID, ORDEN, CODIGO, CANTIDAD
+      FROM PHF_RENGLON_PDF WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
     `)
 
-  const [c, g, a, cg] = r.recordsets as unknown as Record<string, unknown>[][]
+  const [c, g, a, cg, rp] = r.recordsets as unknown as Record<string, unknown>[][]
 
   return {
     campos: c.map((x) => ({
@@ -207,6 +240,12 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       ocTalonario: x.OC_TALONARIO === null ? null : Number(x.OC_TALONARIO),
       ocNRenglOc: x.OC_N_RENGL_OC === null ? null : Number(x.OC_N_RENGL_OC),
       ocPendiente: x.OC_PENDIENTE === null ? null : String(x.OC_PENDIENTE),
+    })),
+    renglonesPdf: rp.map((x) => ({
+      id: Number(x.ID),
+      orden: Number(x.ORDEN),
+      codigo: x.CODIGO === null ? null : String(x.CODIGO),
+      cantidad: x.CANTIDAD === null ? null : String(x.CANTIDAD),
     })),
     cargos: cg.map((x) => ({
       id: Number(x.ID),

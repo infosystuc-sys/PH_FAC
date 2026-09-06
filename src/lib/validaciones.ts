@@ -1,6 +1,7 @@
 import { totalImputado, parsearImporte } from './formato'
 import { formatPorcentaje, esIvaSobreLaBase, type LineaAlicuota } from './alicuotas'
 import type { LineaPercepcion, LineaVarios } from './percepciones'
+import { describirCotejo, type ResultadoCotejoOc } from './cotejoOc'
 
 export type ResultadoValidacion = {
   estado: 'ok' | 'advertencia' | 'error'
@@ -221,6 +222,45 @@ export function validarNetoContraIva(
       `$ ${fmt.format(esperado)} y está declarado $ ${fmt.format(neto)} ` +
       `(difieren $ ${fmt.format(diferencia)}). Revisá si al neto le falta un cargo ` +
       `o si alguna línea de IVA tiene mal el porcentaje.`,
+  }
+}
+
+/**
+ * El cotejo de una factura de artículos contra su orden de compra.
+ *
+ * Bloquea siempre que haya una diferencia -- decisión del usuario,
+ * 2026-09-06. A diferencia del cotejo contra el remito, que mandaba a
+ * observación, acá la OC es un compromiso previo: si la factura cobra algo
+ * que no se pidió, o más de lo que queda por facturar, no es algo que se
+ * arregle releyendo el papel.
+ *
+ * Sin OC imputada también bloquea: toda factura de artículos se imputa a
+ * una, así que no tenerla no es un caso válido sino un paso que falta.
+ */
+export function validarCotejoOc(
+  tipoFactura: string | null | undefined,
+  tieneOc: boolean,
+  cotejo: ResultadoCotejoOc | null,
+): ResultadoValidacion {
+  if (tipoFactura !== 'articulos') {
+    return { estado: 'ok', mensaje: 'No aplica: solo las facturas de artículos se imputan a una orden de compra.' }
+  }
+  if (!tieneOc) {
+    return { estado: 'error', mensaje: 'Falta imputar la factura a una orden de compra.' }
+  }
+  if (!cotejo || cotejo.problemas.length === 0) {
+    const sinFacturar = cotejo?.noFacturados.length ?? 0
+    return {
+      estado: 'ok',
+      mensaje:
+        sinFacturar > 0
+          ? `La factura coincide con la orden de compra. Quedan ${sinFacturar} renglón(es) sin facturar en la orden.`
+          : 'La factura coincide con la orden de compra.',
+    }
+  }
+  return {
+    estado: 'error',
+    mensaje: `La factura no coincide con la orden de compra: ${describirCotejo(cotejo)}.`,
   }
 }
 

@@ -247,6 +247,7 @@ describe('desnormalizarBandejaEn', () => {
         },
         renglones: [],
         cargos: [],
+        renglonesPdf: [],
       })
 
       const r = await tx.request().input('id', sql.Int, id).query(`
@@ -273,6 +274,7 @@ describe('desnormalizarBandejaEn', () => {
         },
         renglones: [],
         cargos: [],
+        renglonesPdf: [],
       })
 
       const r = await tx.request().input('id', sql.Int, id)

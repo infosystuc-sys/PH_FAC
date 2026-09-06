@@ -2,7 +2,13 @@ import Anthropic from '@anthropic-ai/sdk'
 import { camposIaPara, schemaExtraccion } from '@/lib/campos'
 import { CLAVES_RENGLON, type RenglonExtraido } from '@/lib/renglones'
 import { CLAVES_CARGO, type CargoExtraido } from '@/lib/cargos'
-import { ANALIZA_RENGLONES, ANALIZA_CARGOS, type TipoFactura } from '@/lib/tipoFactura'
+import { CLAVES_RENGLON_PDF, type RenglonPdf } from '@/lib/renglonesPdf'
+import {
+  ANALIZA_RENGLONES,
+  ANALIZA_CARGOS,
+  ANALIZA_RENGLONES_PDF,
+  type TipoFactura,
+} from '@/lib/tipoFactura'
 import { PROMPTS_EXTRACCION } from './prompt'
 
 export type CampoExtraido = { valor: string | null; confianza: number }
@@ -12,6 +18,12 @@ export type Extraccion = {
   renglones: RenglonExtraido[]
   /** Los cargos que componen el neto gravado. Solo en tarjeta; vacío en el resto. */
   cargos: CargoExtraido[]
+  /**
+   * Los renglones leídos del PDF, para cotejar contra la orden de compra.
+   * Solo en artículos; vacío en el resto. No se graban en Tango: lo que se
+   * factura sale de la OC.
+   */
+  renglonesPdf: RenglonPdf[]
 }
 
 export type UsoTokens = { inputTokens: number; outputTokens: number }
@@ -91,7 +103,26 @@ export function parsearRespuesta(texto_: string, tipo: TipoFactura): Extraccion 
   // otros tipos se descartan aunque vinieran, mismo criterio que arriba.
   const cargos = ANALIZA_CARGOS[tipo] ? parsearCargos(crudo.cargos) : []
 
-  return { campos, renglones, cargos }
+  // Los renglones del PDF, para cotejar contra la orden de compra. Solo
+  // articulos los pide; en el resto se descartan aunque vinieran.
+  const renglonesPdf = ANALIZA_RENGLONES_PDF[tipo] ? parsearRenglonesPdf(crudo.renglonesPdf) : []
+
+  return { campos, renglones, cargos, renglonesPdf }
+}
+
+/** Los renglones del PDF. Uno sin código ni cantidad no sirve para cotejar. */
+export function parsearRenglonesPdf(crudo: unknown): RenglonPdf[] {
+  const renglones: RenglonPdf[] = []
+  for (const r of Array.isArray(crudo) ? crudo : []) {
+    if (r === null || typeof r !== 'object') continue
+    const o = r as Record<string, unknown>
+    const fila = Object.fromEntries(
+      CLAVES_RENGLON_PDF.map((k) => [k, texto(o[k])]),
+    ) as unknown as RenglonPdf
+    if (fila.codigo === null && fila.cantidad === null) continue
+    renglones.push(fila)
+  }
+  return renglones
 }
 
 /** Los cargos de la respuesta cruda. Un cargo sin importe no sirve para sumar. */

@@ -1,6 +1,13 @@
 import { CLAVES_RENGLON } from './renglones'
 import { CLAVES_CARGO } from './cargos'
-import { ANALIZA_RENGLONES, ANALIZA_CARGOS, analizaCampo, type TipoFactura } from './tipoFactura'
+import { CLAVES_RENGLON_PDF } from './renglonesPdf'
+import {
+  ANALIZA_RENGLONES,
+  ANALIZA_CARGOS,
+  ANALIZA_RENGLONES_PDF,
+  analizaCampo,
+  type TipoFactura,
+} from './tipoFactura'
 
 export type GrupoCampo = 'comprobante' | 'proveedor' | 'importes' | 'imputacion'
 /**
@@ -281,6 +288,16 @@ export function schemaExtraccion(tipo: TipoFactura): Record<string, unknown> {
     const cargo: Record<string, unknown> = {}
     for (const k of CLAVES_CARGO) cargo[k] = VALOR
     props.cargos = { type: 'array', items: objeto(cargo) }
+  }
+
+  // Los renglones del PDF de una factura de artículos, para cotejarlos
+  // contra la orden de compra. Dos datos por ítem y no cinco: con los 32
+  // campos de cabecera, el array de cinco no entra en el techo de la
+  // gramática y el de dos sí (medido contra la API, 2026-09-06).
+  if (ANALIZA_RENGLONES_PDF[tipo]) {
+    const renglon: Record<string, unknown> = {}
+    for (const k of CLAVES_RENGLON_PDF) renglon[k] = VALOR
+    props.renglonesPdf = { type: 'array', items: objeto(renglon) }
   }
 
   return objeto(props)

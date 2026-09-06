@@ -17,6 +17,7 @@ import {
   validarVarios,
   validarTipoFactura,
   validarNetoContraIva,
+  validarCotejoOc,
   netoQueImplicaElIva,
   validarAlicuotas,
   type ResultadoValidacion,
@@ -26,6 +27,8 @@ import { esCuitPropio } from './empresa'
 import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impuestos'
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
+import { cotejarConOc, type ResultadoCotejoOc } from '@/lib/cotejoOc'
+import { sinonimosDelProveedor } from '@/server/tango/articulos'
 import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 
@@ -171,6 +174,8 @@ export type ResultadoListoParaRegistrar = {
   alicuotas: ResultadoValidacion
   varios: ResultadoValidacion
   netoIva: ResultadoValidacion
+  /** Cotejo contra la orden de compra imputada. Solo aplica en articulos. */
+  ordenCompra: ResultadoValidacion
   /**
    * El neto que implican las líneas de IVA, para ofrecérselo al operador de
    * un clic cuando `netoIva` no cierra. `null` si no hay ninguna línea que
@@ -220,6 +225,36 @@ export async function validarListoParaRegistrarEn(
   const fecha = validarFecha(valores.fecha)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)
 
+  // Cotejo contra la orden de compra imputada (solo articulos). Los
+  // renglones con OC son lo que se va a facturar y `renglonesPdf` es lo que
+  // dice el papel; si no coinciden, bloquea.
+  //
+  // Los sinonimos se piden solo si hay algo que cotejar: es una consulta a
+  // CPA15 que en conceptos y tarjeta no tendria a quien servir.
+  const conOc = detalle.renglones.filter((r) => r.ocNOrdenCo)
+  let cotejoOc: ResultadoCotejoOc | null = null
+  if (valores.tipoFactura === 'articulos' && conOc.length > 0) {
+    const codigos = detalle.renglonesPdf
+      .map((r) => (r.codigo ?? '').trim())
+      .filter((c) => c !== '')
+    const sinonimos = codProvee ? await sinonimosDelProveedor(codProvee, codigos) : new Map()
+    // `sinonimosDelProveedor` devuelve nuestro codigo -> el del proveedor;
+    // el cotejo necesita la vuelta, del codigo impreso al nuestro.
+    const alNuestro = new Map([...sinonimos].map(([nuestro, suyo]) => [suyo, nuestro]))
+
+    cotejoOc = cotejarConOc(
+      detalle.renglonesPdf.map((r) => ({ orden: r.orden, codigo: r.codigo, cantidad: r.cantidad })),
+      conOc.map((r) => ({
+        nRenglOc: r.ocNRenglOc!,
+        codArticu: (r.codigoFinal ?? r.codigo ?? '').trim(),
+        descripcion: r.descripcion ?? '',
+        pendiente: Number(r.ocPendiente ?? 0),
+      })),
+      alNuestro,
+    )
+  }
+  const ordenCompra = validarCotejoOc(valores.tipoFactura, conOc.length > 0, cotejoOc)
+
   // El concepto aplica en conceptos (sale de la ficha del proveedor) y en
   // tarjeta (es el fijo de comisiones). Las de articulos se imputan por
   // renglon: ahi no hay concepto y el item dice "No aplica".
@@ -260,6 +295,7 @@ export async function validarListoParaRegistrarEn(
     concepto,
     alicuotas,
     netoIva,
+    ordenCompra,
   ].some((v) => v.estado === 'error')
 
   return {
@@ -272,6 +308,7 @@ export async function validarListoParaRegistrarEn(
     concepto,
     alicuotas,
     netoIva,
+    ordenCompra,
     netoSegunIva,
     bloqueante,
   }
