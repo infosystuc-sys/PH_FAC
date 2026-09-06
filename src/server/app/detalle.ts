@@ -39,6 +39,16 @@ export type RenglonGuardado = RenglonExtraido & {
    * Es lo que se guarda en CPA15 al confirmar el emparejamiento.
    */
   codProveedor: string | null
+  /**
+   * A qué renglón de qué orden de compra se imputa esta línea. Los tres
+   * juntos son la clave que va a `CPA_OC_FACTURA` al registrar. `null` en
+   * los comprobantes que todavía siguen el circuito viejo de remito.
+   */
+  ocNOrdenCo: string | null
+  ocTalonario: number | null
+  ocNRenglOc: number | null
+  /** Lo que la OC tenía pendiente al elegirla, para cotejar en pantalla. */
+  ocPendiente: string | null
 }
 
 export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
@@ -157,7 +167,8 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
 
       SELECT ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
              PRECIO_UNITARIO_IA, IMPORTE_IA, REMITO_NCOMP_IN_S, REMITO_N_RENGL_S,
-             REMITO_NUMERO, CANTIDAD_REMITO, CODIGO_FINAL, PORC_BONIF, COD_PROVEEDOR
+             REMITO_NUMERO, CANTIDAD_REMITO, CODIGO_FINAL, PORC_BONIF, COD_PROVEEDOR,
+             OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE
       FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
       SELECT FECHA, TEXTO, USUARIO
@@ -192,6 +203,10 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       codigoFinal: x.CODIGO_FINAL === null ? null : String(x.CODIGO_FINAL),
       porcBonif: x.PORC_BONIF === null ? null : String(x.PORC_BONIF),
       codProveedor: x.COD_PROVEEDOR === null ? null : String(x.COD_PROVEEDOR),
+      ocNOrdenCo: x.OC_N_ORDEN_CO === null ? null : String(x.OC_N_ORDEN_CO),
+      ocTalonario: x.OC_TALONARIO === null ? null : Number(x.OC_TALONARIO),
+      ocNRenglOc: x.OC_N_RENGL_OC === null ? null : Number(x.OC_N_RENGL_OC),
+      ocPendiente: x.OC_PENDIENTE === null ? null : String(x.OC_PENDIENTE),
     })),
     cargos: cg.map((x) => ({
       id: Number(x.ID),

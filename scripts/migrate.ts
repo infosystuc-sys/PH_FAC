@@ -183,6 +183,10 @@ const DEFINICIONES: Definicion[] = [
         CODIGO_FINAL        NVARCHAR(60)   NULL,
         PORC_BONIF          DECIMAL(9,4)   NULL,
         COD_PROVEEDOR       NVARCHAR(60)   NULL,
+        OC_N_ORDEN_CO       VARCHAR(14)    NULL,
+        OC_TALONARIO        INT            NULL,
+        OC_N_RENGL_OC       INT            NULL,
+        OC_PENDIENTE        DECIMAL(19,4)  NULL,
         CONSTRAINT PK_PHF_RENGLON PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_COMP FOREIGN KEY (COMPROBANTE_ID)
@@ -217,6 +221,26 @@ const DEFINICIONES: Definicion[] = [
       // factura. Se guarda para poder asociarlo despues a nuestro articulo
       // en CPA15.COD_SINONI, que es la funcion que Tango tiene prevista.
       { nombre: 'COD_PROVEEDOR', ddl: 'COD_PROVEEDOR NVARCHAR(60) NULL' },
+      // A que renglon de que orden de compra se imputa esta linea. Desde
+      // 2026-09-06 las facturas de articulos se imputan a una OC y no se
+      // cotejan contra un remito (decision del usuario). Los tres datos
+      // juntos son la clave que despues va a CPA_OC_FACTURA:
+      // TALONARIO_OC + N_ORDEN_CO + N_RENGL_OC.
+      //
+      // Van en el renglon y no en la cabecera a proposito: hoy la pantalla
+      // deja elegir una sola OC por factura, pero hay 64 facturas
+      // historicas repartidas entre dos OC, y el usuario pidio dejar la
+      // puerta abierta. Con la OC en el renglon, soportar varias es un
+      // cambio de pantalla y no de modelo de datos.
+      { nombre: 'OC_N_ORDEN_CO', ddl: 'OC_N_ORDEN_CO VARCHAR(14) NULL' },
+      { nombre: 'OC_TALONARIO', ddl: 'OC_TALONARIO INT NULL' },
+      { nombre: 'OC_N_RENGL_OC', ddl: 'OC_N_RENGL_OC INT NULL' },
+      // Lo que la OC tiene pendiente de facturar en ese renglon, congelado
+      // al momento de elegirla. Mismo criterio que CANTIDAD_REMITO: sirve
+      // para mostrar al lado de lo que se factura, y una vez consumida la
+      // OC deja de aparecer en la lista de pendientes y el dato quedaria
+      // huerfano. El pendiente REAL se relee de Tango al registrar.
+      { nombre: 'OC_PENDIENTE', ddl: 'OC_PENDIENTE DECIMAL(19,4) NULL' },
     ],
   },
   {
