@@ -24,6 +24,8 @@ import {
   type ConceptoProveedor,
 } from '@/server/tango/conceptos'
 import { renglonesDelRemitoInterno } from '@/server/tango/remitos'
+import { buscarOcPendientes, type OrdenCompra } from '@/server/tango/ordenesCompra'
+import { asignarOcEn } from './ordenCompra'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
 import { aprenderImpuesto, type TipoAprendizaje } from './aprendizajeImpuestos'
@@ -463,6 +465,29 @@ export async function aprenderImpuestoTango(
 /** Todo el maestro de conceptos, para que el operador elija uno a mano. */
 export async function listarConceptosTango(): Promise<ConceptoProveedor[]> {
   return listarConceptos()
+}
+
+/** Las órdenes de compra del proveedor con algo pendiente de facturar. */
+export async function listarOcDelProveedor(codProvee: string): Promise<OrdenCompra[]> {
+  return buscarOcPendientes(codProvee)
+}
+
+/**
+ * El operador elige a qué orden de compra se imputa esta factura de
+ * artículos. Trae los renglones pendientes de esa OC como detalle del
+ * comprobante -- ver `asignarOcEn`.
+ *
+ * Con `revalidatePath` porque cambia los renglones enteros, que es lo que
+ * la pantalla muestra debajo: sin refrescar, el operador elegiría una OC y
+ * seguiría viendo el detalle anterior.
+ */
+export async function imputarOrdenCompra(
+  comprobanteId: number,
+  nOrdenCo: string,
+): Promise<{ renglones: number }> {
+  const renglones = await conTransaccion((tx) => asignarOcEn(tx, comprobanteId, nOrdenCo))
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  return { renglones }
 }
 
 /**

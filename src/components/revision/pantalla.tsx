@@ -9,6 +9,7 @@ import { PanelValidaciones } from './validaciones'
 import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
 import { Cargos } from './cargos'
+import { SelectorOc } from './selector-oc'
 import { Historial } from './historial'
 import type { RenglonGuardado, CargoGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
@@ -200,6 +201,16 @@ export function Pantalla({
           aprendidosPercepcion={aprendidosPercepcion}
           aprendidosVarios={aprendidosVarios}
         />
+        {/* Solo en articulos: es el paso que reemplaza al remito como
+            origen del detalle, y va antes de Renglones porque los define. */}
+        {iniciales.tipoFactura?.valor === 'articulos' && (
+          <SelectorOc
+            comprobanteId={comprobanteId}
+            codProvee={codProvee}
+            ocImputada={renglones.find((r) => r.ocNOrdenCo)?.ocNOrdenCo ?? null}
+            soloLectura={soloLectura}
+          />
+        )}
         {/* Va antes de Renglones porque en tarjeta es la tarjeta con el
             detalle del comprobante, y en tarjeta no hay renglones. */}
         <Cargos

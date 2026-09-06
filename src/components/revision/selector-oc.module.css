@@ -1,0 +1,144 @@
+/* Mismo padding horizontal y max-width que las demas tarjetas del panel
+   derecho, para que los bordes aliniem (ver .derecha en pantalla.module.css). */
+.tarjeta {
+  margin: 0 24px 16px;
+  max-width: 760px;
+  padding: 16px 18px;
+  background: var(--superficie);
+  border: 1px solid var(--borde-sutil-3);
+  border-radius: 10px;
+}
+
+.encabezado {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.titulo {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.cambiar {
+  padding: 3px 9px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--fondo-app);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  color: var(--texto-3);
+  cursor: pointer;
+}
+
+.cambiar:hover {
+  color: var(--texto);
+}
+
+.imputada {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--texto-2);
+}
+
+/* Sin OC no se puede registrar la factura: se dice en amarillo, no en rojo,
+   porque no es un error sino el paso que falta. */
+.aviso {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: var(--alerta-fondo);
+  border: 1px solid var(--alerta-borde);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--texto-2);
+}
+
+.vacio {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--texto-4);
+}
+
+.lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.opcion {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 130px 1fr 120px;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 1px solid var(--borde);
+  border-radius: 7px;
+  background: var(--fondo-app);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.opcion:hover:not(:disabled) {
+  border-color: var(--acento);
+  background: var(--superficie);
+}
+
+.opcion:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* El numero de OC lo cotejá el operador contra el papel: va en mono, como
+   todo dato que se coteja (regla tipografica central del diseño). */
+.numero {
+  font-family: var(--mono);
+}
+
+.meta {
+  color: var(--texto-3);
+  font-size: 11.5px;
+}
+
+.importe {
+  font-family: var(--mono);
+  text-align: right;
+}
+
+/* El detalle de la OC se muestra siempre, no al pasar el mouse: el operador
+   elige la OC justamente mirando si los articulos son los de la factura. */
+.detalle {
+  margin: 4px 0 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--borde-sutil-2);
+}
+
+.fila {
+  display: grid;
+  grid-template-columns: 90px 1fr 110px;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11.5px;
+  color: var(--texto-3);
+}
+
+.codigo {
+  font-family: var(--mono);
+}
+
+.desc {
+  overflow-wrap: anywhere;
+}
+
+.cant {
+  font-family: var(--mono);
+  text-align: right;
+}
