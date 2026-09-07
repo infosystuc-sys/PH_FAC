@@ -56,6 +56,9 @@ export function ListoParaRegistrar({
     // El cotejo contra la orden de compra va último porque es el que el
     // operador resuelve arriba, en la tarjeta de la OC, no acá.
     resultado.ordenCompra,
+    // Y pegada a él, su contracara sobre las cantidades ya corregidas: el
+    // cotejo mira lo que la IA leyó del PDF y ésta lo que se va a registrar.
+    resultado.cantidadesOc,
   ]
 
   return (

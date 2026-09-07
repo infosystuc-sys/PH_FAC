@@ -18,6 +18,7 @@ import {
   validarTipoFactura,
   validarNetoContraIva,
   validarCotejoOc,
+  validarCantidadesOc,
   netoQueImplicaElIva,
   validarAlicuotas,
   type ResultadoValidacion,
@@ -28,6 +29,7 @@ import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impues
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
 import { cotejarConOc, type ResultadoCotejoOc } from '@/lib/cotejoOc'
+import { parsearImporte } from '@/lib/formato'
 import { articulosPorSinonimo } from '@/server/tango/articulos'
 import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
@@ -176,6 +178,8 @@ export type ResultadoListoParaRegistrar = {
   netoIva: ResultadoValidacion
   /** Cotejo contra la orden de compra imputada. Solo aplica en articulos. */
   ordenCompra: ResultadoValidacion
+  /** Que ningún renglón facture más de lo que la orden tiene pendiente. */
+  cantidadesOc: ResultadoValidacion
   /**
    * El neto que implican las líneas de IVA, para ofrecérselo al operador de
    * un clic cuando `netoIva` no cierra. `null` si no hay ninguna línea que
@@ -260,6 +264,18 @@ export async function validarListoParaRegistrarEn(
   }
   const ordenCompra = validarCotejoOc(valores.tipoFactura, conOc.length > 0, cotejoOc)
 
+  // Contra las cantidades del RENGLON, que son las que se van a registrar --
+  // el cotejo de arriba mira las que leyo la IA del PDF, y dejan de ser lo
+  // mismo en cuanto el operador corrige una a mano.
+  const cantidadesOc = validarCantidadesOc(
+    valores.tipoFactura,
+    conOc.map((r) => ({
+      codigo: r.codigoFinal ?? r.codigo,
+      cantidad: parsearImporte(r.cantidad),
+      pendiente: r.ocPendiente === null ? null : Number(r.ocPendiente),
+    })),
+  )
+
   // El concepto aplica en conceptos (sale de la ficha del proveedor) y en
   // tarjeta (es el fijo de comisiones). Las de articulos se imputan por
   // renglon: ahi no hay concepto y el item dice "No aplica".
@@ -301,6 +317,7 @@ export async function validarListoParaRegistrarEn(
     alicuotas,
     netoIva,
     ordenCompra,
+    cantidadesOc,
   ].some((v) => v.estado === 'error')
 
   return {
@@ -314,6 +331,7 @@ export async function validarListoParaRegistrarEn(
     alicuotas,
     netoIva,
     ordenCompra,
+    cantidadesOc,
     netoSegunIva,
     bloqueante,
   }

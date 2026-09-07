@@ -264,6 +264,62 @@ export function validarCotejoOc(
   }
 }
 
+/**
+ * Que ningún renglón facture más de lo que la orden de compra tiene
+ * disponible -- pedido del usuario, 2026-09-07.
+ *
+ * `validarCotejoOc` ya compara contra el pendiente, pero mira las cantidades
+ * que la IA leyó del PDF. Esta mira las del renglón que se va a registrar,
+ * que es otra cosa en cuanto el operador corrige una a mano: subirla dejaba
+ * la pantalla en verde y el error aparecía recién al apretar "Registrar en
+ * Tango", con la transacción ya abierta.
+ *
+ * `registrarComprobanteEn` vuelve a chequearlo contra el pendiente releído
+ * dentro de la transacción, y ese sigue siendo el que manda: entre la
+ * revisión y el registro, otra factura pudo haber consumido saldo. Este es
+ * para que el operador se entere antes.
+ *
+ * La tolerancia es la misma que usa el cotejo: las cantidades salen de
+ * parsear texto y `CPA36` es DECIMAL(22,7).
+ */
+const TOLERANCIA_CANTIDAD = 0.00005
+
+export type RenglonContraOc = {
+  codigo: string | null
+  cantidad: number
+  /** Lo que la OC tenía pendiente al imputarla (`PHF_RENGLON.OC_PENDIENTE`). */
+  pendiente: number | null
+}
+
+export function validarCantidadesOc(
+  tipoFactura: string | null | undefined,
+  renglones: RenglonContraOc[],
+): ResultadoValidacion {
+  if (tipoFactura !== 'articulos') {
+    return { estado: 'ok', mensaje: 'No aplica: solo las facturas de artículos se imputan a una orden de compra.' }
+  }
+
+  const fmt = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 })
+  const excedidos = renglones.filter(
+    (r) => r.pendiente !== null && r.cantidad - r.pendiente > TOLERANCIA_CANTIDAD,
+  )
+  if (excedidos.length === 0) {
+    return { estado: 'ok', mensaje: 'Las cantidades entran en lo que la orden tiene pendiente.' }
+  }
+
+  const detalle = excedidos
+    .map(
+      (r) =>
+        `${(r.codigo ?? '').trim() || 'un renglón'} factura ${fmt.format(r.cantidad)} y quedan ` +
+        `${fmt.format(r.pendiente!)}`,
+    )
+    .join('; ')
+  return {
+    estado: 'error',
+    mensaje: `Hay renglones que facturan más de lo que la orden tiene pendiente: ${detalle}.`,
+  }
+}
+
 const RE_CAE = /^\d{14}$/
 
 /**

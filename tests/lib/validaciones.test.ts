@@ -14,6 +14,7 @@ import {
   parsearFechaArg,
   sinCerosDeRelleno,
   validarNetoContraIva,
+  validarCantidadesOc,
 } from '@/lib/validaciones'
 import type { LineaAlicuota } from '@/lib/alicuotas'
 
@@ -301,3 +302,56 @@ describe('validarNetoContraIva', () => {
   })
 })
 
+
+describe('validarCantidadesOc', () => {
+  // Pedido del usuario, 2026-09-07. validarCotejoOc ya compara contra el
+  // pendiente, pero mira las cantidades que la IA leyo del PDF; esta mira las
+  // del renglon que se va a registrar, que dejan de ser lo mismo en cuanto el
+  // operador corrige una a mano.
+  const renglon = (cantidad: number, pendiente: number | null) => ({
+    codigo: '106037',
+    cantidad,
+    pendiente,
+  })
+
+  it('deja pasar lo que entra en lo pendiente', () => {
+    expect(validarCantidadesOc('articulos', [renglon(30, 30)]).estado).toBe('ok')
+    expect(validarCantidadesOc('articulos', [renglon(10, 30)]).estado).toBe('ok')
+  })
+
+  it('bloquea el renglon que factura mas de lo pendiente', () => {
+    const r = validarCantidadesOc('articulos', [renglon(31, 30)])
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('106037')
+    expect(r.mensaje).toContain('31')
+    expect(r.mensaje).toContain('30')
+  })
+
+  it('tolera el redondeo, igual que el cotejo', () => {
+    // Las cantidades salen de parsear texto y CPA36 es DECIMAL(22,7).
+    expect(validarCantidadesOc('articulos', [renglon(30.00001, 30)]).estado).toBe('ok')
+  })
+
+  it('nombra todos los renglones excedidos, no solo el primero', () => {
+    const r = validarCantidadesOc('articulos', [
+      { codigo: 'A', cantidad: 5, pendiente: 2 },
+      { codigo: 'B', cantidad: 9, pendiente: 1 },
+    ])
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('A')
+    expect(r.mensaje).toContain('B')
+  })
+
+  it('ignora el renglon sin pendiente congelado: no hay contra que comparar', () => {
+    expect(validarCantidadesOc('articulos', [renglon(999, null)]).estado).toBe('ok')
+  })
+
+  it('no aplica fuera de articulos', () => {
+    expect(validarCantidadesOc('conceptos', [renglon(999, 1)]).estado).toBe('ok')
+    expect(validarCantidadesOc('tarjeta', [renglon(999, 1)]).estado).toBe('ok')
+  })
+
+  it('sin renglones no bloquea', () => {
+    expect(validarCantidadesOc('articulos', []).estado).toBe('ok')
+  })
+})

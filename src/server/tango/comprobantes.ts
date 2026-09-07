@@ -498,6 +498,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         SELECT r.COD_ARTICU, r.COD_DEPOSI, r.PRECIO,
                ISNULL(r.CANTIDAD_FACTURADA, 0) AS CANTIDAD_FACTURADA,
                ISNULL(r.PENDIENTE_FACTURAR, 0) AS PENDIENTE_FACTURAR,
+               ISNULL(r.PENDIENTE_RECIBIR_FACTURADA, 0) AS PENDIENTE_RECIBIR_FACTURADA,
                h.NRO_SUCURS, h.TALONARIO
         FROM CPA36 r JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
         WHERE r.N_ORDEN_CO=@oc AND r.N_RENGL_OC=@r`)
@@ -628,15 +629,41 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     // mostrando todo como pendiente para siempre. Decision del usuario,
     // 2026-09-06.
     //
-    // Solo estas dos columnas: CPA36 tiene ademas variantes _2 y
-    // PENDIENTE_FACTURAR_RECIBIDA, que miden otra cosa (lo pendiente contra
-    // lo RECIBIDO, no contra lo pedido) y esta app no usa.
+    // CANTIDAD_FACTURADA_PANTALLA es lo que la pantalla de ordenes de Tango
+    // muestra como facturado, y acompaña a CANTIDAD_FACTURADA: en las 6.290
+    // filas de CPA36 con algo facturado las dos son iguales, sin una sola
+    // excepcion, incluidas las que se facturaron en siete u ocho veces. Por
+    // eso acumula igual que ella y no guarda la cantidad de esta factura
+    // sola. Sin esto, una orden facturada por esta app le figuraba en cero
+    // al usuario dentro de Tango -- que es como aparecio (2026-09-07).
+    //
+    // PENDIENTE_RECIBIR_FACTURADA lleva lo facturado que todavia no se
+    // recibio. Se escribe con la cantidad facturada por indicacion expresa
+    // del usuario, 2026-09-07.
+    //
+    //   OJO, y esta escrito para que se pueda revisar: los datos de la base
+    //   dicen otra cosa. En las 9 filas donde Tango lo dejo distinto de cero
+    //   vale exactamente CANTIDAD_FACTURADA - CAN_RECIBI, las 9 sobre 9. Con
+    //   la mercaderia ya recibida --79 de los 165 renglones con pendiente lo
+    //   estan-- esa cuenta da cero y esto en cambio graba la cantidad, o sea
+    //   deja dicho que esta pendiente de recibir algo que ya entro. Si
+    //   aparece mal en Tango, el cambio es poner Math.max(0, facturada -
+    //   CAN_RECIBI) aca.
+    //
+    // Las variantes _2 y PENDIENTE_FACTURAR_RECIBIDA siguen sin tocarse:
+    // miden lo pendiente contra lo RECIBIDO y esta app no las usa.
+    const facturada = Number(sta.CANTIDAD_FACTURADA) + cantidad
     await tx.request()
       .input('oc', sql.VarChar(14), nOrdenCo).input('r', sql.Int, nRenglOc)
-      .input('facturada', sql.Decimal(18, 4), Number(sta.CANTIDAD_FACTURADA) + cantidad)
+      .input('facturada', sql.Decimal(18, 4), facturada)
       .input('pend', sql.Decimal(18, 4), Math.max(0, pendiente - cantidad))
+      .input('pendRecibir', sql.Decimal(18, 4), Number(sta.PENDIENTE_RECIBIR_FACTURADA) + cantidad)
       .query(`
-        UPDATE CPA36 SET CANTIDAD_FACTURADA=@facturada, PENDIENTE_FACTURAR=@pend
+        UPDATE CPA36
+        SET CANTIDAD_FACTURADA = @facturada,
+            CANTIDAD_FACTURADA_PANTALLA = @facturada,
+            PENDIENTE_FACTURAR = @pend,
+            PENDIENTE_RECIBIR_FACTURADA = @pendRecibir
         WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
 
     ocsAfectadas.add(nOrdenCo)

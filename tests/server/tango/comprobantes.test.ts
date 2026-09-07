@@ -309,6 +309,8 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
       SELECT TOP 1 h.N_ORDEN_CO, h.TALONARIO, LTRIM(RTRIM(h.COD_PROVEE)) AS COD_PROVEE,
              g.N_RENGL_OC, LTRIM(RTRIM(g.COD_ARTICU)) AS COD_ARTICU, g.PRECIO,
              ISNULL(g.CANTIDAD_FACTURADA, 0) AS CANTIDAD_FACTURADA,
+             ISNULL(g.CANTIDAD_FACTURADA_PANTALLA, 0) AS CANTIDAD_FACTURADA_PANTALLA,
+             ISNULL(g.PENDIENTE_RECIBIR_FACTURADA, 0) AS PENDIENTE_RECIBIR_FACTURADA,
              ISNULL(g.PENDIENTE_FACTURAR, 0) AS PENDIENTE_FACTURAR
       FROM CPA35 h JOIN CPA36 g ON g.N_ORDEN_CO = h.N_ORDEN_CO
       WHERE ISNULL(g.PENDIENTE_FACTURAR, 0) >= 2 AND ISNULL(g.PRECIO, 0) > 0
@@ -376,8 +378,20 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
       // escribe esta app.
       const cpa36 = await tx.request()
         .input('oc', sql.VarChar(14), String(oc.N_ORDEN_CO)).input('r', sql.Int, Number(oc.N_RENGL_OC))
-        .query(`SELECT CANTIDAD_FACTURADA, PENDIENTE_FACTURAR FROM CPA36 WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
+        .query(`
+          SELECT CANTIDAD_FACTURADA, PENDIENTE_FACTURAR,
+                 CANTIDAD_FACTURADA_PANTALLA, PENDIENTE_RECIBIR_FACTURADA
+          FROM CPA36 WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
       expect(Number(cpa36.recordset[0].CANTIDAD_FACTURADA)).toBe(Number(oc.CANTIDAD_FACTURADA) + 1)
+      // Las dos columnas que Tango lee para su pantalla de ordenes -- pedido
+      // del usuario, 2026-09-07. Sin CANTIDAD_FACTURADA_PANTALLA, una orden
+      // facturada por esta app le figuraba en cero dentro de Tango.
+      expect(Number(cpa36.recordset[0].CANTIDAD_FACTURADA_PANTALLA)).toBe(
+        Number(oc.CANTIDAD_FACTURADA) + 1,
+      )
+      expect(Number(cpa36.recordset[0].PENDIENTE_RECIBIR_FACTURADA)).toBe(
+        Number(oc.PENDIENTE_RECIBIR_FACTURADA) + 1,
+      )
       expect(Number(cpa36.recordset[0].PENDIENTE_FACTURAR)).toBe(Number(oc.PENDIENTE_FACTURAR) - 1)
     })
   }, 90000)

@@ -49,10 +49,15 @@ describe('cargarModeloAsiento', () => {
 
   it('no trae nada fuera del modulo CP', async () => {
     const modelo = await cargarModeloAsiento()
-    // Sanity check: el modelo 1 tiene 27 renglones reales verificados el
-    // 2026-08-21. Un numero muy distinto significa que cambio la
-    // configuracion de Tango o el filtro de la query esta mal.
-    expect(modelo.size).toBe(27)
+    // Sanity check: un numero muy distinto significa que cambio la
+    // configuracion de Tango o que el filtro de la query esta mal.
+    //
+    // Eran 27, verificados el 2026-08-21. El 2026-09-07 este test empezo a
+    // dar 28 y el centinela hizo lo suyo: alguien agrego en Tango el renglon
+    // del tipo contable 51 (ITC) contra la cuenta 50608, "PERDIDA
+    // P/RETENCIONES VARIAS". Es un cambio real de configuracion del ERP, no
+    // de esta app, y ningun tipo contable quedo repetido.
+    expect(modelo.size).toBe(28)
   })
 })
 
