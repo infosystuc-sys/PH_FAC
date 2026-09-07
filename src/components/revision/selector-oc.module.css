@@ -38,10 +38,69 @@
   color: var(--texto);
 }
 
-.imputada {
+.imputadas {
+  list-style: none;
   margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.imputada {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   font-size: 12.5px;
   color: var(--texto-2);
+}
+
+.quitar {
+  padding: 1px 7px;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  background: var(--fondo-app);
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--texto-4);
+  cursor: pointer;
+}
+
+.quitar:hover:not(:disabled) {
+  color: var(--error-texto, var(--texto));
+  border-color: var(--error-borde, var(--borde));
+}
+
+/* Los renglones de la factura que todavia no tienen orden. Mientras quede
+   alguno el comprobante no se registra, asi que va en rojo y no en amarillo:
+   es lo que falta resolver, no una advertencia. */
+.faltantes {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  background: var(--error-fondo, var(--alerta-fondo));
+  border: 1px solid var(--error-borde, var(--alerta-borde));
+  border-radius: 6px;
+}
+
+.faltantesTitulo {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--texto-2);
+}
+
+.faltanteFila {
+  display: grid;
+  grid-template-columns: 1fr 90px;
+  gap: 8px;
+  padding: 1px 0;
+  font-size: 11.5px;
+  color: var(--texto-2);
+}
+
+.faltantesNota {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--texto-3);
 }
 
 /* Sin OC no se puede registrar la factura: se dice en amarillo, no en rojo,
@@ -77,20 +136,20 @@
 
 /* Emparejar a mano un codigo impreso con un articulo nuestro. Escribe
    CPA15.COD_SINONI, asi que la proxima factura empareja sola. */
-.enseñar {
+.ensenar {
   margin: 0 0 12px;
   padding: 10px;
   border: 1px dashed var(--borde);
   border-radius: 7px;
 }
 
-.enseñarTitulo {
+.ensenarTitulo {
   margin: 0 0 8px;
   font-size: 12px;
   color: var(--texto-2);
 }
 
-.enseñarFila {
+.ensenarFila {
   display: grid;
   grid-template-columns: 150px 1fr;
   gap: 10px;
@@ -109,7 +168,7 @@
   color: var(--texto);
 }
 
-.enseñarNota {
+.ensenarNota {
   margin: 6px 0 0;
   font-size: 11.5px;
   color: var(--texto-4);
@@ -174,22 +233,15 @@
   border-left: 2px solid var(--borde-sutil-2);
 }
 
-/* Primera columna angosta para la marca de coincidencia: sin ella, las
-   filas que coinciden y las que no quedarian desalineadas entre si. */
+/* Solo se listan los renglones que la factura cobra, con su marca: el resto
+   de la orden no ayuda a decidir y son casi siempre muchos mas. */
 .fila {
   display: grid;
   grid-template-columns: 12px 90px 1fr 110px;
   gap: 8px;
   padding: 2px 0;
   font-size: 11.5px;
-  color: var(--texto-3);
-}
-
-/* El articulo que la factura cobra. Es el dato por el que esta OC aparece
-   en la lista, asi que se destaca del resto de sus renglones. */
-.filaCoincide {
-  color: var(--texto);
-  font-weight: 600;
+  color: var(--texto-2);
 }
 
 .marca {

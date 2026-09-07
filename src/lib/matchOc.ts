@@ -23,6 +23,68 @@ export type OcEmparejada<T> = {
   articulos: string[]
 }
 
+/**
+ * Lleva un código impreso por el proveedor a un artículo nuestro.
+ *
+ * `nuestros` son los códigos candidatos --los de las OC que se estén
+ * mirando-- y se prueba primero contra ellos tal cual, antes de traducir:
+ * si un proveedor usa como sinónimo un código que también es nuestro, gana
+ * el nuestro. Mismo orden que `cotejarConOc`.
+ *
+ * Devuelve el código NUESTRO ya normalizado, o `null` si no se pudo
+ * resolver: ni es uno de los candidatos ni hay sinónimo cargado que lleve a
+ * uno.
+ */
+export function resolverCodigoArticulo(
+  impreso: string | null | undefined,
+  nuestros: Set<string>,
+  sinonimos: Map<string, string>,
+): string | null {
+  const clave = normalizarCodigo(impreso ?? '')
+  if (clave === '') return null
+  if (nuestros.has(clave)) return clave
+
+  const traducido = normalizarCodigo(sinonimos.get(clave) ?? '')
+  return traducido && nuestros.has(traducido) ? traducido : null
+}
+
+/** Lo que la factura cobra en un renglón, tal como lo leyó la IA del PDF. */
+export type LineaFactura = {
+  orden: number
+  codigo: string | null
+  cantidad: string | null
+}
+
+export type RenglonEmparejado<T> = {
+  linea: LineaFactura
+  /** El renglón de la OC que le corresponde, o `null` si esta OC no lo tiene. */
+  enOc: T | null
+}
+
+/**
+ * Qué renglón de la OC le corresponde a cada renglón de la factura.
+ *
+ * Es lo que decide qué se trae al imputar: desde el 2026-09-07 el detalle
+ * del comprobante son los artículos que la FACTURA cobra --resueltos contra
+ * la OC-- y no todos los renglones pendientes de la orden. Traerlos todos
+ * obligaba al operador a borrar a mano los que la factura no cobraba;
+ * quedó a la vista con una factura de CARRIER que cobra un solo artículo
+ * contra una OC de nueve.
+ */
+export function emparejarRenglones<T extends { codArticu: string }>(
+  pdf: LineaFactura[],
+  renglonesOc: T[],
+  sinonimos: Map<string, string>,
+): RenglonEmparejado<T>[] {
+  const porCodigo = new Map(renglonesOc.map((r) => [normalizarCodigo(r.codArticu), r]))
+  const nuestros = new Set(porCodigo.keys())
+
+  return pdf.map((linea) => {
+    const nuestro = resolverCodigoArticulo(linea.codigo, nuestros, sinonimos)
+    return { linea, enOc: nuestro ? (porCodigo.get(nuestro) ?? null) : null }
+  })
+}
+
 export type Emparejamiento<T> = {
   /** Las que contienen al menos un artículo de la factura, la que más primero. */
   coinciden: OcEmparejada<T>[]
@@ -62,11 +124,8 @@ export function emparejarOcs<T extends OcParaMatch>(
   const resueltos = new Set<string>()
   const sinResolver: string[] = []
   for (const codigo of codigos) {
-    // Primero tal cual y después traducido, mismo orden que `cotejarConOc`:
-    // si un proveedor usa como sinónimo un código que también es nuestro,
-    // gana el nuestro.
-    const nuestro = nuestros.has(codigo) ? codigo : normalizarCodigo(sinonimos.get(codigo) ?? '')
-    if (nuestro && nuestros.has(nuestro)) resueltos.add(nuestro)
+    const nuestro = resolverCodigoArticulo(codigo, nuestros, sinonimos)
+    if (nuestro) resueltos.add(nuestro)
     else if (!sinResolver.includes(codigo)) sinResolver.push(codigo)
   }
 

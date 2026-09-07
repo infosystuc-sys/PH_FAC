@@ -207,7 +207,6 @@ export function Pantalla({
           <SelectorOc
             comprobanteId={comprobanteId}
             codProvee={codProvee}
-            ocImputada={renglones.find((r) => r.ocNOrdenCo)?.ocNOrdenCo ?? null}
             soloLectura={soloLectura}
           />
         )}

@@ -27,7 +27,7 @@ import {
 } from '@/server/tango/conceptos'
 import { renglonesDelRemitoInterno } from '@/server/tango/remitos'
 import { buscarOcPendientes, type OrdenCompra } from '@/server/tango/ordenesCompra'
-import { asignarOcEn } from './ordenCompra'
+import { agregarOcEn, quitarOcEn, renglonesSinOcEn } from './ordenCompra'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
 import { aprenderImpuesto, type TipoAprendizaje } from './aprendizajeImpuestos'
@@ -491,6 +491,13 @@ export type OfertaOc = {
   sinResolver: string[]
   /** Los artículos de las OC pendientes, para enseñar un sinónimo. */
   articulosDisponibles: { codArticu: string; descripcion: string }[]
+  /** Las OC ya imputadas a este comprobante. */
+  imputadas: string[]
+  /**
+   * Los renglones de la factura que todavía no tienen artículo en ninguna
+   * orden imputada. Mientras quede alguno, el comprobante no se registra.
+   */
+  sinOrden: { orden: number; codigo: string; cantidad: string | null }[]
 }
 
 /**
@@ -519,36 +526,53 @@ export async function listarOcParaComprobante(
     ).values(),
   ].sort((a, b) => a.codArticu.localeCompare(b.codArticu))
 
-  const detalle = await conTransaccion((tx) => obtenerDetalleEn(tx, comprobanteId))
+  const { detalle, sinOrden } = await conTransaccion(async (tx) => ({
+    detalle: await obtenerDetalleEn(tx, comprobanteId),
+    sinOrden: await renglonesSinOcEn(tx, comprobanteId, codProvee),
+  }))
+  const imputadas = [
+    ...new Set(detalle.renglones.map((r) => r.ocNOrdenCo).filter((x): x is string => !!x)),
+  ]
+
   const codigos = detalle.renglonesPdf.map((r) => r.codigo)
   const sinonimos = await articulosPorSinonimo(
     codProvee,
     codigos.map((c) => c ?? ''),
   )
 
-  const { coinciden, sinResolver } = emparejarOcs(codigos, todas, sinonimos)
+  // Solo se ofrecen las OC que puedan aportar algo que todavia falta: si un
+  // articulo ya lo trajo otra orden, esa orden no tiene nada nuevo que dar.
+  const pendientesDeCubrir = sinOrden.map((r) => r.codigo)
+  const { coinciden, sinResolver } = emparejarOcs(
+    imputadas.length > 0 ? pendientesDeCubrir : codigos,
+    todas,
+    sinonimos,
+  )
+
+  const base = { sinResolver, articulosDisponibles, imputadas, sinOrden }
 
   if (coinciden.length === 0) {
     return {
+      ...base,
       ocs: todas.map((oc) => ({ ...oc, articulosQueCoinciden: [] })),
       filtrada: false,
-      sinResolver,
-      articulosDisponibles,
     }
   }
 
   return {
+    ...base,
     ocs: coinciden.map((c) => ({ ...c.oc, articulosQueCoinciden: c.articulos })),
     filtrada: true,
-    sinResolver,
-    articulosDisponibles,
   }
 }
 
 /**
- * El operador elige a qué orden de compra se imputa esta factura de
- * artículos. Trae los renglones pendientes de esa OC como detalle del
- * comprobante -- ver `asignarOcEn`.
+ * El operador imputa una orden de compra a esta factura de artículos. Trae
+ * como detalle del comprobante los renglones de la OC que la factura cobra
+ * -- ver `agregarOcEn`.
+ *
+ * Agrega: una factura puede repartirse entre varias órdenes, así que
+ * imputar otra no borra lo que trajo la anterior.
  *
  * Con `revalidatePath` porque cambia los renglones enteros, que es lo que
  * la pantalla muestra debajo: sin refrescar, el operador elegiría una OC y
@@ -557,8 +581,19 @@ export async function listarOcParaComprobante(
 export async function imputarOrdenCompra(
   comprobanteId: number,
   nOrdenCo: string,
+  codProvee: string | null,
+): Promise<{ renglones: number; sinEmparejar: number }> {
+  const r = await conTransaccion((tx) => agregarOcEn(tx, comprobanteId, nOrdenCo, codProvee))
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  return { renglones: r.agregados, sinEmparejar: r.sinEmparejar }
+}
+
+/** Saca una orden de compra del comprobante, con los renglones que trajo. */
+export async function desimputarOrdenCompra(
+  comprobanteId: number,
+  nOrdenCo: string,
 ): Promise<{ renglones: number }> {
-  const renglones = await conTransaccion((tx) => asignarOcEn(tx, comprobanteId, nOrdenCo))
+  const renglones = await conTransaccion((tx) => quitarOcEn(tx, comprobanteId, nOrdenCo))
   revalidatePath(`/comprobantes/${comprobanteId}`)
   return { renglones }
 }
