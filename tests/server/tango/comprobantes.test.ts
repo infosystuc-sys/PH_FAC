@@ -9,6 +9,8 @@ import { buscarFacturaEnCpa04, mapearAlicuotaIva, registrarComprobanteEn } from 
 import { COD_CONCEPTO_TARJETA } from '@/server/tango/conceptos'
 import { aprenderImpuestoEn } from '@/server/app/aprendizajeImpuestos'
 import { terminalActual } from '@/lib/usuario'
+import { fechaContableDe } from '@/lib/fechaContable'
+import { cierreContable } from '@/server/tango/parametros'
 
 afterAll(async () => {
   await cerrarPool()
@@ -361,6 +363,19 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
         .query(`SELECT * FROM CPA46 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n`)
       expect(cpa46.recordset).toHaveLength(1)
       expect(cpa46.recordset[0].COD_ARTICU.trim()).toBe(String(oc.COD_ARTICU))
+
+      // FECHA_CONT no es FECHA_EMIS: sale de la regla del cierre contable
+      // (CPA10.CIERRE_CON) -- pedido del usuario, 2026-09-07. La factura de
+      // este test es del 01/06/2026, muy anterior al cierre, asi que se
+      // espera que se haya corrido al primer periodo abierto.
+      const cpa04 = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT FECHA_EMIS, FECHA_CONT FROM CPA04 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n`)
+      const esperada = fechaContableDe(new Date(2026, 5, 1), await cierreContable())
+      const contable = new Date(cpa04.recordset[0].FECHA_CONT)
+      expect(contable.getFullYear()).toBe(esperada.getFullYear())
+      expect(contable.getMonth()).toBe(esperada.getMonth())
+      expect(contable.getDate()).toBe(esperada.getDate())
 
       // El vinculo con la OC: es lo que Tango usa para saber que factura
       // consumio que renglon de que orden.

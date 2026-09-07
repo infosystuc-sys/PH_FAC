@@ -13,6 +13,8 @@ import { conceptoDelComprobante, COD_CONCEPTO_TARJETA } from './conceptos'
 import { cargarAprendidosEn } from '@/server/app/aprendizajeImpuestos'
 import { escribirAsientoEn } from './asiento'
 import { escribirCuotasEn } from './cuotas'
+import { fechaContableDe } from '@/lib/fechaContable'
+import { cierreContable } from './parametros'
 
 export type ComprobanteCpa04 = {
   nComp: string
@@ -203,6 +205,22 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   if (!fechaEmision) {
     throw new Error(`No se pudo interpretar la fecha de emisión "${valores.fecha ?? ''}".`)
   }
+
+  // La fecha con la que el comprobante entra a la contabilidad. Es la de
+  // emision salvo que caiga dentro del periodo que Tango tiene cerrado
+  // (CPA10.CIERRE_CON), y en ese caso va al primer dia del mes siguiente al
+  // cierre -- regla del usuario, 2026-09-07, y es la que va a FECHA_CONT.
+  //
+  // Se recalcula aca en vez de confiar en lo que quedo guardado: entre que
+  // el operador reviso y este momento, el cierre pudo haberse movido. Lo
+  // guardado gana solo si el operador lo corrigio a mano, que es para lo que
+  // el campo es editable -- mismo criterio de precedencia que el resto de la
+  // app.
+  const campoFechaContable = detalle.campos.find((c) => c.clave === 'fechacontable')
+  const contableCorregida = campoFechaContable?.corregido
+    ? parsearFechaArg((campoFechaContable.valorFinal ?? '').trim())
+    : null
+  const fechaContable = contableCorregida ?? fechaContableDe(fechaEmision, await cierreContable())
   const neto = parsearImporte(valores.neto)
   const exento = parsearImporte(valores.exento)
   // En una liquidacion de tarjeta el total impreso en el resumen sale por
@@ -242,6 +260,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     .input('condCompr', sql.SmallInt, codCondCompra)
     .input('cotizacion', sql.Decimal(18, 4), cotizacion)
     .input('fechaEmis', sql.DateTime, fechaEmision)
+    .input('fechaCont', sql.DateTime, fechaContable)
     .input('importeNe', sql.Decimal(18, 2), neto)
     .input('importeEx', sql.Decimal(18, 2), exento)
     .input('importeTo', sql.Decimal(18, 2), total)
@@ -295,7 +314,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       OUTPUT INSERTED.ID_CPA04 INTO @idsCpa04
       VALUES (
         @tcompInC, @ncompInC, 'FAC', @nComp, @tipoCompr, @codProvee, @catIva,
-        @condCompr, @cotizacion, @fechaEmis, @fechaEmis, @sinFecha, @importeNe,
+        @condCompr, @cotizacion, @fechaEmis, @fechaCont, @sinFecha, @importeNe,
         @importeNe, @importeEx, @importeEx, @importeTo, @leyenda, @monCte,
         @codIva1, @porcIva1, @impIva1, @codIva2, @porcIva2, @impIva2,
         @codIva3, @porcIva3, @impIva3, @codIva4, @porcIva4, @impIva4,
@@ -337,6 +356,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     .input('condCompr', sql.SmallInt, codCondCompra)
     .input('cotizacion', sql.Decimal(18, 4), cotizacion)
     .input('fechaEmis', sql.DateTime, fechaEmision)
+    .input('fechaCont', sql.DateTime, fechaContable)
     .input('importeNe', sql.Decimal(18, 2), neto)
     .input('importeEx', sql.Decimal(18, 2), exento)
     .input('importeTo', sql.Decimal(18, 2), total)
@@ -369,7 +389,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         TIPO_TRANSACCION_COMPRA, DOC_PRO
       ) VALUES (
         @tcompInC, @ncompInC, 'FAC', @nComp, @codProvee, @cuitPro, @nombrePro,
-        @condPro, @catIva, @condCompr, @cotizacion, @fechaEmis, @fechaEmis, @sinFecha,
+        @condPro, @catIva, @condCompr, @cotizacion, @fechaEmis, @fechaCont, @sinFecha,
         @importeNe, @importeNe, @importeEx, @importeEx, @importeTo, @leyenda, @monCte,
         @impIva1, @porcIva1, @codIva1, @impIva2, @porcIva2, @codIva2,
         @impIva3, @porcIva3, @codIva3, @impIva4, @porcIva4, @codIva4,

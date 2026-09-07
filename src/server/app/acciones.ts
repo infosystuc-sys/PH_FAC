@@ -6,7 +6,12 @@ import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
 import { borrarPdf } from './archivos'
 import { auditarEn, guardarCampoEn, obtenerDetalleEn } from './detalle'
-import { despertarWorker, importarComprobanteEn, recalcularNetoDeCargosEn } from './cola'
+import {
+  despertarWorker,
+  importarComprobanteEn,
+  recalcularNetoDeCargosEn,
+  calcularFechaContableEn,
+} from './cola'
 import { usuarioActual } from '@/lib/usuario'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { esTipoFactura } from '@/lib/tipoFactura'
@@ -109,6 +114,16 @@ export async function guardarCampo(id: number, clave: string, valor: string): Pr
       UPDATE PHF_COMPROBANTE SET FECHA_MODIF = SYSDATETIME(), USUARIO_MODIF = @u
       WHERE ID = @id AND ESTADO <> 'registrado'
     `)
+
+  // La fecha contable se deriva de la de emisión y del cierre de Tango, así
+  // que corregir una obliga a recalcular la otra. Se hace acá, del lado del
+  // servidor, porque el cierre vive en CPA10 y el formulario no lo conoce;
+  // `revalidatePath` es lo que hace que la pantalla muestre la nueva sin que
+  // el operador recargue.
+  if (clave === 'fecha') {
+    await conTransaccion((tx) => calcularFechaContableEn(tx, id, valor))
+    revalidatePath(`/comprobantes/${id}`)
+  }
 
   // El tipo de factura vive en dos lados a propósito: el campo es lo que
   // ve y edita el operador, la columna es lo que lee la cola para elegir

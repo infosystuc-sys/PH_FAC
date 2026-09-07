@@ -222,9 +222,11 @@ export function analizaCampo(tipo: TipoFactura, clave: string): boolean {
  * a medio llenar, y al ocultar campos las cuentas del catálogo dejan de
  * dar.
  *
- * El grupo "Comprobante" se queda con cuatro campos. Con el span 2 del
- * catálogo suman 8: una fila de tres y una de uno solo. Con span 3 suman
- * 12 -- dos filas de dos, parejas. El grupo "Proveedor" no necesita
+ * El grupo "Comprobante" se queda con cinco campos: tipo, punto de venta,
+ * número, fecha de emisión y fecha contable. Con los tres cortos en 2 y las
+ * dos fechas en 3 suman 12 -- dos filas parejas, con las fechas juntas en la
+ * segunda, que es donde el operador las compara entre sí. El grupo
+ * "Proveedor" no necesita
  * ajuste en conceptos/tarjeta: pierde tres campos (condiva, condpago,
  * vencimiento) y queda en 12 por su cuenta. En artículos solo pierde dos
  * (condiva, vencimiento) y `condpago` queda visible -- con su span de
@@ -233,7 +235,13 @@ export function analizaCampo(tipo: TipoFactura, clave: string): boolean {
  * completa ("Cuenta Corriente 90-120-150-180 días"), no un código corto
  * como el resto de esa fila.
  */
-const COMPROBANTE_A_MEDIA_FILA = { tipo: 3, ptovta: 3, nro: 3, fecha: 3 }
+const COMPROBANTE_A_MEDIA_FILA = {
+  tipo: 2,
+  ptovta: 2,
+  nro: 2,
+  fecha: 3,
+  fechacontable: 3,
+}
 
 const SPAN_POR_TIPO: Record<TipoFactura, Readonly<Record<string, number>>> = {
   conceptos: COMPROBANTE_A_MEDIA_FILA,

@@ -13,7 +13,7 @@ import {
   type LineaRemito,
   type RenglonFacturado,
 } from '@/lib/cotejo'
-import { normalizarCuit, parsearImporte, parsearImporteONulo } from '@/lib/formato'
+import { normalizarCuit, parsearImporte, parsearImporteONulo, formatFecha } from '@/lib/formato'
 import {
   tipoFacturaODefault,
   analizaCampo,
@@ -41,8 +41,11 @@ import {
   nComp as armarNComp,
   netoQueImplicaElIva,
   netoCierraConIva,
+  parsearFechaArg,
 } from '@/lib/validaciones'
 import { resolverAlicuotas } from '@/lib/alicuotas'
+import { fechaContableDe } from '@/lib/fechaContable'
+import { cierreContable } from '@/server/tango/parametros'
 import { listarAlicuotasIva } from '@/server/tango/impuestos'
 
 export const MAX_INTENTOS = 3
@@ -389,6 +392,40 @@ export async function ajustarNetoConIvaEn(
     corregidoPorUsuario: false,
   })
   return { ajustado: true, neto: esperado, sumaCargos: actual }
+}
+
+/**
+ * Calcula la fecha contable del comprobante y la guarda.
+ *
+ * Es la de emisión, salvo que el comprobante caiga dentro del período que
+ * Tango tiene cerrado (`CPA10.CIERRE_CON`): ahí va al primer día del mes
+ * siguiente al cierre, que es el primer período abierto. La regla vive en
+ * `src/lib/fechaContable.ts` y la usan los dos lados -- esta función y el
+ * formulario, que la recalcula cuando el operador corrige la fecha de
+ * emisión -- para que no puedan discrepar.
+ *
+ * No pisa una corrección del operador: si ya la tocó a mano, esa gana.
+ * Devuelve la fecha que quedó, o `null` si no hay fecha de emisión válida
+ * todavía (ahí no hay nada que calcular y el campo queda vacío).
+ */
+export async function calcularFechaContableEn(
+  e: Ejecutor,
+  id: number,
+  fechaComprobante?: string | null,
+): Promise<string | null> {
+  const detalle = await obtenerDetalleEn(e, id)
+  const campo = (clave: string) => detalle.campos.find((c) => c.clave === clave)
+
+  if (campo('fechacontable')?.corregido) return campo('fechacontable')?.valorFinal ?? null
+
+  const texto = (fechaComprobante ?? campo('fecha')?.valorFinal ?? '').trim()
+  const emision = texto ? parsearFechaArg(texto) : null
+  if (!emision) return null
+
+  const contable = fechaContableDe(emision, await cierreContable())
+  const valor = formatFecha(contable)
+  await guardarCampoEn(e, id, 'fechacontable', valor, { corregidoPorUsuario: false })
+  return valor
 }
 
 /**
@@ -999,6 +1036,11 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // `esIvaSobreLaBase` la deja afuera-- pero el orden correcto es que la
       // mudanza termine antes de que alguien lea de ahi.
       await mudarPercepcionIvaEn(tx, id, tipoFactura)
+
+      // La fecha con la que el comprobante entra a la contabilidad. Depende
+      // de la de emision y del cierre de Tango, asi que va despues de
+      // guardarExtraccionEn, que es quien escribe `fecha`.
+      await calcularFechaContableEn(tx, id, r.extraccion.campos.fecha?.valor ?? null)
 
       // Va despues de resolverProveedorEn porque el punto de venta se
       // aprende por proveedor: sin `cod` no hay a quien preguntarle.

@@ -45,6 +45,12 @@ export const CAMPOS: DefCampo[] = [
   c('ptovta',      'Punto de venta',        'comprobante', 2, 'texto',   true),
   c('nro',         'Número',                'comprobante', 2, 'texto',   true),
   c('fecha',       'Fecha de emisión',      'comprobante', 2, 'fecha',   true),
+  // No la lee la IA: la calcula la app con la fecha de emisión y el cierre
+  // contable de Tango (CPA10.CIERRE_CON). Es la que va a CPA04.FECHA_CONT,
+  // y puede no ser la de emisión -- ver src/lib/fechaContable.ts. Editable:
+  // el operador puede correrla a otro período abierto si hace falta.
+  { clave: 'fechacontable', label: 'Fecha contable', grupo: 'comprobante', span: 4,
+    tipo: 'fecha', mono: true, extraePorIA: false, soloLectura: false },
   c('cae',         'CAE',                   'comprobante', 2, 'texto',   true),
   c('vtocae',      'Vto. CAE',              'comprobante', 2, 'fecha',   true),
   c('moneda',      'Moneda',                'comprobante', 2, 'texto',   false),
