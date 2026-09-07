@@ -82,6 +82,16 @@
   border-radius: 6px;
 }
 
+/* La orden existe y esta en la lista de abajo: falta imputarla, nada mas.
+   Va en el gris de la tarjeta y no en rojo -- no hay nada roto. */
+.porImputar {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  background: var(--fondo-app);
+  border: 1px solid var(--borde-sutil-3);
+  border-radius: 6px;
+}
+
 .faltantesTitulo {
   margin: 0 0 6px;
   font-size: 12px;

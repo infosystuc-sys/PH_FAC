@@ -19,7 +19,8 @@ import {
   articulosPorSinonimo,
   type ArticuloTango,
 } from '@/server/tango/articulos'
-import { emparejarOcs } from '@/lib/matchOc'
+import { emparejarOcs, resolverCodigoArticulo } from '@/lib/matchOc'
+import { normalizarCodigo } from '@/lib/cotejoOc'
 import {
   listarConceptos,
   asignarConceptoProveedor,
@@ -496,8 +497,19 @@ export type OfertaOc = {
   /**
    * Los renglones de la factura que todavía no tienen artículo en ninguna
    * orden imputada. Mientras quede alguno, el comprobante no se registra.
+   *
+   * `hayCandidata` los parte en dos casos que no son lo mismo y que la
+   * pantalla no puede mezclar: si alguna orden pendiente del proveedor tiene
+   * ese artículo, no hay ningún problema que resolver -- falta que el
+   * operador la impute, y está listada abajo. Si no la tiene, ahí sí es algo
+   * que hay que arreglar antes de poder registrar.
    */
-  sinOrden: { orden: number; codigo: string; cantidad: string | null }[]
+  sinOrden: {
+    orden: number
+    codigo: string
+    cantidad: string | null
+    hayCandidata: boolean
+  }[]
 }
 
 /**
@@ -549,7 +561,22 @@ export async function listarOcParaComprobante(
     sinonimos,
   )
 
-  const base = { sinResolver, articulosDisponibles, imputadas, sinOrden }
+  // Un renglon sin orden imputada no es necesariamente un problema: si
+  // alguna orden pendiente lo tiene, solo falta imputarla.
+  const enAlgunaOc = new Set(
+    todas.flatMap((oc) => oc.renglones.map((r) => normalizarCodigo(r.codArticu))),
+  )
+  const sinOrdenAnotado = sinOrden.map((r) => ({
+    ...r,
+    hayCandidata: resolverCodigoArticulo(r.codigo, enAlgunaOc, sinonimos) !== null,
+  }))
+
+  const base = {
+    sinResolver,
+    articulosDisponibles,
+    imputadas,
+    sinOrden: sinOrdenAnotado,
+  }
 
   if (coinciden.length === 0) {
     return {

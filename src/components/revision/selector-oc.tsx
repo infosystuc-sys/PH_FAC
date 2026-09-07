@@ -110,6 +110,11 @@ export function SelectorOc({
   const imputadas = oferta?.imputadas ?? []
   const sinOrden = oferta?.sinOrden ?? []
   const lista = oferta?.ocs ?? []
+  // Dos cosas distintas. Que un renglon no tenga orden imputada todavia no
+  // es un problema si hay una orden que lo trae: falta imputarla, y esta
+  // listada abajo. Problema es que ninguna orden lo tenga.
+  const sinCandidata = sinOrden.filter((r) => !r.hayCandidata)
+  const porImputar = sinOrden.filter((r) => r.hayCandidata)
   // La lista se muestra sola mientras falte cubrir algún renglón: es el paso
   // que el operador tiene que dar sí o sí, esconderlo detrás de un botón
   // sería una vuelta de más en la pantalla donde pasa el día. Una vez
@@ -149,26 +154,48 @@ export function SelectorOc({
       ) : (
         <p className={styles.aviso}>
           Esta factura todavía no está imputada a ninguna orden de compra.
+          {porImputar.length > 0 && lista.length > 0 && ' Elegí la que corresponde de la lista.'}
         </p>
       )}
 
-      {sinOrden.length > 0 && (
+      {/* Ninguna orden del proveedor trae este articulo: eso si hay que
+          arreglarlo antes de registrar. */}
+      {sinCandidata.length > 0 && (
         <div className={styles.faltantes}>
           <p className={styles.faltantesTitulo}>
-            {sinOrden.length === 1
-              ? 'Un renglón de la factura no tiene orden de compra:'
-              : `${sinOrden.length} renglones de la factura no tienen orden de compra:`}
+            {sinCandidata.length === 1
+              ? 'Ninguna orden de compra de este proveedor tiene este artículo:'
+              : 'Ninguna orden de compra de este proveedor tiene estos artículos:'}
           </p>
-          {sinOrden.map((r) => (
+          {sinCandidata.map((r) => (
             <div key={r.orden} className={styles.faltanteFila}>
               <span className={styles.codigo}>{r.codigo || '(sin código)'}</span>
               <span className={styles.cant}>{r.cantidad ?? '—'}</span>
             </div>
           ))}
           <p className={styles.faltantesNota}>
-            No se puede registrar hasta que todos tengan la suya. Imputá otra orden, o asociá el
-            código si es un artículo que la orden sí trae con otro nombre.
+            No se puede registrar hasta que todos los renglones tengan su orden. Si es un artículo
+            que la orden sí trae con otro nombre, asociá el código más abajo.
           </p>
+        </div>
+      )}
+
+      {/* La orden existe y esta listada abajo: solo falta imputarla. No se
+          dice cuando no hay ninguna imputada todavia, porque ahi ya lo dice
+          el aviso de arriba y repetirlo lo haria parecer un error. */}
+      {porImputar.length > 0 && imputadas.length > 0 && (
+        <div className={styles.porImputar}>
+          <p className={styles.faltantesTitulo}>
+            {porImputar.length === 1
+              ? 'Falta imputar la orden de este renglón:'
+              : 'Falta imputar la orden de estos renglones:'}
+          </p>
+          {porImputar.map((r) => (
+            <div key={r.orden} className={styles.faltanteFila}>
+              <span className={styles.codigo}>{r.codigo || '(sin código)'}</span>
+              <span className={styles.cant}>{r.cantidad ?? '—'}</span>
+            </div>
+          ))}
         </div>
       )}
 
