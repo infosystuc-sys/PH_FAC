@@ -28,7 +28,7 @@ import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impues
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
 import { cotejarConOc, type ResultadoCotejoOc } from '@/lib/cotejoOc'
-import { sinonimosDelProveedor } from '@/server/tango/articulos'
+import { articulosPorSinonimo } from '@/server/tango/articulos'
 import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 
@@ -237,10 +237,15 @@ export async function validarListoParaRegistrarEn(
     const codigos = detalle.renglonesPdf
       .map((r) => (r.codigo ?? '').trim())
       .filter((c) => c !== '')
-    const sinonimos = codProvee ? await sinonimosDelProveedor(codProvee, codigos) : new Map()
-    // `sinonimosDelProveedor` devuelve nuestro codigo -> el del proveedor;
-    // el cotejo necesita la vuelta, del codigo impreso al nuestro.
-    const alNuestro = new Map([...sinonimos].map(([nuestro, suyo]) => [suyo, nuestro]))
+    // `articulosPorSinonimo` y no `sinonimosDelProveedor`: lo que se tiene es
+    // el codigo IMPRESO y hay que averiguar que articulo es. Hasta el
+    // 2026-09-07 aca se pedia el mapa al reves y se lo daba vuelta despues,
+    // pero ese filtra por codigo NUESTRO y lo que se le pasaba eran los
+    // impresos: no matcheaba ninguno y el mapa volvia vacio, asi que la
+    // traduccion por sinonimo nunca llegaba a aplicarse.
+    const alNuestro = codProvee
+      ? await articulosPorSinonimo(codProvee, codigos)
+      : new Map<string, string>()
 
     cotejoOc = cotejarConOc(
       detalle.renglonesPdf.map((r) => ({ orden: r.orden, codigo: r.codigo, cantidad: r.cantidad })),

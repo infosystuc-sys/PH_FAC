@@ -16,8 +16,10 @@ import { registrarComprobante as registrarComprobanteTango } from '@/server/tang
 import {
   buscarArticulos,
   asociarArticuloProveedor,
+  articulosPorSinonimo,
   type ArticuloTango,
 } from '@/server/tango/articulos'
+import { emparejarOcs } from '@/lib/matchOc'
 import {
   listarConceptos,
   asignarConceptoProveedor,
@@ -470,6 +472,77 @@ export async function listarConceptosTango(): Promise<ConceptoProveedor[]> {
 /** Las órdenes de compra del proveedor con algo pendiente de facturar. */
 export async function listarOcDelProveedor(codProvee: string): Promise<OrdenCompra[]> {
   return buscarOcPendientes(codProvee)
+}
+
+export type OcOfrecida = OrdenCompra & {
+  /** Los códigos nuestros de esta OC que la factura cobra. Vacío si no se filtró. */
+  articulosQueCoinciden: string[]
+}
+
+export type OfertaOc = {
+  ocs: OcOfrecida[]
+  /**
+   * `false` cuando ninguna OC coincidió y se están ofreciendo todas. La
+   * pantalla lo usa para avisar que no emparejó nada, en vez de dejar creer
+   * que la lista ya está filtrada.
+   */
+  filtrada: boolean
+  /** Los códigos impresos que no se pudieron llevar a ningún artículo. */
+  sinResolver: string[]
+  /** Los artículos de las OC pendientes, para enseñar un sinónimo. */
+  articulosDisponibles: { codArticu: string; descripcion: string }[]
+}
+
+/**
+ * Las órdenes de compra que se le ofrecen a ESTA factura: solo las que
+ * contienen los artículos que cobra -- decisión del usuario, 2026-09-07.
+ * El código impreso se lleva al nuestro por `CPA15.COD_SINONI`.
+ *
+ * Si no coincide ninguna se devuelven todas las pendientes con
+ * `filtrada: false`, y la pantalla avisa. Es deliberado y no un descuido:
+ * al implementarlo, `CPA15` tenía sinónimo cargado en 3 de sus 1.131 filas
+ * y solo 2 de los 28 proveedores con OC pendiente tenían alguno, así que un
+ * filtro estricto habría dejado sin poder imputar nada a casi todos. El
+ * filtro se vuelve efectivo a medida que se enseñan los sinónimos, que es
+ * para lo que está `asociarCodigoProveedor` en esta misma pantalla.
+ */
+export async function listarOcParaComprobante(
+  comprobanteId: number,
+  codProvee: string,
+): Promise<OfertaOc> {
+  const todas = await buscarOcPendientes(codProvee)
+  const articulosDisponibles = [
+    ...new Map(
+      todas.flatMap((oc) =>
+        oc.renglones.map((r) => [r.codArticu, { codArticu: r.codArticu, descripcion: r.descripcion }]),
+      ),
+    ).values(),
+  ].sort((a, b) => a.codArticu.localeCompare(b.codArticu))
+
+  const detalle = await conTransaccion((tx) => obtenerDetalleEn(tx, comprobanteId))
+  const codigos = detalle.renglonesPdf.map((r) => r.codigo)
+  const sinonimos = await articulosPorSinonimo(
+    codProvee,
+    codigos.map((c) => c ?? ''),
+  )
+
+  const { coinciden, sinResolver } = emparejarOcs(codigos, todas, sinonimos)
+
+  if (coinciden.length === 0) {
+    return {
+      ocs: todas.map((oc) => ({ ...oc, articulosQueCoinciden: [] })),
+      filtrada: false,
+      sinResolver,
+      articulosDisponibles,
+    }
+  }
+
+  return {
+    ocs: coinciden.map((c) => ({ ...c.oc, articulosQueCoinciden: c.articulos })),
+    filtrada: true,
+    sinResolver,
+    articulosDisponibles,
+  }
 }
 
 /**

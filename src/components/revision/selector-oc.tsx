@@ -1,8 +1,12 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
-import { listarOcDelProveedor, imputarOrdenCompra } from '@/server/app/acciones'
-import type { OrdenCompra } from '@/server/tango/ordenesCompra'
+import { useCallback, useEffect, useState, useTransition } from 'react'
+import {
+  listarOcParaComprobante,
+  imputarOrdenCompra,
+  asociarCodigoProveedor,
+  type OfertaOc,
+} from '@/server/app/acciones'
 import { useToast } from '@/components/toast/toast-provider'
 import { formatMoneda, formatCantidad } from '@/lib/formato'
 import styles from './selector-oc.module.css'
@@ -15,9 +19,11 @@ import styles from './selector-oc.module.css'
  * (decisión del usuario). Al elegirla, los renglones del comprobante pasan
  * a ser los que la OC tiene pendientes de facturar.
  *
- * Se ofrecen solo las OC del proveedor con `PENDIENTE_FACTURAR > 0`, sin
- * mirar el estado: lo que decide si se le puede facturar algo a una OC es
- * que le quede algo, no cómo esté rotulada.
+ * Y desde 2026-09-07 no se ofrecen todas las OC del proveedor sino solo las
+ * que contienen los artículos que la factura cobra, emparejando el código
+ * impreso contra `CPA15.COD_SINONI`. Cuando no empareja ninguna se ofrecen
+ * todas con un aviso: es preferible que el operador tenga que mirar a que
+ * la pantalla lo deje sin poder imputar nada.
  */
 export function SelectorOc({
   comprobanteId,
@@ -32,37 +38,48 @@ export function SelectorOc({
   ocImputada: string | null
   soloLectura?: boolean
 }) {
-  const [ocs, setOcs] = useState<OrdenCompra[] | null>(null)
+  const [oferta, setOferta] = useState<OfertaOc | null>(null)
   const [abierto, setAbierto] = useState(false)
   const [pendiente, arrancar] = useTransition()
   const toast = useToast()
 
-  useEffect(() => {
+  const cargar = useCallback(() => {
     if (!codProvee) {
-      setOcs([])
+      setOferta(null)
       return
     }
-    let vigente = true
-    listarOcDelProveedor(codProvee)
-      .then((r) => vigente && setOcs(r))
-      .catch(() => vigente && setOcs([]))
-    return () => {
-      vigente = false
-    }
-  }, [codProvee])
+    listarOcParaComprobante(comprobanteId, codProvee)
+      .then(setOferta)
+      .catch(() => setOferta({ ocs: [], filtrada: false, sinResolver: [], articulosDisponibles: [] }))
+  }, [comprobanteId, codProvee])
 
-  const elegir = (oc: OrdenCompra) =>
+  useEffect(cargar, [cargar])
+
+  const elegir = (nOrdenCo: string) =>
     arrancar(async () => {
       try {
-        const { renglones } = await imputarOrdenCompra(comprobanteId, oc.nOrdenCo)
-        toast(`Orden de compra ${oc.nOrdenCo.trim()} imputada — ${renglones} renglón(es)`)
+        const { renglones } = await imputarOrdenCompra(comprobanteId, nOrdenCo)
+        toast(`Orden de compra ${nOrdenCo.trim()} imputada — ${renglones} renglón(es)`)
         setAbierto(false)
       } catch (e) {
         toast(e instanceof Error ? e.message : 'No se pudo imputar la orden de compra.')
       }
     })
 
-  const lista = ocs ?? []
+  const asociar = (codSinoni: string, codArticu: string) =>
+    arrancar(async () => {
+      try {
+        await asociarCodigoProveedor(comprobanteId, codProvee!, codArticu, codSinoni)
+        toast(`"${codSinoni}" asociado a ${codArticu}`)
+        // La lista se rearma con el sinonimo nuevo: el filtro que antes no
+        // encontraba nada ahora puede encontrar su OC.
+        cargar()
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'No se pudo asociar el código.')
+      }
+    })
+
+  const lista = oferta?.ocs ?? []
   // Mostrar la lista de entrada mientras no haya ninguna imputada: es el
   // paso que el operador tiene que dar sí o sí, esconderlo detrás de un
   // botón sería una vuelta de más en la pantalla donde pasa el día.
@@ -93,12 +110,52 @@ export function SelectorOc({
 
       {mostrandoLista && codProvee && (
         <>
-          {ocs === null && <p className={styles.vacio}>Buscando órdenes de compra…</p>}
-          {ocs !== null && lista.length === 0 && (
+          {oferta === null && <p className={styles.vacio}>Buscando órdenes de compra…</p>}
+
+          {oferta !== null && lista.length === 0 && (
             <p className={styles.vacio}>
               Este proveedor no tiene órdenes de compra con saldo pendiente de facturar.
             </p>
           )}
+
+          {oferta !== null && lista.length > 0 && !oferta.filtrada && (
+            <p className={styles.sinMatch}>
+              No se pudo emparejar ningún artículo de la factura con estas órdenes. Están todas
+              las que tienen saldo pendiente: revisá cuál corresponde.
+            </p>
+          )}
+
+          {oferta !== null && oferta.sinResolver.length > 0 && (
+            <div className={styles.enseñar}>
+              <p className={styles.enseñarTitulo}>
+                {oferta.sinResolver.length === 1
+                  ? 'Este código de la factura no se reconoce:'
+                  : 'Estos códigos de la factura no se reconocen:'}
+              </p>
+              {oferta.sinResolver.map((codigo) => (
+                <div key={codigo} className={styles.enseñarFila}>
+                  <span className={styles.codigo}>{codigo}</span>
+                  <select
+                    className={styles.selectArticulo}
+                    defaultValue=""
+                    disabled={pendiente}
+                    onChange={(e) => e.target.value && asociar(codigo, e.target.value)}
+                  >
+                    <option value="">¿A qué artículo corresponde?</option>
+                    {oferta.articulosDisponibles.map((a) => (
+                      <option key={a.codArticu} value={a.codArticu}>
+                        {a.codArticu} · {a.descripcion}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <p className={styles.enseñarNota}>
+                Se guarda en Tango y la próxima factura de este proveedor lo empareja sola.
+              </p>
+            </div>
+          )}
+
           <ul className={styles.lista}>
             {lista.map((oc) => (
               <li key={oc.nOrdenCo}>
@@ -106,7 +163,7 @@ export function SelectorOc({
                   type="button"
                   className={styles.opcion}
                   disabled={pendiente}
-                  onClick={() => elegir(oc)}
+                  onClick={() => elegir(oc.nOrdenCo)}
                 >
                   <span className={styles.numero}>{oc.nOrdenCo.trim()}</span>
                   <span className={styles.meta}>
@@ -116,15 +173,22 @@ export function SelectorOc({
                   <span className={styles.importe}>{formatMoneda(oc.total)}</span>
                 </button>
                 <div className={styles.detalle}>
-                  {oc.renglones.map((r) => (
-                    <div key={r.nRenglOc} className={styles.fila}>
-                      <span className={styles.codigo}>{r.codArticu}</span>
-                      <span className={styles.desc}>{r.descripcion}</span>
-                      <span className={styles.cant}>
-                        {formatCantidad(r.pendienteFacturar)} pend.
-                      </span>
-                    </div>
-                  ))}
+                  {oc.renglones.map((r) => {
+                    const coincide = oc.articulosQueCoinciden.includes(r.codArticu.toUpperCase())
+                    return (
+                      <div
+                        key={r.nRenglOc}
+                        className={coincide ? `${styles.fila} ${styles.filaCoincide}` : styles.fila}
+                      >
+                        <span className={styles.marca}>{coincide ? '✓' : ''}</span>
+                        <span className={styles.codigo}>{r.codArticu}</span>
+                        <span className={styles.desc}>{r.descripcion}</span>
+                        <span className={styles.cant}>
+                          {formatCantidad(r.pendienteFacturar)} pend.
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               </li>
             ))}

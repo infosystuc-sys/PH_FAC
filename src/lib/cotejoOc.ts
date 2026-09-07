@@ -48,6 +48,18 @@ export type ResultadoCotejoOc = {
 const TOLERANCIA = 0.00005
 
 /**
+ * Cómo se comparan dos códigos de artículo: sin espacios y en mayúsculas.
+ *
+ * `CPA15` y `CPA36` están en `Latin1_General_BIN`, que distingue mayúsculas,
+ * y uno de los dos códigos siempre sale de un PDF transcripto por el
+ * modelo. Comparar byte a byte dejaría sin emparejar un artículo que sí está
+ * cargado, por una diferencia que en el papel no existe.
+ */
+export function normalizarCodigo(codigo: string): string {
+  return codigo.trim().toUpperCase()
+}
+
+/**
  * `sinonimos` mapea el código con el que el proveedor llama al artículo
  * (`CPA15.COD_SINONI`) al nuestro. Se recibe ya resuelto en vez de
  * consultarlo acá para que esta función sea pura y testeable sin base --
@@ -61,7 +73,7 @@ export function cotejarConOc(
   const problemas: ProblemaCotejo[] = []
   const mencionados = new Set<string>()
 
-  const porCodigo = new Map(oc.map((l) => [l.codArticu.trim(), l]))
+  const porCodigo = new Map(oc.map((l) => [normalizarCodigo(l.codArticu), l]))
 
   for (const linea of pdf) {
     const crudo = (linea.codigo ?? '').trim()
@@ -76,14 +88,17 @@ export function cotejarConOc(
     // El código puede venir en el nuestro o en el del proveedor. Se prueba
     // primero tal cual y después traducido, en ese orden: si un proveedor
     // usa como sinónimo un código que también es nuestro, gana el nuestro.
-    const nuestro = porCodigo.has(crudo) ? crudo : (sinonimos.get(crudo) ?? crudo)
+    const clave = normalizarCodigo(crudo)
+    const nuestro = porCodigo.has(clave)
+      ? clave
+      : normalizarCodigo(sinonimos.get(clave) ?? crudo)
     const enOc = porCodigo.get(nuestro)
 
     if (!enOc) {
       problemas.push({ tipo: 'no-esta-en-la-oc', orden: linea.orden, codigo: crudo })
       continue
     }
-    mencionados.add(enOc.codArticu.trim())
+    mencionados.add(normalizarCodigo(enOc.codArticu))
 
     const cantidad = parsearImporte(linea.cantidad)
     if (cantidad - enOc.pendiente > TOLERANCIA) {
@@ -99,7 +114,7 @@ export function cotejarConOc(
 
   return {
     problemas,
-    noFacturados: oc.filter((l) => !mencionados.has(l.codArticu.trim())),
+    noFacturados: oc.filter((l) => !mencionados.has(normalizarCodigo(l.codArticu))),
   }
 }
 

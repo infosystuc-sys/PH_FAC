@@ -1,5 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { normalizarCodigo } from '@/lib/cotejoOc'
 
 export type ArticuloTango = {
   codArticu: string
@@ -162,6 +163,49 @@ export async function asociarArticuloProveedor(
           @prov
         );
     `)
+}
+
+/**
+ * La vuelta de `sinonimosDelProveedor`: del código que IMPRIME el proveedor
+ * al artículo nuestro. Es la dirección que hace falta para leer una factura
+ * -- lo único que se tiene es lo impreso, y hay que averiguar qué artículo
+ * es -- y `CPA15` está indexada justamente así, por `(COD_SINONI,
+ * COD_PROVEE)`.
+ *
+ * Se pide el proveedor y no solo el sinónimo porque el mismo código puede
+ * significar cosas distintas según quién lo escriba: `COD_SINONI` es único
+ * dentro de un proveedor, no en toda la tabla.
+ *
+ * La comparación es en mayúsculas y sin espacios de los dos lados. `CPA15`
+ * está en `Latin1_General_BIN`, que distingue mayúsculas, y el código sale
+ * de un PDF transcripto por el modelo: exigir que coincida byte a byte
+ * dejaría sin emparejar un artículo que sí está cargado.
+ */
+export async function articulosPorSinonimo(
+  codProvee: string,
+  sinonimos: string[],
+): Promise<Map<string, string>> {
+  const prov = codProvee.trim()
+  const buscados = new Set(sinonimos.map(normalizarCodigo).filter((x) => x !== ''))
+  if (!prov || buscados.size === 0) return new Map()
+
+  const pool = await getPool()
+  const r = await pool
+    .request()
+    .input('prov', sql.VarChar(6), prov)
+    .query<Record<string, unknown>>(`
+      SELECT LTRIM(RTRIM(COD_ARTICU)) AS art, LTRIM(RTRIM(COD_SINONI)) AS sinonimo
+      FROM CPA15
+      WHERE LTRIM(RTRIM(COD_PROVEE)) = @prov
+        AND LTRIM(RTRIM(ISNULL(COD_SINONI,''))) <> ''
+    `)
+
+  const m = new Map<string, string>()
+  for (const f of r.recordset) {
+    const sinonimo = normalizarCodigo(String(f.sinonimo))
+    if (buscados.has(sinonimo)) m.set(sinonimo, String(f.art))
+  }
+  return m
 }
 
 /**

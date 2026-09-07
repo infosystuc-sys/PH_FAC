@@ -62,6 +62,59 @@
   color: var(--texto-4);
 }
 
+/* La lista NO esta filtrada: no emparejo ningun articulo y se ofrecen todas.
+   Decirlo importa -- sin el cartel, el operador creeria que la pantalla ya
+   descarto las que no venian al caso. */
+.sinMatch {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: var(--alerta-fondo);
+  border: 1px solid var(--alerta-borde);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--texto-2);
+}
+
+/* Emparejar a mano un codigo impreso con un articulo nuestro. Escribe
+   CPA15.COD_SINONI, asi que la proxima factura empareja sola. */
+.enseñar {
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px dashed var(--borde);
+  border-radius: 7px;
+}
+
+.enseñarTitulo {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--texto-2);
+}
+
+.enseñarFila {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.selectArticulo {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--fondo-app);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--texto);
+}
+
+.enseñarNota {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--texto-4);
+}
+
 .lista {
   list-style: none;
   margin: 0;
@@ -121,13 +174,26 @@
   border-left: 2px solid var(--borde-sutil-2);
 }
 
+/* Primera columna angosta para la marca de coincidencia: sin ella, las
+   filas que coinciden y las que no quedarian desalineadas entre si. */
 .fila {
   display: grid;
-  grid-template-columns: 90px 1fr 110px;
+  grid-template-columns: 12px 90px 1fr 110px;
   gap: 8px;
   padding: 2px 0;
   font-size: 11.5px;
   color: var(--texto-3);
+}
+
+/* El articulo que la factura cobra. Es el dato por el que esta OC aparece
+   en la lista, asi que se destaca del resto de sus renglones. */
+.filaCoincide {
+  color: var(--texto);
+  font-weight: 600;
+}
+
+.marca {
+  color: var(--ok-texto, var(--acento));
 }
 
 .codigo {
