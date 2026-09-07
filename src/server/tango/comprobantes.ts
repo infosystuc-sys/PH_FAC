@@ -711,7 +711,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // corre el usuario desde el ERP. Va despues de todo lo demas para que
   // reuse, con obtenerDetalleEn, exactamente los mismos datos que ya
   // quedaron guardados -- ver escribirAsientoEn en asiento.ts.
-  await escribirAsientoEn(tx, id, ncompInC, fechaEmision)
+  // Con la fecha CONTABLE, no la de emision: el asiento tiene que caer en el
+  // mismo periodo que la factura en CPA04, y si el comprobante se emitio
+  // dentro de lo que Tango tiene cerrado ese periodo no es el de emision.
+  await escribirAsientoEn(tx, id, ncompInC, fechaContable)
 
   // 9. Actualizar PHF_COMPROBANTE + auditoria.
   await tx.request()

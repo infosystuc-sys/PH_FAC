@@ -432,9 +432,14 @@ export async function previsualizarAsiento(comprobanteId: number): Promise<Asien
  *
  * Queda contabilizado (`CONTABILIZADO='S'`) al momento de grabarse --
  * decision explicita del usuario, 2026-08-22. `USUARIO_CONTABILIZACION`
- * queda en `'PHF_WEB'`, `FECHA_CONTABILIZACION` es la fecha de la factura
- * (no la de hoy) y `TERMINAL_CONTABILIZACION` es el hostname real de la PC
- * que graba (`terminalActual()`, mismo patron que `usuarioActual()`).
+ * queda en `'PHF_WEB'` y `TERMINAL_CONTABILIZACION` es el hostname real de
+ * la PC que graba (`terminalActual()`, mismo patron que `usuarioActual()`).
+ *
+ * `FECHA_CONTABILIZACION` es la FECHA CONTABLE del comprobante, la misma
+ * que va a `CPA04.FECHA_CONT` -- decision del usuario, 2026-09-07. No es la
+ * de emision: si el comprobante se emitio dentro del periodo que Tango tiene
+ * cerrado (`CPA10.CIERRE_CON`), el asiento fechado en emision caeria en un
+ * mes cerrado. Tampoco es la de hoy. Ver `src/lib/fechaContable.ts`.
  * `ASIENTO_ANULACION`/`TRANSFERIDO_CN` quedan en `'N'`: no es una anulacion,
  * y la transferencia a Contabilidad ("pasar a contabilidad") sigue siendo
  * un proceso propio de Tango que corre el usuario dentro del ERP.
@@ -464,7 +469,7 @@ export async function escribirAsientoEn(
   e: Ejecutor,
   comprobanteId: number,
   ncompInC: number,
-  fechaFactura: Date,
+  fechaContable: Date,
 ): Promise<void> {
   const asiento = await previsualizarAsientoEn(e, comprobanteId)
   if (!asiento.balanceado) {
@@ -478,7 +483,7 @@ export async function escribirAsientoEn(
     .request()
     .input('ncompInC', sql.Float, ncompInC)
     .input('usuario', sql.VarChar(120), 'PHF_WEB')
-    .input('fechaContab', sql.DateTime, fechaFactura)
+    .input('fechaContab', sql.DateTime, fechaContable)
     .input('terminal', sql.VarChar(255), terminalActual())
     .query<Record<string, unknown>>(`
       INSERT INTO ASIENTO_COMPROBANTE_CP

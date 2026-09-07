@@ -152,10 +152,15 @@ describe('registrarComprobanteEn', () => {
       expect(asientoHeader.recordset[0].CONTABILIZADO).toBe('S')
       expect(asientoHeader.recordset[0].USUARIO_CONTABILIZACION).toBe('PHF_WEB')
       expect(asientoHeader.recordset[0].TERMINAL_CONTABILIZACION).toBe(terminalActual())
+      // La fecha del asiento es la CONTABLE, la misma que va a
+      // CPA04.FECHA_CONT -- decision del usuario, 2026-09-07. Con esta
+      // factura del 01/06/2026 no es la de emision: cae dentro del periodo
+      // que Tango tiene cerrado, asi que se corre al primer periodo abierto.
       const fechaContab = new Date(asientoHeader.recordset[0].FECHA_CONTABILIZACION)
-      expect(fechaContab.getUTCFullYear()).toBe(2026)
-      expect(fechaContab.getUTCMonth()).toBe(5) // junio, 0-indexado.
-      expect(fechaContab.getUTCDate()).toBe(1)
+      const esperadaAsiento = fechaContableDe(new Date(2026, 5, 1), await cierreContable())
+      expect(fechaContab.getFullYear()).toBe(esperadaAsiento.getFullYear())
+      expect(fechaContab.getMonth()).toBe(esperadaAsiento.getMonth())
+      expect(fechaContab.getDate()).toBe(esperadaAsiento.getDate())
       expect(asientoHeader.recordset[0].TRANSFERIDO_CN).toBe('N')
 
       const asientoLineas = await tx.request()
