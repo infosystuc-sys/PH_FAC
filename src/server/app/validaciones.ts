@@ -20,6 +20,7 @@ import {
   validarCotejoOc,
   validarCantidadesOc,
   validarCodigosRepetidos,
+  validarLeyenda,
   netoQueImplicaElIva,
   validarAlicuotas,
   type ResultadoValidacion,
@@ -186,6 +187,8 @@ export type ResultadoListoParaRegistrar = {
    * no bloquea: el registro las suma solo -- decisión del usuario, 2026-09-08.
    */
   codigosRepetidos: ResultadoValidacion
+  /** Que la observación entre entera en CPA04.LEYENDA, que es varchar(30). */
+  leyenda: ResultadoValidacion
   /**
    * El neto que implican las líneas de IVA, para ofrecérselo al operador de
    * un clic cuando `netoIva` no cierra. `null` si no hay ninguna línea que
@@ -315,6 +318,10 @@ export async function validarListoParaRegistrarEn(
   // percepciones de IIBB como los impuestos varios.
   const codigosRepetidos = validarCodigosRepetidos(lineasIva, lineasPercep, lineasVarios)
 
+  // La observacion va a CPA04.LEYENDA, que es varchar(30): si no entra
+  // entera conviene verlo antes de registrar y no despues, en Tango.
+  const leyenda = validarLeyenda(valores.leyendaAsiento)
+
   const bloqueante = [
     condCompra,
     percepcionIibb,
@@ -342,6 +349,7 @@ export async function validarListoParaRegistrarEn(
     ordenCompra,
     cantidadesOc,
     codigosRepetidos,
+    leyenda,
     netoSegunIva,
     bloqueante,
   }

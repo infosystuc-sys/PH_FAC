@@ -389,6 +389,44 @@ export function validarCodigosRepetidos(
   }
 }
 
+/**
+ * `CPA04.LEYENDA` es varchar(30) -- verificado contra la base real, igual
+ * que su espejo `CTA05.LEYENDA`.
+ */
+export const LARGO_LEYENDA_COMPROBANTE = 30
+
+/**
+ * Avisa si la observación no entra entera en la leyenda del comprobante.
+ *
+ * Desde el 2026-09-08 la observación va a `CPA04.LEYENDA` además de a los
+ * renglones del asiento (pedido del usuario). En el asiento entra holgada
+ * --`ASIENTO_CP.DESC_LEYENDA` admite 100-- pero la leyenda del comprobante
+ * es de 30, y de las observaciones ya cargadas una las pasa.
+ *
+ * No bloquea: la factura se registra igual y el texto completo queda en el
+ * asiento. Pero se avisa, porque un campo que el operador escribió y se
+ * recorta solo es de las cosas que hay que ver antes y no después.
+ */
+export function validarLeyenda(observacion: string | null | undefined): ResultadoValidacion {
+  const texto = (observacion ?? '').trim()
+  if (texto === '') {
+    return {
+      estado: 'ok',
+      mensaje: 'Sin observación: la leyenda del comprobante lleva la condición de compra.',
+    }
+  }
+  if (texto.length <= LARGO_LEYENDA_COMPROBANTE) {
+    return { estado: 'ok', mensaje: `Leyenda del comprobante: "${texto}".` }
+  }
+  return {
+    estado: 'advertencia',
+    mensaje:
+      `La observación tiene ${texto.length} caracteres y la leyenda del comprobante admite ` +
+      `${LARGO_LEYENDA_COMPROBANTE}: en Tango se va a ver "` +
+      `${texto.slice(0, LARGO_LEYENDA_COMPROBANTE)}". En el asiento entra entera.`,
+  }
+}
+
 const RE_CAE = /^\d{14}$/
 
 /**

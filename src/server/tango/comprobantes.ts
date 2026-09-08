@@ -89,6 +89,37 @@ export type RegistroTango = { ncompInC: number; tComp: string; nComp: string }
 // Sentinel que usa Tango para "sin fecha" en varias columnas de fecha legacy.
 const SIN_FECHA = new Date('1800-01-01T03:53:48.000Z')
 
+/**
+ * `CPA04.LEYENDA` y `CTA05.LEYENDA` son varchar(30) -- verificado contra la
+ * base real. Es corto para lo que el operador suele escribir, pero es el
+ * largo de la columna: no hay donde poner mas.
+ */
+export const LARGO_LEYENDA_CPA04 = 30
+
+/**
+ * Lo que se imprime en `CPA04.LEYENDA`.
+ *
+ * Manda la observacion que el operador escribio en la revision -- la misma
+ * que reemplaza la leyenda de cada renglon del asiento (pedido del usuario,
+ * 2026-09-08). Es exactamente el tipo de texto que los propios usuarios de
+ * Tango ponen ahi: de las leyendas ya cargadas en CPA04, las mas usadas
+ * despues de las de plazo son "peajes", "combustibles viajes",
+ * "COMBUSTIBLES COBRADORES", "GSTS DE COMB-TC ICBC".
+ *
+ * Si no hay observacion se cae a la descripcion de la condicion de compra,
+ * que es lo que la app venia grabando y tambien tiene precedente en la base
+ * ("PLAZO 60 DIAS", "PLAZO 30 DIAS"). Dejarla vacia tambien seria valido
+ * --1.730 comprobantes de CPA04 la tienen asi-- pero perder un dato que ya
+ * se estaba grabando no es parte de lo que se pidio.
+ */
+export function leyendaComprobante(
+  observacion: string | null | undefined,
+  descripcionCondicion: string,
+): string {
+  const texto = (observacion ?? '').trim() || descripcionCondicion
+  return texto.slice(0, LARGO_LEYENDA_CPA04)
+}
+
 function horaActual(): string {
   const d = new Date()
   return `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`
@@ -205,6 +236,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const condicion = condiciones.find((c) => c.codigo === codCondCompra)
   if (!condicion) throw new Error(`La condición de compra ${codCondCompra} no existe en Tango.`)
 
+  // La misma observacion que reemplaza la leyenda de los renglones del
+  // asiento va tambien a CPA04.LEYENDA -- pedido del usuario, 2026-09-08.
+  const leyenda = leyendaComprobante(valores.leyendaAsiento, condicion.descripcion)
+
   // Se resuelve y valida temprano, antes del INSERT de CPA04, para no
   // desperdiciarlo si el proveedor no tiene concepto configurado -- mismo
   // criterio que armarAlicuotas() mas abajo. El INSERT a CPA47 en si va
@@ -290,11 +325,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     .input('importeNe', sql.Decimal(18, 2), neto)
     .input('importeEx', sql.Decimal(18, 2), exento)
     .input('importeTo', sql.Decimal(18, 2), total)
-    // CPA04.LEYENDA es varchar(30), no 60 -- verificado contra la base real.
-    // Descripciones de condicion de compra reales superan los 30 caracteres
-    // (ej. "CTA CTE 30-60-90-120-150-180 DIAS", 34), asi que se trunca --
-    // es solo la leyenda impresa, no un dato que otra tabla necesite entero.
-    .input('leyenda', sql.VarChar(30), condicion.descripcion.slice(0, 30))
+    // La observacion del operador, o la condicion de compra si no escribio
+    // ninguna -- ver `leyendaComprobante`. Se trunca a 30 porque la columna
+    // es varchar(30), no 60: verificado contra la base real.
+    .input('leyenda', sql.VarChar(LARGO_LEYENDA_CPA04), leyenda)
     .input('monCte', sql.Bit, moneda === 'ARS')
     .input('codIva1', sql.SmallInt, alicuotas[0].codigo).input('porcIva1', sql.Decimal(9, 4), alicuotas[0].porcentaje).input('impIva1', sql.Decimal(18, 2), alicuotas[0].importe)
     .input('codIva2', sql.SmallInt, alicuotas[1].codigo).input('porcIva2', sql.Decimal(9, 4), alicuotas[1].porcentaje).input('impIva2', sql.Decimal(18, 2), alicuotas[1].importe)
@@ -386,7 +420,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     .input('importeNe', sql.Decimal(18, 2), neto)
     .input('importeEx', sql.Decimal(18, 2), exento)
     .input('importeTo', sql.Decimal(18, 2), total)
-    .input('leyenda', sql.VarChar(30), condicion.descripcion.slice(0, 30))
+    .input('leyenda', sql.VarChar(LARGO_LEYENDA_CPA04), leyenda)
     .input('monCte', sql.Bit, moneda === 'ARS')
     .input('impIva1', sql.Decimal(18, 2), alicuotas[0].importe).input('porcIva1', sql.Decimal(9, 4), alicuotas[0].porcentaje).input('codIva1', sql.SmallInt, alicuotas[0].codigo)
     .input('impIva2', sql.Decimal(18, 2), alicuotas[1].importe).input('porcIva2', sql.Decimal(9, 4), alicuotas[1].porcentaje).input('codIva2', sql.SmallInt, alicuotas[1].codigo)

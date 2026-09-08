@@ -16,6 +16,7 @@ import {
   validarNetoContraIva,
   validarCantidadesOc,
   validarCodigosRepetidos,
+  validarLeyenda,
 } from '@/lib/validaciones'
 import type { LineaAlicuota } from '@/lib/alicuotas'
 
@@ -432,5 +433,42 @@ describe('validarCodigosRepetidos', () => {
 
   it('sin lineas no bloquea', () => {
     expect(validarCodigosRepetidos([], [], []).estado).toBe('ok')
+  })
+})
+
+describe('validarLeyenda', () => {
+  // La observacion va a CPA04.LEYENDA, que es varchar(30), ademas de a los
+  // renglones del asiento, donde entra holgada (100). Pedido del usuario,
+  // 2026-09-08. Avisa, no bloquea: la factura se registra igual.
+  it('sin observacion avisa que la leyenda lleva la condicion de compra', () => {
+    const r = validarLeyenda(null)
+    expect(r.estado).toBe('ok')
+    expect(r.mensaje).toContain('condición de compra')
+    expect(validarLeyenda('   ').estado).toBe('ok')
+  })
+
+  it('muestra la leyenda que se va a grabar cuando entra entera', () => {
+    const r = validarLeyenda('RANGER BLANCA - TC ICBC')
+    expect(r.estado).toBe('ok')
+    expect(r.mensaje).toContain('RANGER BLANCA - TC ICBC')
+  })
+
+  it('acepta justo los 30 caracteres', () => {
+    // Es el largo exacto de una observacion ya cargada.
+    const treinta = 'RANGER BLANCA - CVDG - TC ICBC'
+    expect(treinta).toHaveLength(30)
+    expect(validarLeyenda(treinta).estado).toBe('ok')
+  })
+
+  it('avisa y muestra el recorte cuando se pasa', () => {
+    // El caso real: 32 caracteres, se pierden los dos ultimos.
+    const larga = 'TEL.MOVIL-20/7-19/8-AMEX-VTO:9/9'
+    expect(larga).toHaveLength(32)
+    const r = validarLeyenda(larga)
+    expect(r.estado).toBe('advertencia')
+    expect(r.mensaje).toContain('32')
+    expect(r.mensaje).toContain('TEL.MOVIL-20/7-19/8-AMEX-VTO:9')
+    // Y que se entienda que en el asiento no se pierde nada.
+    expect(r.mensaje).toContain('asiento')
   })
 })

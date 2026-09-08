@@ -5,7 +5,12 @@ import { cerrarPool } from '@/server/db/pool'
 import { conRollback } from '@/server/db/tx'
 import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
-import { buscarFacturaEnCpa04, mapearAlicuotaIva, registrarComprobanteEn } from '@/server/tango/comprobantes'
+import {
+  buscarFacturaEnCpa04,
+  mapearAlicuotaIva,
+  registrarComprobanteEn,
+  leyendaComprobante,
+} from '@/server/tango/comprobantes'
 import { COD_CONCEPTO_TARJETA } from '@/server/tango/conceptos'
 import { aprenderImpuestoEn } from '@/server/app/aprendizajeImpuestos'
 import { terminalActual } from '@/lib/usuario'
@@ -657,4 +662,28 @@ describe('registrarComprobanteEn con liquidacion de tarjeta', () => {
       expect(Number(cta05.recordset[0].IMPORTE_TO)).toBe(12100)
     })
   }, 120_000)
+})
+
+describe('leyendaComprobante', () => {
+  // CPA04.LEYENDA es varchar(30). Desde el 2026-09-08 lleva la observacion
+  // que el operador escribio en la revision -- la misma que reemplaza la
+  // leyenda de los renglones del asiento -- y no la condicion de compra.
+  it('manda la observacion del operador', () => {
+    expect(leyendaComprobante('RANGER BLANCA - TC ICBC', 'CONTADO 1 DIA')).toBe(
+      'RANGER BLANCA - TC ICBC',
+    )
+  })
+
+  it('se cae a la condicion de compra cuando no hay observacion', () => {
+    expect(leyendaComprobante(null, 'CONTADO 1 DIA')).toBe('CONTADO 1 DIA')
+    expect(leyendaComprobante('   ', 'CONTADO 1 DIA')).toBe('CONTADO 1 DIA')
+  })
+
+  it('trunca a 30, que es el largo de la columna', () => {
+    const larga = 'TEL.MOVIL-20/7-19/8-AMEX-VTO:9/9'
+    expect(leyendaComprobante(larga, 'CONTADO 1 DIA')).toBe('TEL.MOVIL-20/7-19/8-AMEX-VTO:9')
+    // Tambien la condicion, que ya se truncaba antes: hay descripciones
+    // reales de 34 caracteres ("CTA CTE 30-60-90-120-150-180 DIAS").
+    expect(leyendaComprobante(null, 'CTA CTE 30-60-90-120-150-180 DIAS')).toHaveLength(30)
+  })
 })

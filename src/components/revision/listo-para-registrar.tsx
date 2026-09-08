@@ -52,6 +52,8 @@ export function ListoParaRegistrar({
     // Después de las tres familias de impuestos porque las mira a las tres
     // juntas -- Tango no admite dos veces el mismo código.
     resultado.codigosRepetidos,
+    // Qué se va a imprimir en la leyenda del comprobante, y si entra entera.
+    resultado.leyenda,
     resultado.formatoComp,
     resultado.fecha,
     resultado.tipoFactura,
