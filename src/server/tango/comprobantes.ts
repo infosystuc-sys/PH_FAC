@@ -431,6 +431,24 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     ...lineasVarios.map((l) => ({ codigo: l.codigo, importe: l.importe })),
   ]
 
+  // CPA18 tiene un indice unico IX_0 sobre (COD_PROVEE, TCOMP_IN_C,
+  // NCOMP_IN_C, COD_IMPUES): una sola fila por impuesto y comprobante. Sin
+  // este corte, dos lineas con el mismo codigo hacen fallar el INSERT y el
+  // error de SQL crudo termina en la pantalla del operador -- paso de
+  // verdad con una factura de PETROARSA donde el impuesto interno y el IDC
+  // habian quedado los dos en el 40. "Listo para registrar" ya lo bloquea
+  // (validarCodigosRepetidos), pero el mensaje tiene que ser entendible
+  // tambien si se llega hasta aca.
+  const repetido = percepciones.find(
+    (p, i) => percepciones.findIndex((x) => x.codigo === p.codigo) !== i,
+  )
+  if (repetido) {
+    throw new Error(
+      `El código de impuesto ${repetido.codigo} aparece en dos líneas del comprobante, y Tango ` +
+        `admite una sola por comprobante. Elegí otro código o sumá los importes en una sola línea.`,
+    )
+  }
+
   for (const p of percepciones) {
     await tx.request()
       .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)

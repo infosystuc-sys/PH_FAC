@@ -320,6 +320,68 @@ export function validarCantidadesOc(
   }
 }
 
+/**
+ * Que un mismo código de Tango no aparezca dos veces en el comprobante.
+ *
+ * No es una preferencia de estilo: Tango no lo admite. `CPA18` tiene un
+ * índice único `IX_0` sobre `(COD_PROVEE, TCOMP_IN_C, NCOMP_IN_C,
+ * COD_IMPUES)` -- una sola fila por impuesto y comprobante --, así que dos
+ * líneas que resuelvan al mismo código hacen fallar el INSERT. Pasó de
+ * verdad con una factura de PETROARSA donde "Impuesto interno a nivel ítem"
+ * e "IDC" habían quedado los dos en el 40: el registro se cayó con un error
+ * de SQL crudo en pantalla ("Cannot insert duplicate key row").
+ *
+ * Los slots de IVA de la cabecera no tienen un índice que lo impida --son
+ * columnas, no filas--, pero la regla es la misma: de los 27.090
+ * comprobantes de `CPA04`, ni uno solo repite un `COD_IVA` entre sus cinco
+ * slots. Repetirlo partiría en dos una alícuota que Tango espera sumada.
+ *
+ * Las percepciones de Ingresos Brutos y los impuestos varios se chequean
+ * JUNTOS, no cada familia por su cuenta: las dos escriben en `CPA18` y el
+ * índice único no distingue de cuál venía la línea.
+ */
+export function validarCodigosRepetidos(
+  lineasIva: LineaAlicuota[],
+  lineasPercep: LineaPercepcion[],
+  lineasVarios: LineaVarios[],
+): ResultadoValidacion {
+  const repetidos = (etiquetas: { codigo: string; descripcion: string }[]): string[] => {
+    const vistos = new Map<string, number>()
+    for (const e of etiquetas) vistos.set(e.codigo, (vistos.get(e.codigo) ?? 0) + 1)
+    return etiquetas
+      .filter((e, i) => etiquetas.findIndex((x) => x.codigo === e.codigo) === i)
+      .filter((e) => (vistos.get(e.codigo) ?? 0) > 1)
+      .map((e) => `${e.codigo} — ${e.descripcion} (${vistos.get(e.codigo)} veces)`)
+  }
+
+  const iva = repetidos(
+    lineasIva
+      .filter((l) => l.estado === 'registra' && l.alicuota)
+      .map((l) => ({ codigo: String(l.alicuota!.codigo), descripcion: l.alicuota!.descripcion })),
+  )
+
+  // Percepciones IIBB y varios van a la misma tabla: se cuentan juntos.
+  const enCpa18 = repetidos([
+    ...lineasPercep
+      .filter((l) => l.estado === 'registra' && l.codigo)
+      .map((l) => ({ codigo: l.codigo!.codigo, descripcion: l.codigo!.jurisdiccion })),
+    ...lineasVarios
+      .filter((l) => l.estado === 'registra' && l.codigo)
+      .map((l) => ({ codigo: l.codigo, descripcion: l.descripcion ?? l.texto })),
+  ])
+
+  const todos = [...iva, ...enCpa18]
+  if (todos.length === 0) {
+    return { estado: 'ok', mensaje: 'Ningún código de Tango se repite.' }
+  }
+  return {
+    estado: 'error',
+    mensaje:
+      `Hay códigos de Tango repetidos, y Tango no los admite dos veces en el mismo ` +
+      `comprobante: ${todos.join('; ')}. Elegí otro código o sumá los importes en una sola línea.`,
+  }
+}
+
 const RE_CAE = /^\d{14}$/
 
 /**

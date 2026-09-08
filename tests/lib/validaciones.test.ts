@@ -15,6 +15,7 @@ import {
   sinCerosDeRelleno,
   validarNetoContraIva,
   validarCantidadesOc,
+  validarCodigosRepetidos,
 } from '@/lib/validaciones'
 import type { LineaAlicuota } from '@/lib/alicuotas'
 
@@ -353,5 +354,82 @@ describe('validarCantidadesOc', () => {
 
   it('sin renglones no bloquea', () => {
     expect(validarCantidadesOc('articulos', []).estado).toBe('ok')
+  })
+})
+
+describe('validarCodigosRepetidos', () => {
+  // Tango no admite dos veces el mismo codigo en un comprobante: CPA18 tiene
+  // un indice unico sobre (COD_PROVEE, TCOMP_IN_C, NCOMP_IN_C, COD_IMPUES).
+  // Sin esto, el registro se caia con un error de SQL crudo en pantalla --
+  // paso con una factura de PETROARSA con el impuesto interno y el IDC los
+  // dos en el 40.
+  const iva = (codigo: number, descripcion: string): LineaAlicuota => ({
+    slot: 1,
+    porcentaje: 21,
+    importe: 100,
+    estado: 'registra',
+    alicuota: { codigo, porcentaje: 21, descripcion },
+  })
+  const varios = (codigo: string, descripcion: string) => ({
+    slot: 1,
+    codigo,
+    texto: descripcion,
+    importe: 100,
+    estado: 'registra' as const,
+    descripcion,
+  })
+  const percep = (codigo: string, jurisdiccion: string) => ({
+    slot: 1,
+    texto: jurisdiccion,
+    importe: 100,
+    estado: 'registra' as const,
+    codigo: { codigo, jurisdiccion, alias: [], criterio: '' },
+  })
+
+  it('deja pasar un comprobante sin codigos repetidos', () => {
+    const r = validarCodigosRepetidos(
+      [iva(1, 'IVA 21%')],
+      [percep('64', 'Bancarias')],
+      [varios('40', 'IMP INT'), varios('65', 'PERCEP DEB Y CRED RG')],
+    )
+    expect(r.estado).toBe('ok')
+  })
+
+  it('bloquea dos impuestos varios con el mismo codigo', () => {
+    // El caso real: "Impuesto interno a nivel item" e "IDC", los dos al 40.
+    const r = validarCodigosRepetidos(
+      [],
+      [],
+      [varios('40', 'IMP INT'), varios('40', 'IMP INT')],
+    )
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('40')
+    expect(r.mensaje).toContain('2 veces')
+  })
+
+  it('cuenta juntas las percepciones IIBB y los varios: van a la misma tabla', () => {
+    // El indice unico de CPA18 no distingue de que familia venia la linea.
+    const r = validarCodigosRepetidos([], [percep('64', 'Bancarias')], [varios('64', 'RET IIBB BANCARIOS')])
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('64')
+  })
+
+  it('bloquea tambien dos slots de IVA con la misma alicuota', () => {
+    // No hay indice que lo impida --son columnas, no filas-- pero de los
+    // 27.090 comprobantes de CPA04 ni uno repite un COD_IVA entre sus slots.
+    const r = validarCodigosRepetidos([iva(1, 'IVA 21%'), iva(1, 'IVA 21%')], [], [])
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('IVA 21%')
+  })
+
+  it('no cuenta las lineas que no se registran', () => {
+    const omitida: LineaAlicuota = {
+      slot: 2, porcentaje: 0, importe: 100, estado: 'omitida', alicuota: null,
+    }
+    expect(validarCodigosRepetidos([iva(1, 'IVA 21%'), omitida], [], []).estado).toBe('ok')
+  })
+
+  it('sin lineas no bloquea', () => {
+    expect(validarCodigosRepetidos([], [], []).estado).toBe('ok')
   })
 })

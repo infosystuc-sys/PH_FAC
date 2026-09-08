@@ -49,6 +49,9 @@ export function ListoParaRegistrar({
     resultado.netoIva,
     resultado.percepcionIibb,
     resultado.varios,
+    // Después de las tres familias de impuestos porque las mira a las tres
+    // juntas -- Tango no admite dos veces el mismo código.
+    resultado.codigosRepetidos,
     resultado.formatoComp,
     resultado.fecha,
     resultado.tipoFactura,

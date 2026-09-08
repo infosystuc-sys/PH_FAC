@@ -19,6 +19,7 @@ import {
   validarNetoContraIva,
   validarCotejoOc,
   validarCantidadesOc,
+  validarCodigosRepetidos,
   netoQueImplicaElIva,
   validarAlicuotas,
   type ResultadoValidacion,
@@ -180,6 +181,8 @@ export type ResultadoListoParaRegistrar = {
   ordenCompra: ResultadoValidacion
   /** Que ningún renglón facture más de lo que la orden tiene pendiente. */
   cantidadesOc: ResultadoValidacion
+  /** Que ningún código de Tango se repita: CPA18 no lo admite. */
+  codigosRepetidos: ResultadoValidacion
   /**
    * El neto que implican las líneas de IVA, para ofrecérselo al operador de
    * un clic cuando `netoIva` no cierra. `null` si no hay ninguna línea que
@@ -218,13 +221,11 @@ export async function validarListoParaRegistrarEn(
   const aprendidosPercep = await cargarAprendidosEn(e, codProvee, 'percepcion')
 
   const condCompra = validarCondCompra(valores.condcompra)
-  const percepcionIibb = validarPercepciones(
-    resolverPercepciones(valores, valores.tipoFactura, aprendidosPercep),
-  )
+  const lineasPercep = resolverPercepciones(valores, valores.tipoFactura, aprendidosPercep)
+  const percepcionIibb = validarPercepciones(lineasPercep)
   const aprendidosVarios = await cargarAprendidosEn(e, codProvee, 'varios')
-  const varios = validarVarios(
-    resolverVarios(valores, await listarCodigosImpuesto(), aprendidosVarios),
-  )
+  const lineasVarios = resolverVarios(valores, await listarCodigosImpuesto(), aprendidosVarios)
+  const varios = validarVarios(lineasVarios)
   const formatoComp = validarFormatoNComp(valores.ptovta, valores.nro)
   const fecha = validarFecha(valores.fecha)
   const tipoFactura = validarTipoFactura(valores.tipoFactura)
@@ -306,6 +307,11 @@ export async function validarListoParaRegistrarEn(
   const netoIva = validarNetoContraIva(lineasIva, valores.neto, valores.tipoFactura)
   const netoSegunIva = netoQueImplicaElIva(lineasIva)
 
+  // Va despues de resolver las tres familias porque las mira a las tres
+  // juntas: CPA18 no admite dos veces el mismo codigo, y ahi caen tanto las
+  // percepciones de IIBB como los impuestos varios.
+  const codigosRepetidos = validarCodigosRepetidos(lineasIva, lineasPercep, lineasVarios)
+
   const bloqueante = [
     condCompra,
     percepcionIibb,
@@ -318,6 +324,7 @@ export async function validarListoParaRegistrarEn(
     netoIva,
     ordenCompra,
     cantidadesOc,
+    codigosRepetidos,
   ].some((v) => v.estado === 'error')
 
   return {
@@ -332,6 +339,7 @@ export async function validarListoParaRegistrarEn(
     netoIva,
     ordenCompra,
     cantidadesOc,
+    codigosRepetidos,
     netoSegunIva,
     bloqueante,
   }
