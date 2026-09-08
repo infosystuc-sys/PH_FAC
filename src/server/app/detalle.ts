@@ -1,6 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
-import { esClaveValida } from '@/lib/campos'
+import { esClaveValida, campoPorClave } from '@/lib/campos'
 import { parsearImporteONulo } from '@/lib/formato'
 import { usuarioActual } from '@/lib/usuario'
 import type { Extraccion } from '../ia/extraccion'
@@ -111,11 +111,19 @@ export async function guardarExtraccionEn(
     if (!esClaveValida(clave)) continue
     if (campo.valor !== null) conValor.push(campo.confianza)
 
+    // El tope del catalogo tambien para lo que devuelve la IA, no solo para
+    // lo que tipea el operador: `leyendaAsiento` la precarga el modelo con
+    // lo que este escrito a mano en el comprobante, y va a una columna de 30
+    // (CPA04.LEYENDA). Sin esto, una anotacion larga se recortaria recien al
+    // grabar, adentro de Tango -- ver `maxLargo` en campos.ts.
+    const max = campoPorClave(clave)?.maxLargo
+    const valor = max && campo.valor !== null ? campo.valor.slice(0, max) : campo.valor
+
     await e
       .request()
       .input('id', sql.Int, comprobanteId)
       .input('clave', sql.VarChar(40), clave)
-      .input('valor', sql.NVarChar(500), campo.valor)
+      .input('valor', sql.NVarChar(500), valor)
       .input('conf', sql.Decimal(5, 4), campo.valor === null ? null : campo.confianza)
       .query(`
         INSERT INTO PHF_CAMPO (COMPROBANTE_ID, CLAVE, VALOR_IA, CONFIANZA, VALOR_FINAL)

@@ -123,6 +123,32 @@ figura: el operador la va a ver marcada como no reconocida y decide qué
 hacer. Lo que no hay que hacer es forzarla a una de la lista.`,
 ].join('\n')
 
+/**
+ * El único campo que no sale del texto impreso. Los comprobantes llegan
+ * escaneados y muchos vienen anotados a mano por quien hizo la compra --
+ * típicamente la identificación del vehículo en un ticket de combustible --
+ * y eso es justo lo que el operador venía copiando a mano en la observación.
+ *
+ * Se pide corto y literal, sin interpretar: es la referencia interna de la
+ * empresa, no un dato del comprobante, y va a una columna de 30 caracteres
+ * (`CPA04.LEYENDA`).
+ */
+const MANUSCRITO = `El comprobante puede venir con algo ESCRITO A MANO encima: los tickets
+suelen llegar anotados con birome por quien hizo la compra. Transcribí esa
+anotación en leyendaAsiento, tal cual está escrita y en una sola línea (por
+ejemplo "DFSK - Log. - TC ICBC"). Es una referencia interna de la empresa
+--qué vehículo, qué sector, con qué tarjeta se pagó-- así que no la
+interpretes, no la completes y no la traduzcas: copiala.
+
+Si hay varias anotaciones sueltas, unilas con " - " en el orden en que
+aparecen. Si la anotación no se entiende, transcribí lo que puedas leer y
+bajá la confianza; si no hay nada escrito a mano, dejá leyendaAsiento vacío
+-- no pongas ahí nada del texto impreso.
+
+No cuentan como anotación a mano: las marcas de resaltador, los tildes,
+subrayados o círculos sobre datos que ya están impresos, ni las firmas.
+Tampoco los sellos. Solo el texto agregado a mano.`
+
 const IMPUESTOS_VARIOS = `Todo impuesto que no sea IVA -- ni alícuota ni
 percepción de IVA -- ni Ingresos Brutos: impuesto interno, impuesto a las
 ganancias, retenciones municipales, impuesto sobre los débitos y créditos,
@@ -265,6 +291,7 @@ function armar(tipo: TipoFactura): string {
       SLOTS_IVA,
       PERCEPCIONES,
       IMPUESTOS_VARIOS,
+      MANUSCRITO,
     ]),
     '',
     'Campos a extraer:',
@@ -287,4 +314,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v7'
+export const VERSION_PROMPT = 'v8'

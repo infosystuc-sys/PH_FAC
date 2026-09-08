@@ -107,7 +107,14 @@ function camposVisibles(
   // descuadra la grilla de 6 columnas, asi que los que quedan se
   // reacomodan para volver a llenar filas enteras. Ver spanDe.
   const todos = camposDelGrupo(grupo)
-    .filter((def) => analizaCampo(tipo, def.clave) || (valores[def.clave] ?? '').trim() !== '')
+    .filter(
+      (def) =>
+        // Los que el operador también escribe se muestran igual: esconderlos
+        // porque la IA no los lee en este tipo lo dejaría sin dónde tipearlos.
+        def.siempreVisible ||
+        analizaCampo(tipo, def.clave) ||
+        (valores[def.clave] ?? '').trim() !== '',
+    )
     .map((def) => {
       const span = spanDe(tipo, def.clave, def.span)
       return span === def.span ? def : { ...def, span }

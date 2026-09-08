@@ -46,6 +46,16 @@ export type DefCampo = {
    * texto se recortaría recién al grabar, dentro de Tango, donde ya no se ve.
    */
   maxLargo?: number
+  /**
+   * Se muestra aunque la IA no lo analice en este tipo de comprobante.
+   *
+   * La regla general es que un campo que la IA no lee tampoco se muestre:
+   * serían casilleros siempre vacíos (ver `camposVisibles`). Vale para los
+   * campos cuya única fuente es la IA -- CAE, moneda, cotización --, pero no
+   * para los que además escribe el operador: esconderlos lo dejaría sin
+   * dónde tipearlos.
+   */
+  siempreVisible?: boolean
 }
 
 /**
@@ -168,18 +178,24 @@ export const CAMPOS: DefCampo[] = [
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
   { clave: 'tipoFactura', label: 'Tipo de factura', grupo: 'imputacion', span: 3,
     tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
-  // Texto libre del operador, aparte de cualquier campo que lea la IA.
-  // Reemplaza la leyenda de cada renglón del asiento -- ver
-  // previsualizarAsientoEn en asiento.ts -- para dejar constancia de algo
-  // que no sale del comprobante (un motivo de pago, una referencia interna).
+  // Texto del operador que reemplaza la leyenda de cada renglón del asiento
+  // -- ver previsualizarAsientoEn en asiento.ts -- y desde el 2026-09-08 va
+  // también a CPA04.LEYENDA.
   //
-  // Se topea en el largo de CPA04.LEYENDA (30) porque desde el 2026-09-08 va
-  // también ahí, y ésa es la más corta de las dos columnas que lo reciben
-  // (ASIENTO_CP.DESC_LEYENDA admite 100). Decisión del usuario: que el tope
-  // se vea al escribir, en vez de recortar el texto al grabar.
+  // Desde el 2026-09-08 lo PRECARGA la IA con lo que esté escrito a mano en
+  // el comprobante. Es el único campo que no sale del texto impreso: los
+  // tickets de combustible vienen anotados a mano con la identificación del
+  // vehículo ("DFSK - Log. - TC ICBC"), y eso es exactamente lo que el
+  // operador venía copiando acá a mano. Sigue siendo editable: la IA propone
+  // y el operador dispone, igual que con cualquier otro campo.
+  //
+  // Se topea en el largo de CPA04.LEYENDA (30), la más corta de las dos
+  // columnas que lo reciben (ASIENTO_CP.DESC_LEYENDA admite 100). Decisión
+  // del usuario: que el tope se vea al escribir, en vez de recortar el texto
+  // al grabar.
   { clave: 'leyendaAsiento', label: 'Leyenda / observación del asiento', grupo: 'imputacion', span: 6,
-    tipo: 'texto', mono: false, extraePorIA: false, soloLectura: false,
-    maxLargo: LARGO_LEYENDA_COMPROBANTE },
+    tipo: 'texto', mono: false, extraePorIA: true, soloLectura: false,
+    maxLargo: LARGO_LEYENDA_COMPROBANTE, siempreVisible: true },
 ]
 
 /** Correccion manual del codigo de Tango de una fila. No la extrae la IA. */

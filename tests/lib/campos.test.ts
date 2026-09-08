@@ -67,7 +67,7 @@ describe('catalogo de campos', () => {
       for (const excluido of CAMPOS_NO_ANALIZADOS[tipo]) {
         expect(claves, `${tipo} no deberia analizar ${excluido}`).not.toContain(excluido)
       }
-      expect(claves).toHaveLength(41 - CAMPOS_NO_ANALIZADOS[tipo].length)
+      expect(claves).toHaveLength(42 - CAMPOS_NO_ANALIZADOS[tipo].length)
 
       // Todos siguen en el catalogo: la IA no los lee, pero el operador
       // puede tener uno cargado a mano de antes y el formulario tiene que
@@ -78,18 +78,19 @@ describe('catalogo de campos', () => {
     },
   )
 
-  it('el catalogo tiene 41 campos que la IA puede llegar a extraer', () => {
+  it('el catalogo tiene 42 campos que la IA puede llegar a extraer', () => {
     // El numero exacto es un tripwire, no una formalidad: la API ya rechazo
-    // este schema dos veces por tamaño -- una por superar las 16 uniones de
-    // tipos, otra por "compiled grammar is too large" con 29 campos
-    // anidados.
+    // este schema tres veces por tamaño -- por superar las 16 uniones de
+    // tipos, por "compiled grammar is too large" con 29 campos anidados, y
+    // el 2026-09-08 al llevar articulos a 33 campos con el array (por eso
+    // `leyendaAsiento` sale del schema de articulos y no de los otros dos).
     //
-    // Ningun tipo pide los 41: cada uno saca los suyos (ver
-    // CAMPOS_NO_ANALIZADOS). Hoy articulos pide 33 y los otros dos 31,
-    // contra un techo medido de 35 sin el array de renglones. Si este test
+    // Ningun tipo pide los 42: cada uno saca los suyos (ver
+    // CAMPOS_NO_ANALIZADOS). Hoy conceptos y articulos piden 32 y tarjeta
+    // 26, y los tres los acepta la API -- medido, no deducido. Si este test
     // salta al agregar campos, corre scripts/verificar-schema.ts antes de
     // dar por hecho que el schema sigue entrando.
-    expect(CAMPOS_IA.length).toBe(41)
+    expect(CAMPOS_IA.length).toBe(42)
   })
 
   it('los campos calculados y de imputacion no los extrae la IA', () => {
@@ -243,5 +244,24 @@ describe('maxLargo', () => {
   it('ningun otro campo tiene tope: solo se pone donde la columna aprieta', () => {
     const conTope = CAMPOS.filter((c) => c.maxLargo !== undefined).map((c) => c.clave)
     expect(conTope).toEqual(['leyendaAsiento'])
+  })
+})
+
+describe('siempreVisible', () => {
+  // La anotacion manuscrita se lee en conceptos y tarjeta pero no en
+  // articulos: ahi el schema no entra (medido contra la API el 2026-09-08,
+  // 33 campos con el array devuelve "compiled grammar is too large"). El
+  // campo tiene que seguir mostrandose igual, porque el operador tambien lo
+  // escribe a mano -- si se escondiera, en articulos se quedaria sin donde.
+  it('la observacion no se analiza en articulos pero sigue visible', () => {
+    expect(analizaCampo('articulos', 'leyendaAsiento')).toBe(false)
+    expect(analizaCampo('conceptos', 'leyendaAsiento')).toBe(true)
+    expect(analizaCampo('tarjeta', 'leyendaAsiento')).toBe(true)
+    expect(campoPorClave('leyendaAsiento')?.siempreVisible).toBe(true)
+  })
+
+  it('es el unico con la marca: el resto se esconde cuando no se analiza', () => {
+    const visibles = CAMPOS.filter((c) => c.siempreVisible).map((c) => c.clave)
+    expect(visibles).toEqual(['leyendaAsiento'])
   })
 })

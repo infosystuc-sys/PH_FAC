@@ -145,7 +145,15 @@ export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
   // contra un remito. No es solo que dejaran de usarse: hacen falta los dos
   // campos para que entre el array de renglones que ahora lee la IA --
   // medido contra la API, 34 campos + array lo rechaza y 32 lo acepta.
-  articulos: [...NO_ANALIZADOS_COMUNES, ...REMITOS],
+  // `leyendaAsiento` --la anotación manuscrita-- sale del schema de artículos
+  // por falta de cupo, no porque no sirva ahí. Medido contra la API el
+  // 2026-09-08: artículos con el array de renglones y 33 campos devuelve 400
+  // "compiled grammar is too large", y con 32 entra. Es el único tipo sin
+  // margen, y la anotación a mano aparece sobre todo en tickets de
+  // combustible, que son facturas de conceptos. El campo se sigue mostrando
+  // y se puede escribir a mano (ver `siempreVisible` en campos.ts): lo que
+  // no hace en artículos es precargarse solo.
+  articulos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, 'leyendaAsiento'],
   tarjeta: [
     ...NO_ANALIZADOS_COMUNES,
     ...REMITOS,
