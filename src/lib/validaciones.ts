@@ -2,6 +2,9 @@ import { totalImputado, parsearImporte } from './formato'
 import { formatPorcentaje, esIvaSobreLaBase, type LineaAlicuota } from './alicuotas'
 import type { LineaPercepcion, LineaVarios } from './percepciones'
 import { describirCotejo, type ResultadoCotejoOc } from './cotejoOc'
+import { LARGO_LEYENDA_COMPROBANTE } from './campos'
+
+export { LARGO_LEYENDA_COMPROBANTE }
 
 export type ResultadoValidacion = {
   estado: 'ok' | 'advertencia' | 'error'
@@ -389,11 +392,6 @@ export function validarCodigosRepetidos(
   }
 }
 
-/**
- * `CPA04.LEYENDA` es varchar(30) -- verificado contra la base real, igual
- * que su espejo `CTA05.LEYENDA`.
- */
-export const LARGO_LEYENDA_COMPROBANTE = 30
 
 /**
  * Avisa si la observación no entra entera en la leyenda del comprobante.

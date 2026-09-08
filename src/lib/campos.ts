@@ -9,6 +9,16 @@ import {
   type TipoFactura,
 } from './tipoFactura'
 
+/**
+ * El largo de `CPA04.LEYENDA` y su espejo `CTA05.LEYENDA`: varchar(30),
+ * verificado contra la base real.
+ *
+ * Vive en el catalogo de campos y no al lado del INSERT porque es el tope
+ * del input de la observacion en la revision, ademas del de la columna: son
+ * el mismo numero y separarlos los dejaria desincronizarse.
+ */
+export const LARGO_LEYENDA_COMPROBANTE = 30
+
 export type GrupoCampo = 'comprobante' | 'proveedor' | 'importes' | 'imputacion'
 /**
  * `porcentaje` es distinto de `decimal` a propósito: los `porcivaN` son
@@ -30,6 +40,12 @@ export type DefCampo = {
   mono: boolean
   extraePorIA: boolean
   soloLectura: boolean
+  /**
+   * Tope de caracteres del input, cuando la columna de Tango que recibe el
+   * campo es más corta que lo que el operador podría escribir. Sin tope, el
+   * texto se recortaría recién al grabar, dentro de Tango, donde ya no se ve.
+   */
+  maxLargo?: number
 }
 
 /**
@@ -156,8 +172,14 @@ export const CAMPOS: DefCampo[] = [
   // Reemplaza la leyenda de cada renglón del asiento -- ver
   // previsualizarAsientoEn en asiento.ts -- para dejar constancia de algo
   // que no sale del comprobante (un motivo de pago, una referencia interna).
+  //
+  // Se topea en el largo de CPA04.LEYENDA (30) porque desde el 2026-09-08 va
+  // también ahí, y ésa es la más corta de las dos columnas que lo reciben
+  // (ASIENTO_CP.DESC_LEYENDA admite 100). Decisión del usuario: que el tope
+  // se vea al escribir, en vez de recortar el texto al grabar.
   { clave: 'leyendaAsiento', label: 'Leyenda / observación del asiento', grupo: 'imputacion', span: 6,
-    tipo: 'texto', mono: false, extraePorIA: false, soloLectura: false },
+    tipo: 'texto', mono: false, extraePorIA: false, soloLectura: false,
+    maxLargo: LARGO_LEYENDA_COMPROBANTE },
 ]
 
 /** Correccion manual del codigo de Tango de una fila. No la extrae la IA. */

@@ -114,9 +114,13 @@ export function Campo({
             .join(' ')}
           value={local}
           readOnly={soloLectura}
+          // El tope se aplica al valor, no solo con el atributo maxLength:
+          // `maxLength` frena lo que se tipea pero no lo que se pega en
+          // algunos navegadores, y este campo se llena copiando y pegando.
+          maxLength={def.maxLargo}
           onChange={(e) => {
             tocado.current = true
-            setLocal(e.target.value)
+            setLocal(def.maxLargo ? e.target.value.slice(0, def.maxLargo) : e.target.value)
           }}
           onFocus={() => onFoco(local)}
           onBlur={onDesenfoque}

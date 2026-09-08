@@ -8,6 +8,7 @@ import {
   camposIaPara,
   OCULTOS_EN_GRILLA,
 } from '@/lib/campos'
+import { LARGO_LEYENDA_COMPROBANTE } from '@/lib/validaciones'
 import {
   CAMPOS_NO_ANALIZADOS,
   ANALIZA_RENGLONES,
@@ -227,4 +228,20 @@ describe('schemaExtraccion', () => {
       expect(camposIaPara(tipo).length).toBeLessThanOrEqual(techo)
     },
   )
+})
+
+describe('maxLargo', () => {
+  // La observacion va a CPA04.LEYENDA, que es varchar(30) -- la mas corta de
+  // las dos columnas que la reciben (ASIENTO_CP.DESC_LEYENDA admite 100). El
+  // tope se ve al escribir en vez de recortar el texto al grabar, adentro de
+  // Tango, donde el operador ya no lo ve. Decision del usuario, 2026-09-08.
+  it('la observacion se topea en el largo de CPA04.LEYENDA', () => {
+    expect(campoPorClave('leyendaAsiento')?.maxLargo).toBe(LARGO_LEYENDA_COMPROBANTE)
+    expect(LARGO_LEYENDA_COMPROBANTE).toBe(30)
+  })
+
+  it('ningun otro campo tiene tope: solo se pone donde la columna aprieta', () => {
+    const conTope = CAMPOS.filter((c) => c.maxLargo !== undefined).map((c) => c.clave)
+    expect(conTope).toEqual(['leyendaAsiento'])
+  })
 })

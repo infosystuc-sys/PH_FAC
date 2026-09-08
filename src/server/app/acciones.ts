@@ -15,6 +15,7 @@ import {
 import { usuarioActual } from '@/lib/usuario'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { esTipoFactura } from '@/lib/tipoFactura'
+import { campoPorClave } from '@/lib/campos'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
 import { registrarComprobante as registrarComprobanteTango } from '@/server/tango/comprobantes'
@@ -104,7 +105,15 @@ export async function importarComprobantes(fd: FormData): Promise<{ importados: 
 
 export async function guardarCampo(id: number, clave: string, valor: string): Promise<void> {
   const pool = await getPool()
-  await guardarCampoEn(pool, id, clave, valor.trim() === '' ? null : valor)
+
+  // El tope del catálogo, del lado del servidor: el input ya lo aplica, pero
+  // el que manda es éste. Un campo más largo que su columna de Tango se
+  // recortaría recién al grabar, dentro del ERP, donde el operador ya no lo
+  // ve -- ver `maxLargo` en campos.ts.
+  const max = campoPorClave(clave)?.maxLargo
+  const recortado = max ? valor.slice(0, max) : valor
+
+  await guardarCampoEn(pool, id, clave, recortado.trim() === '' ? null : recortado)
   // Mismo criterio que el MERGE de guardarCampoEn: si el comprobante ya
   // esta `registrado`, guardarCampoEn fue un no-op, y esta UPDATE no puede
   // dejar registrado que un usuario "modifico" algo que en los hechos no

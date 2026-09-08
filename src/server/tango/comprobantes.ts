@@ -2,7 +2,12 @@ import sql from 'mssql'
 import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
 import { obtenerDetalleEn, auditarEn } from '@/server/app/detalle'
-import { nComp as armarNComp, letraComprobante, parsearFechaArg } from '@/lib/validaciones'
+import {
+  nComp as armarNComp,
+  letraComprobante,
+  parsearFechaArg,
+  LARGO_LEYENDA_COMPROBANTE,
+} from '@/lib/validaciones'
 import { parsearImporte, totalImputado } from '@/lib/formato'
 import { resolverAlicuotas, resolverCodigoIva } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
@@ -90,13 +95,6 @@ export type RegistroTango = { ncompInC: number; tComp: string; nComp: string }
 const SIN_FECHA = new Date('1800-01-01T03:53:48.000Z')
 
 /**
- * `CPA04.LEYENDA` y `CTA05.LEYENDA` son varchar(30) -- verificado contra la
- * base real. Es corto para lo que el operador suele escribir, pero es el
- * largo de la columna: no hay donde poner mas.
- */
-export const LARGO_LEYENDA_CPA04 = 30
-
-/**
  * Lo que se imprime en `CPA04.LEYENDA`.
  *
  * Manda la observacion que el operador escribio en la revision -- la misma
@@ -117,7 +115,7 @@ export function leyendaComprobante(
   descripcionCondicion: string,
 ): string {
   const texto = (observacion ?? '').trim() || descripcionCondicion
-  return texto.slice(0, LARGO_LEYENDA_CPA04)
+  return texto.slice(0, LARGO_LEYENDA_COMPROBANTE)
 }
 
 function horaActual(): string {
@@ -328,7 +326,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     // La observacion del operador, o la condicion de compra si no escribio
     // ninguna -- ver `leyendaComprobante`. Se trunca a 30 porque la columna
     // es varchar(30), no 60: verificado contra la base real.
-    .input('leyenda', sql.VarChar(LARGO_LEYENDA_CPA04), leyenda)
+    .input('leyenda', sql.VarChar(LARGO_LEYENDA_COMPROBANTE), leyenda)
     .input('monCte', sql.Bit, moneda === 'ARS')
     .input('codIva1', sql.SmallInt, alicuotas[0].codigo).input('porcIva1', sql.Decimal(9, 4), alicuotas[0].porcentaje).input('impIva1', sql.Decimal(18, 2), alicuotas[0].importe)
     .input('codIva2', sql.SmallInt, alicuotas[1].codigo).input('porcIva2', sql.Decimal(9, 4), alicuotas[1].porcentaje).input('impIva2', sql.Decimal(18, 2), alicuotas[1].importe)
@@ -420,7 +418,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     .input('importeNe', sql.Decimal(18, 2), neto)
     .input('importeEx', sql.Decimal(18, 2), exento)
     .input('importeTo', sql.Decimal(18, 2), total)
-    .input('leyenda', sql.VarChar(LARGO_LEYENDA_CPA04), leyenda)
+    .input('leyenda', sql.VarChar(LARGO_LEYENDA_COMPROBANTE), leyenda)
     .input('monCte', sql.Bit, moneda === 'ARS')
     .input('impIva1', sql.Decimal(18, 2), alicuotas[0].importe).input('porcIva1', sql.Decimal(9, 4), alicuotas[0].porcentaje).input('codIva1', sql.SmallInt, alicuotas[0].codigo)
     .input('impIva2', sql.Decimal(18, 2), alicuotas[1].importe).input('porcIva2', sql.Decimal(9, 4), alicuotas[1].porcentaje).input('codIva2', sql.SmallInt, alicuotas[1].codigo)
