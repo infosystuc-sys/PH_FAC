@@ -116,9 +116,35 @@ async function armarAlicuotas(
   }
 
   // Las `omitida` (alicuota 0%) quedan afuera por norma de registracion.
-  return lineas
-    .filter((l) => l.estado === 'registra')
-    .map((l) => ({ codigo: l.alicuota!.codigo, porcentaje: l.porcentaje, importe: l.importe }))
+  //
+  // Dos slots que resuelvan a la misma alicuota se suman en uno solo, no
+  // ocupan dos: de los 27.090 comprobantes de CPA04 ni uno repite un COD_IVA
+  // entre sus cinco slots, y dejarlos separados partiria en dos una alicuota
+  // que Tango espera sumada. Es lo mismo que ya hace el asiento, que agrupa
+  // por codigo (ver `genericas` en asiento.ts): asi los tres coinciden.
+  return agruparPorCodigo(
+    lineas
+      .filter((l) => l.estado === 'registra')
+      .map((l) => ({ codigo: l.alicuota!.codigo, porcentaje: l.porcentaje, importe: l.importe })),
+  )
+}
+
+/**
+ * Junta en una sola linea las que van al mismo codigo de Tango, sumando los
+ * importes. Conserva el orden de aparicion y el porcentaje de la primera.
+ */
+function agruparPorCodigo<T extends { codigo: number | string; importe: number }>(lineas: T[]): T[] {
+  const porCodigo = new Map<string, T>()
+  for (const l of lineas) {
+    const clave = String(l.codigo)
+    const previa = porCodigo.get(clave)
+    if (previa) {
+      previa.importe = Math.round((previa.importe + l.importe) * 100) / 100
+    } else {
+      porCodigo.set(clave, { ...l })
+    }
+  }
+  return [...porCodigo.values()]
 }
 
 export async function registrarComprobanteEn(tx: sql.Transaction, id: number): Promise<RegistroTango> {
@@ -426,28 +452,21 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     )
   }
 
-  const percepciones: { codigo: string; importe: number }[] = [
+  // CPA18 tiene un indice unico IX_0 sobre (COD_PROVEE, TCOMP_IN_C,
+  // NCOMP_IN_C, COD_IMPUES): una sola fila por impuesto y comprobante. Dos
+  // lineas que resuelvan al mismo codigo van sumadas en una, no bloquean --
+  // decision del usuario, 2026-09-08. Un impuesto que el comprobante imprime
+  // en dos renglones y Tango identifica con un solo codigo es, para Tango,
+  // un solo importe.
+  //
+  // Las percepciones de IIBB y los impuestos varios se agrupan JUNTOS porque
+  // escriben en la misma tabla y el indice unico no distingue de cual
+  // familia venia la linea. Es lo mismo que ya hacia el asiento, que agrupa
+  // por codigo (ver `genericas` en asiento.ts).
+  const percepciones = agruparPorCodigo([
     ...lineasPercep.map((l) => ({ codigo: l.codigo!.codigo, importe: l.importe })),
     ...lineasVarios.map((l) => ({ codigo: l.codigo, importe: l.importe })),
-  ]
-
-  // CPA18 tiene un indice unico IX_0 sobre (COD_PROVEE, TCOMP_IN_C,
-  // NCOMP_IN_C, COD_IMPUES): una sola fila por impuesto y comprobante. Sin
-  // este corte, dos lineas con el mismo codigo hacen fallar el INSERT y el
-  // error de SQL crudo termina en la pantalla del operador -- paso de
-  // verdad con una factura de PETROARSA donde el impuesto interno y el IDC
-  // habian quedado los dos en el 40. "Listo para registrar" ya lo bloquea
-  // (validarCodigosRepetidos), pero el mensaje tiene que ser entendible
-  // tambien si se llega hasta aca.
-  const repetido = percepciones.find(
-    (p, i) => percepciones.findIndex((x) => x.codigo === p.codigo) !== i,
-  )
-  if (repetido) {
-    throw new Error(
-      `El código de impuesto ${repetido.codigo} aparece en dos líneas del comprobante, y Tango ` +
-        `admite una sola por comprobante. Elegí otro código o sumá los importes en una sola línea.`,
-    )
-  }
+  ])
 
   for (const p of percepciones) {
     await tx.request()

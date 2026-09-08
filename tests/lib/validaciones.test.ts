@@ -360,9 +360,10 @@ describe('validarCantidadesOc', () => {
 describe('validarCodigosRepetidos', () => {
   // Tango no admite dos veces el mismo codigo en un comprobante: CPA18 tiene
   // un indice unico sobre (COD_PROVEE, TCOMP_IN_C, NCOMP_IN_C, COD_IMPUES).
-  // Sin esto, el registro se caia con un error de SQL crudo en pantalla --
-  // paso con una factura de PETROARSA con el impuesto interno y el IDC los
-  // dos en el 40.
+  // El registro las suma en una sola linea, asi que esto AVISA y no bloquea
+  // -- decision del usuario, 2026-09-08. Se avisa igual para que el operador
+  // pueda darse cuenta si lo que paso es que se le escapo el codigo
+  // equivocado en una de las dos lineas.
   const iva = (codigo: number, descripcion: string): LineaAlicuota => ({
     slot: 1,
     porcentaje: 21,
@@ -395,14 +396,14 @@ describe('validarCodigosRepetidos', () => {
     expect(r.estado).toBe('ok')
   })
 
-  it('bloquea dos impuestos varios con el mismo codigo', () => {
+  it('avisa que dos impuestos varios con el mismo codigo se suman', () => {
     // El caso real: "Impuesto interno a nivel item" e "IDC", los dos al 40.
     const r = validarCodigosRepetidos(
       [],
       [],
       [varios('40', 'IMP INT'), varios('40', 'IMP INT')],
     )
-    expect(r.estado).toBe('error')
+    expect(r.estado).toBe('advertencia')
     expect(r.mensaje).toContain('40')
     expect(r.mensaje).toContain('2 veces')
   })
@@ -410,15 +411,15 @@ describe('validarCodigosRepetidos', () => {
   it('cuenta juntas las percepciones IIBB y los varios: van a la misma tabla', () => {
     // El indice unico de CPA18 no distingue de que familia venia la linea.
     const r = validarCodigosRepetidos([], [percep('64', 'Bancarias')], [varios('64', 'RET IIBB BANCARIOS')])
-    expect(r.estado).toBe('error')
+    expect(r.estado).toBe('advertencia')
     expect(r.mensaje).toContain('64')
   })
 
-  it('bloquea tambien dos slots de IVA con la misma alicuota', () => {
+  it('avisa tambien de dos slots de IVA con la misma alicuota', () => {
     // No hay indice que lo impida --son columnas, no filas-- pero de los
     // 27.090 comprobantes de CPA04 ni uno repite un COD_IVA entre sus slots.
     const r = validarCodigosRepetidos([iva(1, 'IVA 21%'), iva(1, 'IVA 21%')], [], [])
-    expect(r.estado).toBe('error')
+    expect(r.estado).toBe('advertencia')
     expect(r.mensaje).toContain('IVA 21%')
   })
 

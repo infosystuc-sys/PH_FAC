@@ -229,6 +229,50 @@ describe('registrarComprobanteEn', () => {
     })
   }, 90000)
 
+  it('dos impuestos varios con el mismo codigo se graban sumados en una sola fila', async () => {
+    // CPA18 tiene un indice unico sobre (COD_PROVEE, TCOMP_IN_C, NCOMP_IN_C,
+    // COD_IMPUES): dos filas con el mismo codigo lo violan. Se suman en vez
+    // de bloquear -- decision del usuario, 2026-09-08. Es el caso real de la
+    // factura de PETROARSA, con dos renglones distintos del papel cayendo en
+    // el mismo codigo de Tango.
+    await conRollback(async (tx) => {
+      const prov = await tx.request().query(`
+        SELECT TOP 1 COD_PROVEE, N_CUIT FROM CPA01
+        WHERE N_CUIT IS NOT NULL AND LEN(REPLACE(REPLACE(N_CUIT,'-',''),' ','')) = 11
+        ORDER BY COD_PROVEE`)
+      const codProvee = String(prov.recordset[0].COD_PROVEE).trim()
+      const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0099')
+      await guardarCampoEn(tx, id, 'nro', '00012399')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+      await guardarCampoEn(tx, id, 'cuit', String(prov.recordset[0].N_CUIT))
+      await guardarCampoEn(tx, id, 'codprovee', codProvee)
+      await guardarCampoEn(tx, id, 'condcompra', String(condicion.recordset[0].COD_CONDIC))
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+      await guardarCampoEn(tx, id, 'neto', '1.000,00')
+      await guardarCampoEn(tx, id, 'total', '1.300,00')
+      // Los dos rotulos distintos, el mismo codigo de Tango (40, IMP INT).
+      await guardarCampoEn(tx, id, 'varios1', 'Impuesto interno a nivel item')
+      await guardarCampoEn(tx, id, 'codvarios1', '40')
+      await guardarCampoEn(tx, id, 'impvarios1', '200,00')
+      await guardarCampoEn(tx, id, 'varios2', 'IDC')
+      await guardarCampoEn(tx, id, 'codvarios2', '40')
+      await guardarCampoEn(tx, id, 'impvarios2', '100,00')
+
+      const registro = await registrarComprobanteEn(tx, id)
+
+      const cpa18 = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT COD_IMPUES, IMPORTE FROM CPA18 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n`)
+      expect(cpa18.recordset).toHaveLength(1)
+      expect(String(cpa18.recordset[0].COD_IMPUES).trim()).toBe('40')
+      expect(Number(cpa18.recordset[0].IMPORTE)).toBeCloseTo(300, 2)
+    })
+  }, 90000)
+
   it('una linea de IVA sin porcentaje impreso se registra al codigo 16, no se omite', async () => {
     // Caso real (Banco Macro, resumen NaranjaX/VISA, comprobante 10643):
     // "Percepcion IVA RG 2408" trae importe pero ningun porcentaje en el

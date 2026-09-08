@@ -321,24 +321,30 @@ export function validarCantidadesOc(
 }
 
 /**
- * Que un mismo código de Tango no aparezca dos veces en el comprobante.
+ * Avisa qué líneas van a terminar sumadas por caer en el mismo código de
+ * Tango. **No bloquea** -- decisión del usuario, 2026-09-08.
  *
- * No es una preferencia de estilo: Tango no lo admite. `CPA18` tiene un
- * índice único `IX_0` sobre `(COD_PROVEE, TCOMP_IN_C, NCOMP_IN_C,
- * COD_IMPUES)` -- una sola fila por impuesto y comprobante --, así que dos
- * líneas que resuelvan al mismo código hacen fallar el INSERT. Pasó de
- * verdad con una factura de PETROARSA donde "Impuesto interno a nivel ítem"
- * e "IDC" habían quedado los dos en el 40: el registro se cayó con un error
- * de SQL crudo en pantalla ("Cannot insert duplicate key row").
+ * Tango no admite el mismo código dos veces en un comprobante: `CPA18` tiene
+ * un índice único `IX_0` sobre `(COD_PROVEE, TCOMP_IN_C, NCOMP_IN_C,
+ * COD_IMPUES)`, una sola fila por impuesto. Pero eso no es un problema que
+ * el operador tenga que resolver a mano: un impuesto que el comprobante
+ * imprime en dos renglones y Tango identifica con un solo código es, para
+ * Tango, un solo importe. El registro los suma (`agruparPorCodigo` en
+ * comprobantes.ts), igual que ya hacía el asiento.
  *
- * Los slots de IVA de la cabecera no tienen un índice que lo impida --son
- * columnas, no filas--, pero la regla es la misma: de los 27.090
- * comprobantes de `CPA04`, ni uno solo repite un `COD_IVA` entre sus cinco
- * slots. Repetirlo partiría en dos una alícuota que Tango espera sumada.
+ * Se avisa igual porque el operador tiene que poder darse cuenta si lo que
+ * pasó es otra cosa: que se le haya escapado el código equivocado en una de
+ * las dos líneas. Pasó de verdad con una factura de PETROARSA donde
+ * "Impuesto interno a nivel ítem" e "IDC" habían quedado los dos en el 40, y
+ * el segundo era en realidad el 51.
  *
- * Las percepciones de Ingresos Brutos y los impuestos varios se chequean
- * JUNTOS, no cada familia por su cuenta: las dos escriben en `CPA18` y el
- * índice único no distingue de cuál venía la línea.
+ * Los slots de IVA de la cabecera entran también: no tienen un índice que lo
+ * impida --son columnas, no filas--, pero de los 27.090 comprobantes de
+ * `CPA04` ni uno solo repite un `COD_IVA` entre sus cinco slots.
+ *
+ * Las percepciones de Ingresos Brutos y los impuestos varios se cuentan
+ * JUNTOS: las dos escriben en `CPA18` y el índice único no distingue de cuál
+ * familia venía la línea.
  */
 export function validarCodigosRepetidos(
   lineasIva: LineaAlicuota[],
@@ -375,10 +381,11 @@ export function validarCodigosRepetidos(
     return { estado: 'ok', mensaje: 'Ningún código de Tango se repite.' }
   }
   return {
-    estado: 'error',
+    estado: 'advertencia',
     mensaje:
-      `Hay códigos de Tango repetidos, y Tango no los admite dos veces en el mismo ` +
-      `comprobante: ${todos.join('; ')}. Elegí otro código o sumá los importes en una sola línea.`,
+      `Se registran sumados en una sola línea, porque Tango admite un código una sola vez ` +
+      `por comprobante: ${todos.join('; ')}. Si alguna de las dos tendría que ir a otro ` +
+      `código, cambiala antes de registrar.`,
   }
 }
 

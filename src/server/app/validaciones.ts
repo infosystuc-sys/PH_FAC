@@ -181,7 +181,10 @@ export type ResultadoListoParaRegistrar = {
   ordenCompra: ResultadoValidacion
   /** Que ningún renglón facture más de lo que la orden tiene pendiente. */
   cantidadesOc: ResultadoValidacion
-  /** Que ningún código de Tango se repita: CPA18 no lo admite. */
+  /**
+   * Qué líneas terminan sumadas por caer en el mismo código de Tango. Avisa,
+   * no bloquea: el registro las suma solo -- decisión del usuario, 2026-09-08.
+   */
   codigosRepetidos: ResultadoValidacion
   /**
    * El neto que implican las líneas de IVA, para ofrecérselo al operador de
@@ -324,7 +327,6 @@ export async function validarListoParaRegistrarEn(
     netoIva,
     ordenCompra,
     cantidadesOc,
-    codigosRepetidos,
   ].some((v) => v.estado === 'error')
 
   return {
