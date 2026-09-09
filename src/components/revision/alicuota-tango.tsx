@@ -114,15 +114,19 @@ export function CeldaAlicuotaTango({
 
   const sinImporte = importe.trim() === '' || parsearImporte(importe) <= 0
 
-  // Antes que todo lo demas, incluida la correccion manual: sin importe no
-  // hay linea que grabar, y mostrar un codigo ahi seria mentir.
+  // Sin importe no hay linea que grabar, asi que no se resuelve ningun
+  // codigo: mostrar uno seria mentir. Pero si el operador YA eligio uno a
+  // mano, se muestra igual -- en ambar, no en verde: la eleccion es suya y
+  // esconderla hace que el desplegable parezca roto (elegis, se guarda, y
+  // vuelve a "—" solo). Es lo que reporto el usuario el 2026-09-09 en la
+  // celda de percepcion, con una linea que todavia tenia importe 0.
   if (sinImporte) {
     return (
       <CeldaLista
         opciones={opciones}
-        valor=""
+        valor={correccion}
         placeholder="—"
-        tono="vacio"
+        tono={correccion ? 'alerta' : 'vacio'}
         bloqueado={bloqueado}
         onCambio={onCambio}
       />
@@ -242,16 +246,21 @@ export function CeldaPercepcionTango({
   // en tarjeta la resolucion tiene un fallback al 64: sin esto, las cuatro
   // filas de percepcion arrancarian mostrando "64 · Bancarias" aunque no
   // haya ninguna linea, que se lee como si hubiera algo para registrar.
-  const elegido = vacio
-    ? ''
-    : correccion || resolverIibbPorTipo(jurisdiccion, tipoFactura, aprendidos)?.codigo || ''
+  //
+  // La excepcion es lo que el operador eligio a mano: eso se muestra aunque
+  // la linea todavia no tenga importe. Sin la excepcion el desplegable
+  // parecia roto -- se elegia un codigo, se guardaba bien en PHF_CAMPO, y la
+  // celda volvia a "—" sola. Lo reporto el usuario el 2026-09-09 sobre una
+  // linea con imppercep1 en 0: el orden natural es poner la jurisdiccion y
+  // el codigo primero y el importe despues.
+  const elegido = correccion || (vacio ? '' : resolverIibbPorTipo(jurisdiccion, tipoFactura, aprendidos)?.codigo || '')
 
   return (
     <CeldaLista
       opciones={opciones}
       valor={elegido}
       placeholder={vacio ? '—' : 'Jurisdicción no reconocida'}
-      tono={elegido ? 'ok' : vacio ? 'vacio' : 'error'}
+      tono={sinImporte && correccion ? 'alerta' : elegido ? 'ok' : vacio ? 'vacio' : 'error'}
       bloqueado={bloqueado}
       onCambio={onCambio}
     />
@@ -288,7 +297,10 @@ export function CeldaVariosTango({
   }))
 
   // Mismo criterio que IVA y percepciones: sin importe no hay linea que
-  // registrar, y resolverVarios tambien la descarta.
+  // registrar, y resolverVarios tambien la descarta. La excepcion, igual que
+  // en las otras dos celdas, es lo que el operador eligio a mano: eso se
+  // muestra aunque la linea todavia no tenga importe, porque si no el
+  // desplegable parece roto -- se elige, se guarda, y vuelve a "—" solo.
   const sinImporte = importe.trim() === '' || parsearImporte(importe) <= 0
   const rotulo = texto.trim()
   const vacio = sinImporte || (rotulo === '' && !correccion)
@@ -297,14 +309,14 @@ export function CeldaVariosTango({
   // de su precedencia: esta celda la repetia a mano y se le habia quedado
   // afuera el SIRTAC, asi que mostraba el desplegable vacio y en rojo
   // mientras el registro imputaba bien al 67.
-  const elegido = vacio ? '' : resolverCodigoVarios(rotulo, correccion, admitidos, aprendidos)
+  const elegido = correccion || (vacio ? '' : resolverCodigoVarios(rotulo, correccion, admitidos, aprendidos))
 
   return (
     <CeldaLista
       opciones={opciones}
       valor={elegido}
       placeholder={vacio ? '—' : 'Elegí el impuesto'}
-      tono={elegido ? 'ok' : vacio ? 'vacio' : 'error'}
+      tono={sinImporte && correccion ? 'alerta' : elegido ? 'ok' : vacio ? 'vacio' : 'error'}
       bloqueado={bloqueado}
       onCambio={onCambio}
     />
