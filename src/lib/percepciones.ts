@@ -56,15 +56,41 @@ export type LineaVarios = {
 }
 
 /**
+ * Los códigos de Ingresos Brutos que, además de estar en la lista de
+ * percepciones, se ofrecen también en "Impuestos varios".
+ *
+ * Hoy es solo el 64 ("RET IIBB BANCARIOS") -- pedido del usuario,
+ * 2026-09-09. Es el único que llega por los dos caminos: en un resumen de
+ * tarjeta o de banco la retención bancaria es una línea de Ingresos Brutos
+ * y va a `percepN`, pero hay comprobantes donde el rótulo aparece entre los
+ * demás impuestos del pie y la IA la lee como un impuesto vario. Sin esta
+ * excepción el operador no tenía cómo elegirla ahí: la lista se la escondía.
+ *
+ * No abre la puerta a las otras cuatro jurisdicciones (60, 61, 62, 66): esas
+ * se identifican por jurisdicción y su lugar es `percepN`. Ofrecerlas en
+ * varios sería darle al operador dos formas de cargar lo mismo.
+ *
+ * Ojo con el efecto de tener un código en las dos listas: `CPA18` admite una
+ * sola fila por impuesto y comprobante, así que si el 64 termina cargado en
+ * las dos, el registro las suma en una (ver `agruparPorCodigo` en
+ * comprobantes.ts) y el panel lo avisa. Es lo correcto -- son el mismo
+ * impuesto -- pero conviene saberlo.
+ */
+export const IIBB_TAMBIEN_EN_VARIOS: readonly string[] = ['64']
+
+/**
  * Los códigos que la app admite en "Impuestos varios": todo lo que en
- * CPA14 no es alícuota de IVA y tampoco es una de las cinco percepciones
- * de Ingresos Brutos. Se deriva de lo que devuelve Tango en vez de
- * repetir la lista acá, así una alta o baja en CPA14 no deja el catálogo
- * de la app desincronizado en silencio.
+ * CPA14 no es alícuota de IVA y tampoco es una de las percepciones de
+ * Ingresos Brutos, más las excepciones de `IIBB_TAMBIEN_EN_VARIOS`. Se
+ * deriva de lo que devuelve Tango en vez de repetir la lista acá, así una
+ * alta o baja en CPA14 no deja el catálogo de la app desincronizado en
+ * silencio.
  */
 export function codigosVarios<T extends { codigo: number }>(codigosImpuesto: T[]): T[] {
   return codigosImpuesto.filter(
-    (c) => !JURISDICCIONES_IIBB.some((j) => j.codigo === String(c.codigo)),
+    (c) =>
+      IIBB_TAMBIEN_EN_VARIOS.includes(String(c.codigo)) ||
+      !JURISDICCIONES_IIBB.some((j) => j.codigo === String(c.codigo)),
   )
 }
 

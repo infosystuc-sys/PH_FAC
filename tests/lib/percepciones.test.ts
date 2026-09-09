@@ -5,6 +5,7 @@ import {
   resolverCodigoVarios,
   codigosVarios,
   COD_VARIOS_SIRTAC,
+  IIBB_TAMBIEN_EN_VARIOS,
 } from '@/lib/percepciones'
 import { validarPercepciones, validarVarios } from '@/lib/validaciones'
 
@@ -28,16 +29,26 @@ const CPA14_NO_IVA = [
 ]
 
 describe('codigosVarios', () => {
-  it('deja afuera los cinco codigos de percepcion de IIBB', () => {
+  it('deja afuera las jurisdicciones de IIBB, que se cargan como percepcion', () => {
     const codigos = codigosVarios(CPA14_NO_IVA).map((c) => c.codigo)
-    for (const percepcion of [60, 61, 62, 64, 66]) {
+    for (const percepcion of [60, 61, 62, 66]) {
       expect(codigos, `el ${percepcion} no deberia estar en varios`).not.toContain(percepcion)
     }
   })
 
-  it('deja los diez que aprobo el usuario', () => {
+  it('ofrece igual el 64, que llega por los dos caminos', () => {
+    // RET IIBB BANCARIOS: en un resumen de tarjeta o de banco es una linea de
+    // Ingresos Brutos y va a percepN, pero hay comprobantes donde el rotulo
+    // aparece entre los demas impuestos del pie y se lee como un impuesto
+    // vario. Sin esto el operador no tenia como elegirlo ahi -- pedido del
+    // usuario, 2026-09-09.
+    expect(codigosVarios(CPA14_NO_IVA).map((c) => c.codigo)).toContain(64)
+    expect(IIBB_TAMBIEN_EN_VARIOS).toEqual(['64'])
+  })
+
+  it('deja los once que aprobo el usuario', () => {
     expect(codigosVarios(CPA14_NO_IVA).map((c) => c.codigo).sort((a, b) => a - b)).toEqual([
-      40, 52, 53, 54, 55, 56, 63, 65, 67, 68,
+      40, 52, 53, 54, 55, 56, 63, 64, 65, 67, 68,
     ])
   })
 })
