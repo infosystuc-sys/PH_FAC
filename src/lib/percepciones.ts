@@ -35,13 +35,24 @@ export type CodigoTango = { codigo: number; descripcion: string }
 
 export type EstadoLinea = 'registra' | 'sin-codigo'
 
+/**
+ * El código de Tango al que va una línea de percepción, ya resuelto.
+ *
+ * Es un subconjunto de `CodigoIibb` a propósito: hasta el 2026-09-09 solo
+ * podía ser una de las cinco jurisdicciones, y desde que el operador puede
+ * corregir a cualquier código de CPA14 también puede ser uno que no es una
+ * jurisdicción (ahí `jurisdiccion` lleva la descripción de Tango, que es lo
+ * que se muestra). Los consumidores solo usan estos dos campos.
+ */
+export type CodigoPercepcion = { codigo: string; jurisdiccion: string }
+
 export type LineaPercepcion = {
   slot: number
   /** La jurisdicción tal como la leyó la IA del comprobante. */
   texto: string
   importe: number
   estado: EstadoLinea
-  codigo: CodigoIibb | null
+  codigo: CodigoPercepcion | null
 }
 
 export type LineaVarios = {
@@ -56,57 +67,61 @@ export type LineaVarios = {
 }
 
 /**
- * Los códigos de Ingresos Brutos que, además de estar en la lista de
- * percepciones, se ofrecen también en "Impuestos varios".
+ * Los códigos que la app admite en "Impuestos varios": todos los de CPA14
+ * que no son alícuota de IVA, tal como los devuelve `listarCodigosImpuesto`.
  *
- * Hoy es solo el 64 ("RET IIBB BANCARIOS") -- pedido del usuario,
- * 2026-09-09. Es el único que llega por los dos caminos: en un resumen de
- * tarjeta o de banco la retención bancaria es una línea de Ingresos Brutos
- * y va a `percepN`, pero hay comprobantes donde el rótulo aparece entre los
- * demás impuestos del pie y la IA la lee como un impuesto vario. Sin esta
- * excepción el operador no tenía cómo elegirla ahí: la lista se la escondía.
+ * Ya no filtra nada. Hasta el 2026-09-09 escondía las cinco jurisdicciones
+ * de Ingresos Brutos, con el argumento de que su lugar es `percepN` y
+ * ofrecerlas acá sería darle al operador dos formas de cargar lo mismo. El
+ * usuario pidió primero el 64 y después habilitar todas: el criterio pasa a
+ * ser que el operador vea todo lo que Tango admite y elija, en vez de que la
+ * app decida por él qué puede elegir.
  *
- * No abre la puerta a las otras cuatro jurisdicciones (60, 61, 62, 66): esas
- * se identifican por jurisdicción y su lugar es `percepN`. Ofrecerlas en
- * varios sería darle al operador dos formas de cargar lo mismo.
- *
- * Ojo con el efecto de tener un código en las dos listas: `CPA18` admite una
- * sola fila por impuesto y comprobante, así que si el 64 termina cargado en
- * las dos, el registro las suma en una (ver `agruparPorCodigo` en
- * comprobantes.ts) y el panel lo avisa. Es lo correcto -- son el mismo
- * impuesto -- pero conviene saberlo.
- */
-export const IIBB_TAMBIEN_EN_VARIOS: readonly string[] = ['64']
-
-/**
- * Los códigos que la app admite en "Impuestos varios": todo lo que en
- * CPA14 no es alícuota de IVA y tampoco es una de las percepciones de
- * Ingresos Brutos, más las excepciones de `IIBB_TAMBIEN_EN_VARIOS`. Se
- * deriva de lo que devuelve Tango en vez de repetir la lista acá, así una
- * alta o baja en CPA14 no deja el catálogo de la app desincronizado en
- * silencio.
+ * Se mantiene como función --y no se llama directo a `listarCodigosImpuesto`
+ * en cada pantalla-- porque es el lugar donde está escrito qué se ofrece en
+ * esta familia: si mañana hay que volver a acotar algo, se acota acá una vez
+ * y no en los tres lugares que arman la lista.
  */
 export function codigosVarios<T extends { codigo: number }>(codigosImpuesto: T[]): T[] {
-  return codigosImpuesto.filter(
-    (c) =>
-      IIBB_TAMBIEN_EN_VARIOS.includes(String(c.codigo)) ||
-      !JURISDICCIONES_IIBB.some((j) => j.codigo === String(c.codigo)),
-  )
+  return [...codigosImpuesto]
 }
 
 /**
- * Resuelve los cuatro slots de percepción contra las jurisdicciones
- * admitidas. Igual que con las alícuotas de IVA, la usan los dos lados --
- * el panel de la revisión y el armado de CPA18 -- para que no puedan
- * discrepar.
+ * Los códigos que la app admite en los slots de percepción de Ingresos
+ * Brutos. Son los mismos que en varios: las dos familias escriben en CPA18,
+ * y desde el 2026-09-09 el operador puede corregir a cualquiera de los dos
+ * lados -- pedido del usuario.
+ *
+ * Lo que NO cambió es cómo resuelve la app sola: `resolverIibbPorTipo` sigue
+ * mirando únicamente las cinco jurisdicciones de `JURISDICCIONES_IIBB`, que
+ * es la lista curada que traduce el texto del comprobante a un código. Lo
+ * que se amplió es a qué puede corregirlo el operador, no qué elige la app.
+ */
+export function codigosPercepcion<T extends { codigo: number }>(codigosImpuesto: T[]): T[] {
+  return [...codigosImpuesto]
+}
+
+/**
+ * Resuelve los cuatro slots de percepción. Igual que con las alícuotas de
+ * IVA, la usan los dos lados -- el panel de la revisión y el armado de
+ * CPA18 -- para que no puedan discrepar.
  *
  * Solo entran los slots con importe > 0: una jurisdicción sin importe no
  * genera línea, no hay nada que grabar.
+ *
+ * `codigosImpuesto` es el maestro de CPA14 y sirve para una sola cosa:
+ * aceptar una corrección del operador a un código que no es una de las cinco
+ * jurisdicciones (2026-09-09, pedido del usuario). Es opcional para no
+ * obligar a los tests puros a traer el maestro, pero los tres llamadores
+ * reales lo pasan -- si alguno no lo hiciera, el desplegable ofrecería un
+ * código que después la resolución rechazaría, que es justo la clase de
+ * divergencia entre pantalla y registro que esta función existe para evitar.
  */
 export function resolverPercepciones(
   valores: Record<string, string | null | undefined>,
   tipoFactura?: string | null,
   aprendidos?: Record<string, string>,
+  codigosImpuesto?: CodigoTango[],
 ): LineaPercepcion[] {
   const lineas: LineaPercepcion[] = []
 
@@ -119,7 +134,7 @@ export function resolverPercepciones(
     // jurisdiccion leida, que es para lo que existe.
     const correccion = (valores[`codpercep${slot}`] ?? '').trim()
     const codigo = correccion
-      ? (JURISDICCIONES_IIBB.find((j) => j.codigo === correccion) ?? null)
+      ? resolverCorreccionPercepcion(correccion, codigosImpuesto)
       : resolverIibbPorTipo(texto, tipoFactura ?? valores.tipoFactura, aprendidos)
     lineas.push({
       slot,
@@ -131,6 +146,26 @@ export function resolverPercepciones(
   }
 
   return lineas
+}
+
+/**
+ * El código al que el operador corrigió una percepción.
+ *
+ * Se busca primero entre las jurisdicciones para conservar su etiqueta
+ * ("Tucumán" y no "PERCEPCION IIBB TUC", que es como la llama CPA14), y
+ * recién después en el maestro. Un código que no está en ninguno de los dos
+ * devuelve `null` y la línea queda en `sin-codigo`: el desplegable no lo
+ * ofrece, así que llegar acá significa que el valor vino de otro lado.
+ */
+function resolverCorreccionPercepcion(
+  correccion: string,
+  codigosImpuesto?: CodigoTango[],
+): CodigoPercepcion | null {
+  const jurisdiccion = JURISDICCIONES_IIBB.find((j) => j.codigo === correccion)
+  if (jurisdiccion) return jurisdiccion
+
+  const enTango = codigosImpuesto?.find((c) => String(c.codigo) === correccion)
+  return enTango ? { codigo: String(enTango.codigo), jurisdiccion: enTango.descripcion } : null
 }
 
 /**

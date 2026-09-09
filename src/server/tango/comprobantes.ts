@@ -468,7 +468,13 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // 4. CPA18 + CTA06 (percepciones de IIBB e impuestos varios). Una fila
   // por slot con importe, resueltas con las mismas funciones que usa el
   // panel de la revision: si el panel dijo "listo", esto no puede fallar.
-  const lineasPercep = resolverPercepciones(valores, valores.tipoFactura, aprendidosPercep)
+  const codigosImpuesto = await listarCodigosImpuesto()
+  const lineasPercep = resolverPercepciones(
+    valores,
+    valores.tipoFactura,
+    aprendidosPercep,
+    codigosImpuesto,
+  )
   const percepSinCodigo = lineasPercep.find((l) => l.estado === 'sin-codigo')
   if (percepSinCodigo) {
     throw new Error(
@@ -476,7 +482,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     )
   }
 
-  const lineasVarios = resolverVarios(valores, await listarCodigosImpuesto(), aprendidosVarios)
+  const lineasVarios = resolverVarios(valores, codigosImpuesto, aprendidosVarios)
   const variosSinCodigo = lineasVarios.find((l) => l.estado === 'sin-codigo')
   if (variosSinCodigo) {
     throw new Error(

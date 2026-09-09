@@ -357,6 +357,7 @@ export function Formulario({
                       importe={valores[`imppercep${slotPercep[1]}`] ?? ''}
                       correccion={valores[correccion] ?? ''}
                       tipoFactura={valores.tipoFactura ?? ''}
+                      codigos={codigosImpuesto}
                       aprendidos={aprendidosPercepcion}
                       bloqueado={soloLectura}
                       onCambio={(v) => cambiar(correccion, v)}

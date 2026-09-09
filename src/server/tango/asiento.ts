@@ -346,7 +346,7 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
       lineasOmitidas += 1
     }
   }
-  for (const l of resolverPercepciones(valores, tipoFactura, aprendidosPercep)) {
+  for (const l of resolverPercepciones(valores, tipoFactura, aprendidosPercep, codigosImpuesto)) {
     if (l.estado === 'registra' && l.codigo) {
       genericas.set(l.codigo.codigo, Math.round(((genericas.get(l.codigo.codigo) ?? 0) + l.importe) * 100) / 100)
     } else if (l.estado === 'sin-codigo') {

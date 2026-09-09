@@ -5,7 +5,7 @@ import {
   resolverCodigoVarios,
   codigosVarios,
   COD_VARIOS_SIRTAC,
-  IIBB_TAMBIEN_EN_VARIOS,
+  codigosPercepcion,
 } from '@/lib/percepciones'
 import { validarPercepciones, validarVarios } from '@/lib/validaciones'
 
@@ -29,27 +29,17 @@ const CPA14_NO_IVA = [
 ]
 
 describe('codigosVarios', () => {
-  it('deja afuera las jurisdicciones de IIBB, que se cargan como percepcion', () => {
-    const codigos = codigosVarios(CPA14_NO_IVA).map((c) => c.codigo)
-    for (const percepcion of [60, 61, 62, 66]) {
-      expect(codigos, `el ${percepcion} no deberia estar en varios`).not.toContain(percepcion)
-    }
-  })
-
-  it('ofrece igual el 64, que llega por los dos caminos', () => {
-    // RET IIBB BANCARIOS: en un resumen de tarjeta o de banco es una linea de
-    // Ingresos Brutos y va a percepN, pero hay comprobantes donde el rotulo
-    // aparece entre los demas impuestos del pie y se lee como un impuesto
-    // vario. Sin esto el operador no tenia como elegirlo ahi -- pedido del
-    // usuario, 2026-09-09.
-    expect(codigosVarios(CPA14_NO_IVA).map((c) => c.codigo)).toContain(64)
-    expect(IIBB_TAMBIEN_EN_VARIOS).toEqual(['64'])
-  })
-
-  it('deja los once que aprobo el usuario', () => {
+  it('ofrece todos los codigos no-IVA de CPA14, sin esconder ninguno', () => {
+    // Hasta el 2026-09-09 escondia las cinco jurisdicciones de Ingresos
+    // Brutos. El usuario pidio primero el 64 y despues habilitar todas: el
+    // criterio pasa a ser que el operador vea todo lo que Tango admite.
     expect(codigosVarios(CPA14_NO_IVA).map((c) => c.codigo).sort((a, b) => a - b)).toEqual([
-      40, 52, 53, 54, 55, 56, 63, 64, 65, 67, 68,
+      40, 52, 53, 54, 55, 56, 60, 61, 62, 63, 64, 65, 66, 67, 68,
     ])
+  })
+
+  it('percepcion y varios ofrecen lo mismo: las dos escriben en CPA18', () => {
+    expect(codigosPercepcion(CPA14_NO_IVA)).toEqual(codigosVarios(CPA14_NO_IVA))
   })
 })
 
@@ -112,10 +102,40 @@ describe('correccion manual de la percepcion', () => {
     expect(r[0].codigo?.codigo).toBe('60')
   })
 
-  it('un codigo corregido fuera de la norma queda sin-codigo', () => {
-    const r = resolverPercepciones({
-      percep1: 'Tucumán', imppercep1: '500,00', codpercep1: '63',
-    })
+  it('acepta corregir a cualquier codigo de CPA14, no solo a una jurisdiccion', () => {
+    // Desde el 2026-09-09 el operador puede corregir una percepcion a
+    // cualquier codigo del maestro -- pedido del usuario. La etiqueta sale de
+    // CPA14 cuando no es una de las cinco jurisdicciones.
+    const r = resolverPercepciones(
+      { percep1: 'Tucumán', imppercep1: '500,00', codpercep1: '63' },
+      null,
+      {},
+      CPA14_NO_IVA,
+    )
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].codigo?.codigo).toBe('63')
+    expect(r[0].codigo?.jurisdiccion).toBe('RET IIBB TUCUMAN')
+  })
+
+  it('la jurisdiccion conserva su etiqueta propia, no la de CPA14', () => {
+    // "Tucumán" y no "PERCEPCION IIBB TUC": la lista curada gana cuando el
+    // codigo esta en las dos.
+    const r = resolverPercepciones(
+      { percep1: 'CABA', imppercep1: '500,00', codpercep1: '60' },
+      null,
+      {},
+      CPA14_NO_IVA,
+    )
+    expect(r[0].codigo?.jurisdiccion).toBe('Tucumán')
+  })
+
+  it('un codigo que no existe en ningun lado queda sin-codigo', () => {
+    const r = resolverPercepciones(
+      { percep1: 'Tucumán', imppercep1: '500,00', codpercep1: '999' },
+      null,
+      {},
+      CPA14_NO_IVA,
+    )
     expect(r[0].estado).toBe('sin-codigo')
   })
 })
@@ -131,11 +151,14 @@ describe('resolverVarios', () => {
     expect(r[0].descripcion).toBe('IMP INT')
   })
 
-  it('rechaza un codigo que es de percepcion, no de varios', () => {
-    // El 60 existe en CPA14 pero pertenece a la familia de percepciones:
-    // si entrara por aca se grabaria dos veces la misma clase de linea.
+  it('admite un codigo que antes era exclusivo de percepcion', () => {
+    // El 60 pertenece a la familia de percepciones, pero desde el 2026-09-09
+    // las dos listas ofrecen lo mismo: las dos escriben en CPA18 y el
+    // operador elige. Si termina cargado en las dos, el registro las suma en
+    // una sola fila y el panel lo avisa (ver validarCodigosRepetidos).
     const r = resolverVarios({ varios1: '60', impvarios1: '1.000,00' }, CPA14_NO_IVA)
-    expect(r[0].estado).toBe('sin-codigo')
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].descripcion).toBe('PERCEPCION IIBB TUC')
   })
 
   it('rechaza un codigo inexistente', () => {

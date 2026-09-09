@@ -2,7 +2,7 @@
 
 import { resolverCodigoIva, CODIGO_IVA_PREFERIDO, type AlicuotaTango } from '@/lib/alicuotas'
 import { JURISDICCIONES_IIBB, resolverIibbPorTipo } from '@/lib/percepcionIibb'
-import { codigosVarios, resolverCodigoVarios } from '@/lib/percepciones'
+import { codigosVarios, codigosPercepcion, resolverCodigoVarios } from '@/lib/percepciones'
 import { parsearImporte } from '@/lib/formato'
 import styles from './formulario.module.css'
 
@@ -203,6 +203,7 @@ export function CeldaPercepcionTango({
   correccion,
   tipoFactura,
   aprendidos,
+  codigos,
   bloqueado,
   onCambio,
 }: {
@@ -213,13 +214,25 @@ export function CeldaPercepcionTango({
   tipoFactura: string
   /** Lo que este proveedor ya enseñó para jurisdicciones no reconocidas. */
   aprendidos: Record<string, string>
+  /** El maestro de CPA14, para poder corregir a cualquier codigo. */
+  codigos: { codigo: number; descripcion: string }[]
   bloqueado: boolean
   onCambio: (v: string) => void
 }) {
-  const opciones = JURISDICCIONES_IIBB.map((j) => ({
-    valor: j.codigo,
-    label: etiqueta(j.codigo, j.jurisdiccion),
-  }))
+  // Las cinco jurisdicciones primero, con su etiqueta propia ("Tucumán" y
+  // no "PERCEPCION IIBB TUC"), y después todo el resto de CPA14: desde el
+  // 2026-09-09 el operador puede corregir a cualquier código -- pedido del
+  // usuario. La resolución automática sigue mirando solo las cinco.
+  const deJurisdiccion = new Set(JURISDICCIONES_IIBB.map((j) => j.codigo))
+  const opciones = [
+    ...JURISDICCIONES_IIBB.map((j) => ({
+      valor: j.codigo,
+      label: etiqueta(j.codigo, j.jurisdiccion),
+    })),
+    ...codigosPercepcion(codigos)
+      .filter((c) => !deJurisdiccion.has(String(c.codigo)))
+      .map((c) => ({ valor: String(c.codigo), label: etiqueta(c.codigo, c.descripcion) })),
+  ]
 
   // Mismo criterio que en IVA: sin importe no hay nada que registrar (ver
   // resolverPercepciones, que tambien descarta esas lineas).
