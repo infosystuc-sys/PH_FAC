@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { resolverCodigoIva, resolverAlicuotas, type AlicuotaTango } from '@/lib/alicuotas'
+import {
+  resolverCodigoIva,
+  resolverAlicuotas,
+  esPorcentaje,
+  claveAprendidaIva,
+  CODIGO_IVA_PREFERIDO,
+  type AlicuotaTango,
+} from '@/lib/alicuotas'
 import { validarAlicuotas } from '@/lib/validaciones'
 
 // Las alicuotas TIPO_ALI='IV' reales de CPA14, verificadas contra la base.
@@ -249,5 +256,75 @@ describe('lineas con importe en cero', () => {
       CPA14,
     )
     expect(lineas).toEqual([])
+  })
+})
+
+describe('aprendizaje de IVA por rotulo', () => {
+  // Las lineas que no imprimen porcentaje llevan su rotulo en porcivaN, y es
+  // lo unico que dice a que alicuota van. Viene de la planilla de imputacion
+  // del usuario (2026-09-10): "IVA S/ARANCEL + COSTO FINANCIERO" va al 1 y
+  // "Retencion IVA" al 17, y ninguna de las dos se deduce de nada.
+  const CPA14 = [
+    { codigo: 1, porcentaje: 21, descripcion: 'IVA 21%' },
+    { codigo: 3, porcentaje: 10.5, descripcion: 'IVA 10,5%' },
+    { codigo: 16, porcentaje: 3, descripcion: 'PERCEP. DE IVA' },
+    { codigo: 17, porcentaje: 0, descripcion: 'RETENCION IVA' },
+  ]
+
+  it('distingue un porcentaje de un rotulo', () => {
+    expect(esPorcentaje('21')).toBe(true)
+    expect(esPorcentaje('21,00')).toBe(true)
+    expect(esPorcentaje('10,50 %')).toBe(true)
+    expect(esPorcentaje('')).toBe(false)
+    expect(esPorcentaje('Retención IVA')).toBe(false)
+    // El caso que obliga a mirar la forma y no a parsear: parsearImporte le
+    // saca un numero, pero es un rotulo.
+    expect(esPorcentaje('IVA 21% DEC 879')).toBe(false)
+  })
+
+  it('la clave es el numero cuando es porcentaje y el texto cuando es rotulo', () => {
+    expect(claveAprendidaIva('21,00')).toBe('21')
+    expect(claveAprendidaIva('21.0')).toBe('21')
+    expect(claveAprendidaIva('Retención IVA')).toBe('retencion iva')
+  })
+
+  it('resuelve una linea sin porcentaje por el rotulo aprendido', () => {
+    const r = resolverAlicuotas(
+      { porciva1: 'IVA S/ARANCEL + COSTO FINANCIERO', impiva1: '1.000,00' },
+      CPA14,
+      { 'iva s/arancel + costo financiero': '1' },
+    )
+    expect(r[0].estado).toBe('registra')
+    expect(r[0].alicuota?.codigo).toBe(1)
+  })
+
+  it('permite llegar al 17, que ninguna regla resuelve sola', () => {
+    const r = resolverAlicuotas(
+      { porciva1: 'Retención IVA', impiva1: '500,00' },
+      CPA14,
+      { 'retencion iva': '17' },
+    )
+    expect(r[0].alicuota?.codigo).toBe(17)
+  })
+
+  it('sin nada aprendido, un rotulo cae al codigo preferido como antes', () => {
+    const r = resolverAlicuotas({ porciva1: 'Retención IVA', impiva1: '500,00' }, CPA14)
+    expect(r[0].alicuota?.codigo).toBe(CODIGO_IVA_PREFERIDO)
+  })
+
+  it('la correccion del operador gana sobre lo aprendido', () => {
+    const r = resolverAlicuotas(
+      { porciva1: 'Retención IVA', impiva1: '500,00', codiva1: '3' },
+      CPA14,
+      { 'retencion iva': '17' },
+    )
+    expect(r[0].alicuota?.codigo).toBe(3)
+  })
+
+  it('lo aprendido gana sobre el porcentaje impreso', () => {
+    // Misma precedencia que en percepciones y varios: lo que el operador
+    // enseño para ESE proveedor es mas especifico que la regla general.
+    const r = resolverAlicuotas({ porciva1: '21', impiva1: '500,00' }, CPA14, { '21': '3' })
+    expect(r[0].alicuota?.codigo).toBe(3)
   })
 })

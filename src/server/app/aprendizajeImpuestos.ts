@@ -1,7 +1,7 @@
 import sql from 'mssql'
+import { claveAprendidaIva } from '@/lib/alicuotas'
 import { getPool } from '../db/pool'
 import { usuarioActual } from '@/lib/usuario'
-import { parsearImporte } from '@/lib/formato'
 import { normalizar as normalizarJurisdiccion } from '@/lib/percepcionIibb'
 import { normalizarTextoCondicion } from '@/server/tango/condicionesCompra'
 
@@ -44,7 +44,13 @@ export type TipoAprendizaje = 'iva' | 'percepcion' | 'condicion' | 'gravado' | '
  * match con la próxima aunque venga escrita distinto.
  */
 function normalizarDescripcion(tipo: TipoAprendizaje, descripcion: string): string {
-  if (tipo === 'iva') return String(parsearImporte(descripcion))
+  // En 'iva' la clave es el contenido de porcivaN, que lleva el porcentaje
+  // cuando la linea lo imprime y el rotulo cuando no. claveAprendidaIva
+  // decide cual es cual, y es la misma que usa resolverAlicuotas para
+  // buscar: si divergieran, se guardaria con una clave y se buscaria con
+  // otra. Antes esto hacia parsearImporte a ciegas, asi que un rotulo se
+  // guardaba bajo la clave "0" -- quedo una fila asi en la base.
+  if (tipo === 'iva') return claveAprendidaIva(descripcion)
   // 'varios' usa la misma normalizacion que las percepciones porque la
   // clave es de la misma naturaleza: el rotulo impreso del impuesto. Tiene
   // que coincidir con la que usa resolverVarios para buscar.

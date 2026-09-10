@@ -13,24 +13,29 @@ export const MAX_SLOTS_VARIOS = 2
 
 /**
  * El codigo de "Impuestos varios" al que va el SIRTAC de un resumen de
- * tarjeta: el 67, "RET SIRTAC".
+ * tarjeta: el 64, "RET IIBB BANCARIOS".
  *
- * Hay tres codigos candidatos en CPA14 -- el 56 ("RETENCION MUNICIPAL"),
- * el 63 ("RET IIBB TUCUMAN") y el 67 ("RET SIRTAC") -- y este dio tres
- * vueltas antes de quedar en el que lleva el nombre:
+ * Hay cuatro codigos candidatos en CPA14 -- el 56 ("RETENCION MUNICIPAL"),
+ * el 63 ("RET IIBB TUCUMAN"), el 64 ("RET IIBB BANCARIOS") y el 67 ("RET
+ * SIRTAC") -- y este dio cuatro vueltas antes de quedar donde esta:
  *
  *   2026-08-17  el 56, con el 56 y el 67 a la vista
  *   2026-09-05  el 63 -- "el impuesto correcto es Ingresos Brutos Tucuman"
  *   2026-09-06  el 67, corrigiendo lo anterior ("error mio")
+ *   2026-09-10  el 64, por la planilla de imputacion del usuario
  *
- * Las tres son decisiones explicitas del usuario. Queda escrito el
- * recorrido porque el argumento del 63 --que el SIRTAC es un regimen de
- * recaudacion de Ingresos Brutos-- sigue siendo cierto y podria tentar a
- * "corregirlo" una cuarta vez: la imputacion elegida es la cuenta propia
- * del regimen, no la de IIBB Tucuman. Cambiarlo mueve la imputacion
- * contable de todos los resumenes de tarjeta.
+ * Las cuatro son decisiones explicitas del usuario. La ultima llego con una
+ * tabla de 48 filas que mapea el rotulo impreso de cada impuesto al codigo
+ * de Tango, hecha por el: las nueve veces que aparece el SIRTAC ahi, va al
+ * 64. Y en la misma tabla el IIBB de Tucuman va al 63, asi que el 64 y el 63
+ * quedan repartidos entre los dos regimenes en vez de ser intercambiables.
+ *
+ * Queda escrito el recorrido porque el argumento del 67 --que es el codigo
+ * que se llama "RET SIRTAC"-- es el mas obvio de todos y podria tentar a
+ * "corregirlo" una quinta vez. Cambiarlo mueve la imputacion contable de
+ * todos los resumenes de tarjeta.
  */
-export const COD_VARIOS_SIRTAC = '67'
+export const COD_VARIOS_SIRTAC = '64'
 
 /** Un código de CPA14 tal como lo devuelve `listarCodigosImpuesto`. */
 export type CodigoTango = { codigo: number; descripcion: string }

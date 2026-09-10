@@ -361,14 +361,19 @@ describe('resolverCodigoVarios', () => {
 })
 
 describe('COD_VARIOS_SIRTAC', () => {
-  it('es el 67 (RET SIRTAC), no el 63 ni el 56, a proposito', () => {
-    // Hay tres candidatos en CPA14: el 56 ("RETENCION MUNICIPAL"), el 63
-    // ("RET IIBB TUCUMAN") y el 67 ("RET SIRTAC"). Paso por los tres --56 el
-    // 2026-08-17, 63 el 2026-09-05, 67 el 2026-09-06-- y las tres veces por
-    // decision explicita del usuario. Este test existe para que una cuarta
-    // vez sea una decision y no un descuido: el argumento del 63 (que el
-    // SIRTAC es un regimen de Ingresos Brutos) es cierto y podria tentar.
-    expect(COD_VARIOS_SIRTAC).toBe('67')
+  it('es el 64 (RET IIBB BANCARIOS), a proposito y por cuarta vez', () => {
+    // Hay cuatro candidatos en CPA14: el 56 ("RETENCION MUNICIPAL"), el 63
+    // ("RET IIBB TUCUMAN"), el 64 ("RET IIBB BANCARIOS") y el 67 ("RET
+    // SIRTAC"). Paso por cuatro valores --56 el 2026-08-17, 63 el 2026-09-05,
+    // 67 el 2026-09-06 y 64 el 2026-09-10-- y las cuatro veces por decision
+    // explicita del usuario. La ultima salio de su planilla de imputacion,
+    // donde el SIRTAC va al 64 en las nueve veces que aparece y el IIBB de
+    // Tucuman al 63.
+    //
+    // Este test existe para que una quinta vez sea una decision y no un
+    // descuido: el argumento del 67 --que es el codigo que se llama
+    // literalmente "RET SIRTAC"-- es el mas obvio de todos.
+    expect(COD_VARIOS_SIRTAC).toBe('64')
   })
 
   it('se resuelve solo por el rotulo, sin que nadie se lo enseñe', () => {

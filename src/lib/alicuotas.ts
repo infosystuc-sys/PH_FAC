@@ -1,4 +1,5 @@
 import { parsearImporte, parsearImporteONulo } from './formato'
+import { normalizar } from './percepcionIibb'
 
 export const MAX_SLOTS_IVA = 5
 
@@ -38,6 +39,36 @@ const CODIGOS_IVA_REALES = new Set([1, 2, 3, 4])
 /** Si esta alicuota grava la base, o es una percepcion/retencion que viaja en los mismos slots. */
 export function esIvaSobreLaBase(alicuota: AlicuotaTango | null): boolean {
   return alicuota !== null && CODIGOS_IVA_REALES.has(alicuota.codigo)
+}
+
+/**
+ * Si el contenido de `porcivaN` es un porcentaje y no un rótulo.
+ *
+ * El campo lleva las dos cosas: el porcentaje cuando la línea lo imprime, y
+ * el rótulo cuando no ("IVA S/ARANCEL + COSTO FINANCIERO", "Retención IVA").
+ * Se distingue por la forma del texto y no parseando: `parsearImporte` le
+ * saca un número a cualquier cosa que tenga dígitos, y "IVA 21% DEC 879" es
+ * un rótulo, no una tasa del 21 ni del 879.
+ */
+const RE_SOLO_PORCENTAJE = /^[\d.,\s%]+$/
+
+export function esPorcentaje(texto: string): boolean {
+  const t = texto.trim()
+  return t !== '' && RE_SOLO_PORCENTAJE.test(t) && /\d/.test(t)
+}
+
+/**
+ * La clave con la que se guarda y se busca lo aprendido de una línea de IVA.
+ *
+ * Un porcentaje se normaliza al número ("21,00" y "21.0" son la misma tasa);
+ * un rótulo, al texto sin acentos ni mayúsculas, igual que las otras dos
+ * familias. Tiene que coincidir con `normalizarDescripcion` en
+ * `aprendizajeImpuestos.ts`, que es la que escribe: si divergieran, se
+ * guardaría con una clave y se buscaría con otra.
+ */
+export function claveAprendidaIva(texto: string): string {
+  const t = texto.trim()
+  return esPorcentaje(t) ? String(parsearImporte(t)) : normalizar(t)
 }
 
 export type AlicuotaTango = {
@@ -110,13 +141,14 @@ export function resolverAlicuotas(
     const importe = parsearImporte(valores[`impiva${slot}`])
     if (importe <= 0) continue
 
-    // Se distingue "0%" (texto "0", una alicuota real de tasa cero) de "sin
-    // porcentaje" (texto vacio: el comprobante no imprime ninguna tasa para
-    // esta linea). parsearImporte por si sola no puede -- las dos dan 0 --
-    // y esa mezcla era un bug real: una percepcion de IVA sin tasa propia
-    // (ej. "Percepcion IVA RG 2408", con importe > 0) caia en la regla del
-    // 0% y quedaba omitida en vez de registrarse.
-    const porcentajeLeido = parsearImporteONulo(valores[`porciva${slot}`])
+    const crudo = (valores[`porciva${slot}`] ?? '').trim()
+    // `porcivaN` lleva el porcentaje cuando la linea lo imprime, y el rotulo
+    // cuando no. Se distingue "0%" (una alicuota real de tasa cero) de "sin
+    // porcentaje" (el comprobante no imprime tasa): parsearImporte por si
+    // sola no puede --las dos dan 0-- y esa mezcla era un bug real, una
+    // percepcion de IVA sin tasa propia caia en la regla del 0% y quedaba
+    // omitida en vez de registrarse.
+    const porcentajeLeido = esPorcentaje(crudo) ? parsearImporteONulo(crudo) : null
     const porcentaje = porcentajeLeido ?? 0
 
     // El codigo corregido a mano gana sobre lo que resuelve el porcentaje:
@@ -133,6 +165,26 @@ export function resolverAlicuotas(
         importe,
         estado: elegida ? 'registra' : 'sin-codigo',
         alicuota: elegida,
+      })
+      continue
+    }
+
+    // Lo aprendido para este proveedor y este rotulo, antes que cualquier
+    // regla general -- misma precedencia que en percepciones y varios
+    // (2026-09-10). Es lo unico que puede resolver una linea cuyo rotulo no
+    // dice el porcentaje: "IVA S/ARANCEL + COSTO FINANCIERO" va al 1 y
+    // "Retencion IVA" al 17, y ninguna de las dos se deduce de nada.
+    const aprendido = crudo ? aprendidos?.[claveAprendidaIva(crudo)] : undefined
+    const porAprendido = aprendido
+      ? (alicuotas.find((a) => String(a.codigo) === aprendido) ?? null)
+      : null
+    if (porAprendido) {
+      lineas.push({
+        slot,
+        porcentaje: porcentajeLeido ?? porAprendido.porcentaje,
+        importe,
+        estado: 'registra',
+        alicuota: porAprendido,
       })
       continue
     }

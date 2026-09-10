@@ -75,29 +75,35 @@ del IVA propiamente dicho.`
 const SLOTS_IVA = `El comprobante puede tener más de una alícuota de IVA, o mezclar
 alícuotas con percepciones de IVA -- por ejemplo "21% + percepción de
 IVA". Para eso hay cinco pares porcivaN/impivaN. Usalos en orden desde
-el 1, uno por cada alícuota o percepción de IVA que encuentres en el
-comprobante, sin dejar huecos; los pares que sobren quedan vacíos. En
-cada par, porcivaN es el PORCENTAJE de esa línea (por ejemplo "21" o
-"10,5"), e impivaN es el IMPORTE de IVA de esa línea, no la base
-imponible sobre la que se calculó. neto es el neto gravado TOTAL del
-comprobante: si hay más de una base imponible, sumalas todas ahí, no
-las repartas entre los pares. Una percepción de IVA ocupa un par como
-cualquier alícuota; las percepciones de ingresos brutos y los demás
-impuestos van aparte, en sus propios pares (ver más abajo).
+el 1, uno por cada alícuota, percepción o retención de IVA que encuentres
+en el comprobante, sin dejar huecos; los pares que sobren quedan vacíos.
 
-Una percepción de IVA va SIEMPRE en un par porcivaN/impivaN, nunca en
-variosN. Es percepción de IVA toda línea que diga percepción y además
-mencione IVA, la AFIP o la DGI, o el número de un régimen de percepción
-de IVA: "Percepción IVA", "Perc. IVA RG 2408", "Percepción R.G. 3337",
-"Percep./Retenc. AFIP - DGI". Muchas de estas líneas no imprimen
-porcentaje: en ese caso dejá porcivaN VACÍO y poné el importe igual en
-impivaN. No inventes el porcentaje ni pongas "0" -- un porcentaje vacío
-le dice a la app que resuelva el código de percepción, y un "0" le dice
-que es una alícuota de tasa cero y que no la registre.
+En cada par, impivaN es el IMPORTE de esa línea -- no la base imponible
+sobre la que se calculó -- y porcivaN es una de dos cosas:
+- el PORCENTAJE, si la línea lo imprime ("21", "10,5");
+- el RÓTULO tal como figura, si no lo imprime ("Retención IVA", "IVA
+  S/ARANCEL + COSTO FINANCIERO", "Percep./Retenc. AFIP - DGI").
+Sin el porcentaje, el rótulo es lo único que dice a qué alícuota va esa
+línea, y la app lo aprende por proveedor. Nunca inventes un porcentaje
+para completar el campo, y nunca pongas "0": el cero es una alícuota real
+de tasa cero y le dice a la app que no registre la línea.
 
-Ojo con dos que se le parecen y NO son percepción de IVA: las de
-Ingresos Brutos (van en percepN, aunque digan AFIP) y el impuesto sobre
-los débitos y créditos.`
+neto es el neto gravado TOTAL del comprobante: si hay más de una base
+imponible, sumalas todas ahí, no las repartas entre los pares.
+
+Una percepción de IVA ocupa un par como cualquier alícuota; las
+percepciones de ingresos brutos y los demás impuestos van aparte, en sus
+propios pares (ver más abajo).
+
+Una percepción o retención de IVA va SIEMPRE en un par porcivaN/impivaN,
+nunca en variosN. Es de IVA toda línea que mencione IVA, la AFIP o la DGI,
+o el número de un régimen de IVA: "Percepción IVA", "Perc. IVA RG 2408",
+"Percepción R.G. 3337", "Percep./Retenc. AFIP - DGI", "Retención Iva
+Resolución General Nº 140".
+
+Ojo con dos que se le parecen y NO son de IVA: las de Ingresos Brutos
+(van en percepN, aunque digan AFIP) y el impuesto sobre los débitos y
+créditos.`
 
 /**
  * El código de Ingresos Brutos que la app manda a CPA18. Los criterios
@@ -314,4 +320,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v8'
+export const VERSION_PROMPT = 'v9'
