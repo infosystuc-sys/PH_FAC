@@ -3,8 +3,10 @@ import {
   JURISDICCIONES_IIBB,
   resolverIibbPorTipo,
   normalizar,
-  type CodigoIibb,
+  type CodigoPercepcion,
 } from './percepcionIibb'
+
+export type { CodigoPercepcion }
 
 export const MAX_SLOTS_PERCEPCION = 4
 export const MAX_SLOTS_VARIOS = 2
@@ -35,16 +37,6 @@ export type CodigoTango = { codigo: number; descripcion: string }
 
 export type EstadoLinea = 'registra' | 'sin-codigo'
 
-/**
- * El código de Tango al que va una línea de percepción, ya resuelto.
- *
- * Es un subconjunto de `CodigoIibb` a propósito: hasta el 2026-09-09 solo
- * podía ser una de las cinco jurisdicciones, y desde que el operador puede
- * corregir a cualquier código de CPA14 también puede ser uno que no es una
- * jurisdicción (ahí `jurisdiccion` lleva la descripción de Tango, que es lo
- * que se muestra). Los consumidores solo usan estos dos campos.
- */
-export type CodigoPercepcion = { codigo: string; jurisdiccion: string }
 
 export type LineaPercepcion = {
   slot: number
@@ -92,10 +84,10 @@ export function codigosVarios<T extends { codigo: number }>(codigosImpuesto: T[]
  * y desde el 2026-09-09 el operador puede corregir a cualquiera de los dos
  * lados -- pedido del usuario.
  *
- * Lo que NO cambió es cómo resuelve la app sola: `resolverIibbPorTipo` sigue
- * mirando únicamente las cinco jurisdicciones de `JURISDICCIONES_IIBB`, que
- * es la lista curada que traduce el texto del comprobante a un código. Lo
- * que se amplió es a qué puede corregirlo el operador, no qué elige la app.
+ * Cómo resuelve la app sola es otra cosa y vive en `resolverIibbPorTipo`:
+ * primero lo que este proveedor ya enseñó para ese rótulo, y si no hay nada
+ * aprendido, la lista curada de `JURISDICCIONES_IIBB` (y en tarjeta, el 64).
+ * Esta lista es de qué puede ELEGIR el operador, que es todo.
  */
 export function codigosPercepcion<T extends { codigo: number }>(codigosImpuesto: T[]): T[] {
   return [...codigosImpuesto]
@@ -135,7 +127,7 @@ export function resolverPercepciones(
     const correccion = (valores[`codpercep${slot}`] ?? '').trim()
     const codigo = correccion
       ? resolverCorreccionPercepcion(correccion, codigosImpuesto)
-      : resolverIibbPorTipo(texto, tipoFactura ?? valores.tipoFactura, aprendidos)
+      : resolverIibbPorTipo(texto, tipoFactura ?? valores.tipoFactura, aprendidos, codigosImpuesto)
     lineas.push({
       slot,
       texto,

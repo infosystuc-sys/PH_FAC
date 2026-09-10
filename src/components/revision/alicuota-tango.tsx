@@ -253,7 +253,7 @@ export function CeldaPercepcionTango({
   // celda volvia a "—" sola. Lo reporto el usuario el 2026-09-09 sobre una
   // linea con imppercep1 en 0: el orden natural es poner la jurisdiccion y
   // el codigo primero y el importe despues.
-  const elegido = correccion || (vacio ? '' : resolverIibbPorTipo(jurisdiccion, tipoFactura, aprendidos)?.codigo || '')
+  const elegido = correccion || (vacio ? '' : resolverIibbPorTipo(jurisdiccion, tipoFactura, aprendidos, codigos)?.codigo || '')
 
   return (
     <CeldaLista

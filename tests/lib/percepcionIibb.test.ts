@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { JURISDICCIONES_IIBB, resolverPercepcionIibb } from '@/lib/percepcionIibb'
+import {
+  JURISDICCIONES_IIBB,
+  resolverPercepcionIibb,
+  resolverIibbPorTipo,
+} from '@/lib/percepcionIibb'
 
 describe('JURISDICCIONES_IIBB', () => {
   it('son exactamente los cinco codigos que fija la norma de registracion', () => {
@@ -67,11 +71,83 @@ describe('resolverPercepcionIibb', () => {
     expect(resolverPercepcionIibb('Córdoba', { cordoba: '62' })?.codigo).toBe('62')
   })
 
-  it('lo aprendido no gana sobre una jurisdiccion que ya resuelve por alias', () => {
-    expect(resolverPercepcionIibb('Tucumán', { tucuman: '61' })?.codigo).toBe('60')
+  it('lo aprendido GANA sobre una jurisdiccion que resuelve por alias', () => {
+    // Cambio del 2026-09-09, pedido del usuario. Antes ganaba el alias y la
+    // correccion del operador se guardaba sin aplicarse nunca: era el caso
+    // mas comun, porque el rotulo casi siempre resuelve por alias.
+    expect(resolverPercepcionIibb('Tucumán', { tucuman: '61' })?.codigo).toBe('61')
+  })
+
+  it('sin nada aprendido, la lista fija sigue resolviendo sola', () => {
+    // El argumento con el que lo aprendido iba ultimo: una jurisdiccion real
+    // no puede depender de que alguien la haya enseñado. Sigue valiendo.
+    expect(resolverPercepcionIibb('Tucumán')?.codigo).toBe('60')
+    expect(resolverPercepcionIibb('Tucumán', { salta: '61' })?.codigo).toBe('60')
+  })
+
+  it('aprende tambien un codigo que no es una de las cinco jurisdicciones', () => {
+    // Desde que se pueden elegir todos los codigos de CPA14, lo aprendido
+    // puede ser uno que no es jurisdiccion. Sin el maestro no habia donde
+    // buscarlo y la fila aprendida quedaba muerta -- paso de verdad con
+    // "bancarias" -> 63 del proveedor 010108.
+    const cpa14 = [{ codigo: 63, descripcion: 'RET IIBB TUCUMAN' }]
+    const r = resolverPercepcionIibb('Bancarias', { bancarias: '63' }, cpa14)
+    expect(r?.codigo).toBe('63')
+    expect(r?.jurisdiccion).toBe('RET IIBB TUCUMAN')
+  })
+
+  it('sin el maestro, un codigo aprendido fuera de las cinco cae a la lista fija', () => {
+    // "Bancarias" resuelve por alias al 64, asi que degrada a eso en vez de
+    // quedar sin codigo: es lo que corresponde, no un fallo.
+    expect(resolverPercepcionIibb('Bancarias', { bancarias: '63' })?.codigo).toBe('64')
+    // Un rotulo sin alias si queda sin resolver.
+    expect(resolverPercepcionIibb('Córdoba', { cordoba: '63' })).toBeNull()
   })
 
   it('sin aprendizaje para ese texto, sigue devolviendo null', () => {
     expect(resolverPercepcionIibb('Córdoba', { 'santa fe': '62' })).toBeNull()
+  })
+})
+
+describe('resolverIibbPorTipo', () => {
+  // Los codigos no-IVA de CPA14 que hacen falta para estos casos.
+  const CPA14 = [
+    { codigo: 60, descripcion: 'PERCEPCION IIBB TUC' },
+    { codigo: 63, descripcion: 'RET IIBB TUCUMAN' },
+    { codigo: 64, descripcion: 'RET IIBB BANCARIOS' },
+  ]
+
+  it('en conceptos y articulos manda la jurisdiccion leida', () => {
+    expect(resolverIibbPorTipo('Tucumán', 'conceptos')?.codigo).toBe('60')
+    expect(resolverIibbPorTipo('CABA', 'articulos')?.codigo).toBe('62')
+  })
+
+  it('en tarjeta todo IIBB va al 64, diga lo que diga la jurisdiccion', () => {
+    expect(resolverIibbPorTipo('Tucumán', 'tarjeta')?.codigo).toBe('64')
+    expect(resolverIibbPorTipo('Salta', 'tarjeta')?.codigo).toBe('64')
+  })
+
+  it('en tarjeta SIRCREB conserva el suyo', () => {
+    expect(resolverIibbPorTipo('Ret. IIBB SIRCREB', 'tarjeta')?.codigo).toBe('66')
+  })
+
+  it('lo aprendido GANA sobre la regla de tarjeta', () => {
+    // El pedido del usuario (2026-09-10): que la correccion se recuerde,
+    // igual que ya pasaba con las alicuotas. Antes la regla del 64 pisaba
+    // tambien lo aprendido, y como casi todas las percepciones que el
+    // operador corrige vienen de resumenes de tarjeta, el aprendizaje no
+    // servia para nada: las tres filas que habia en PHF_ALICUOTA_PROVEEDOR
+    // eran de tarjeta y ninguna se aplicaba.
+    expect(resolverIibbPorTipo('Tucumán', 'tarjeta', { tucuman: '60' }, CPA14)?.codigo).toBe('60')
+  })
+
+  it('lo aprendido gana aunque sea un codigo que no es jurisdiccion', () => {
+    const r = resolverIibbPorTipo('Bancarias', 'tarjeta', { bancarias: '63' }, CPA14)
+    expect(r?.codigo).toBe('63')
+    expect(r?.jurisdiccion).toBe('RET IIBB TUCUMAN')
+  })
+
+  it('sin nada aprendido, la regla de tarjeta sigue mandando', () => {
+    expect(resolverIibbPorTipo('Tucumán', 'tarjeta', { salta: '61' }, CPA14)?.codigo).toBe('64')
   })
 })

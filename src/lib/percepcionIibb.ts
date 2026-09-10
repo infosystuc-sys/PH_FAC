@@ -93,6 +93,45 @@ export function normalizar(texto: string): string {
 }
 
 /**
+ * El código de Tango al que va una línea de percepción, ya resuelto.
+ *
+ * Es un subconjunto de `CodigoIibb` a propósito: desde el 2026-09-09 el
+ * operador puede elegir cualquier código de CPA14, así que también puede ser
+ * uno que no es una jurisdicción. Ahí `jurisdiccion` lleva la descripción de
+ * Tango, que es lo que se muestra. Los consumidores solo usan estos dos
+ * campos.
+ */
+export type CodigoPercepcion = { codigo: string; jurisdiccion: string }
+
+/** Un código de CPA14 tal como lo devuelve `listarCodigosImpuesto`. */
+type CodigoTango = { codigo: number; descripcion: string }
+
+/**
+ * El código que este proveedor ya enseñó para este rótulo.
+ *
+ * Se busca primero entre las jurisdicciones, para conservar su etiqueta
+ * propia ("Tucumán" y no "PERCEPCION IIBB TUC"), y después en todo CPA14.
+ * Sin lo segundo, aprender un código que no es una de las cinco --que desde
+ * el 2026-09-09 se puede elegir-- no hacía nada: la fila quedaba guardada en
+ * `PHF_ALICUOTA_PROVEEDOR` y la resolución la descartaba en silencio. Pasó
+ * de verdad con "bancarias" → 63 del proveedor 010108.
+ */
+function aprendidoPara(
+  t: string,
+  aprendidos?: Record<string, string>,
+  codigosImpuesto?: CodigoTango[],
+): CodigoPercepcion | null {
+  const cod = aprendidos?.[t]
+  if (!cod) return null
+
+  const jurisdiccion = JURISDICCIONES_IIBB.find((j) => j.codigo === cod)
+  if (jurisdiccion) return jurisdiccion
+
+  const enTango = codigosImpuesto?.find((c) => String(c.codigo) === cod)
+  return enTango ? { codigo: String(enTango.codigo), jurisdiccion: enTango.descripcion } : null
+}
+
+/**
  * Resuelve la jurisdicción leída del PDF al código de CPA14.
  *
  * SIRCREB se evalúa antes que "bancarias" porque también es bancaria: sin
@@ -101,29 +140,37 @@ export function normalizar(texto: string): string {
  * está para que nadie lo reordene por prolijidad.
  *
  * `aprendidos` es lo que un proveedor puntual ya le enseñó a la app
- * (`PHF_ALICUOTA_PROVEEDOR`, vía `aprendizajeImpuestos.ts`): un texto que
- * la lista fija de jurisdicciones no reconoce, corregido una vez a mano.
- * Se consulta último, nunca antes que la lista fija -- una jurisdicción
- * real (Tucumán, CABA...) siempre tiene que resolver por su cuenta, sin
- * depender de que alguna vez se haya aprendido algo para este proveedor.
+ * (`PHF_ALICUOTA_PROVEEDOR`, vía `aprendizajeImpuestos.ts`): el código que
+ * el operador eligió a mano una vez para este rótulo y este proveedor.
+ *
+ * **Se consulta PRIMERO**, antes que la lista fija -- cambio del 2026-09-09,
+ * pedido del usuario. Hasta entonces iba último, con el argumento de que una
+ * jurisdicción real (Tucumán, CABA...) tiene que resolver por su cuenta sin
+ * depender de que alguna vez se haya aprendido algo. El argumento sigue en
+ * pie para el caso normal --sin nada aprendido, la lista fija resuelve
+ * igual-- pero convertía el aprendizaje en letra muerta justo donde el
+ * operador lo necesitaba: si el rótulo ya resolvía por alias, la corrección
+ * se guardaba y no se aplicaba nunca. Es la misma precedencia que ya tenían
+ * los impuestos varios (ver `resolverCodigoVarios`): lo que el operador
+ * enseñó para ESE proveedor es más específico que una regla para todos.
  */
 export function resolverPercepcionIibb(
   texto: string | null | undefined,
   aprendidos?: Record<string, string>,
-): CodigoIibb | null {
+  codigosImpuesto?: CodigoTango[],
+): CodigoPercepcion | null {
   const t = normalizar(texto ?? '')
   if (t === '') return null
+
+  const aprendido = aprendidoPara(t, aprendidos, codigosImpuesto)
+  if (aprendido) return aprendido
 
   // Si escribieron el código directo ("60"), vale igual: el operador que
   // sabe el código no tiene por qué buscar cómo se llama la jurisdicción.
   const porCodigo = JURISDICCIONES_IIBB.find((j) => j.codigo === t)
   if (porCodigo) return porCodigo
 
-  const porAlias = JURISDICCIONES_IIBB.find((j) => j.alias.some((a) => t.includes(a)))
-  if (porAlias) return porAlias
-
-  const aprendido = aprendidos?.[t]
-  return aprendido ? (JURISDICCIONES_IIBB.find((j) => j.codigo === aprendido) ?? null) : null
+  return JURISDICCIONES_IIBB.find((j) => j.alias.some((a) => t.includes(a))) ?? null
 }
 
 /**
@@ -146,13 +193,26 @@ const COD_IIBB_SIRCREB = '66'
  * `resolverPercepcionIibb`). En tarjeta manda la regla de arriba, y por eso
  * no alcanza con la resolucion por texto: una linea que diga "Tucuman" en
  * un resumen de tarjeta va al 64 igual, no al 60.
+ *
+ * Lo aprendido para este proveedor gana sobre las dos cosas -- cambio del
+ * 2026-09-09, pedido del usuario. Antes la regla de tarjeta pisaba tambien
+ * lo aprendido, y como casi todas las percepciones que el operador corrige
+ * vienen justamente de resumenes de tarjeta, el aprendizaje no servia para
+ * nada ahi: las tres filas que habia en PHF_ALICUOTA_PROVEEDOR eran de
+ * comprobantes de tarjeta y ninguna se aplicaba nunca.
  */
 export function resolverIibbPorTipo(
   texto: string,
   tipoFactura: string | null | undefined,
   aprendidos?: Record<string, string>,
-): CodigoIibb | null {
-  const porTexto = resolverPercepcionIibb(texto, aprendidos)
+  codigosImpuesto?: CodigoTango[],
+): CodigoPercepcion | null {
+  const aprendido = aprendidoPara(normalizar(texto ?? ''), aprendidos, codigosImpuesto)
+  if (aprendido) return aprendido
+
+  // Sin aprendidos: ya se consultaron arriba y tienen prioridad sobre todo
+  // lo que sigue, incluida la regla de tarjeta.
+  const porTexto = resolverPercepcionIibb(texto)
   if (tipoFactura !== 'tarjeta') return porTexto
 
   // SIRCREB se reconoce por el texto y se queda con el suyo.
