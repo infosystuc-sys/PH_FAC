@@ -294,6 +294,21 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const moneda = (valores.moneda ?? 'ARS').trim().toUpperCase()
 
   const alicuotas = await armarAlicuotas(valores, aprendidosIva)
+
+  // CPA04 tiene cinco slots de IVA y ni uno mas. Hoy no se puede pasar --las
+  // lineas salen de cinco pares porcivaN/impivaN y despues se agrupan por
+  // codigo, asi que a lo sumo quedan cinco-- pero el INSERT de abajo lee
+  // alicuotas[0..4] a mano: si alguna vez entraran seis, la sexta se
+  // grabaria en ningun lado y su importe desapareceria sin que nada lo
+  // señale. Cortar es la unica respuesta aceptable para un importe que no
+  // tiene donde ir.
+  if (alicuotas.length > 5) {
+    const sobran = alicuotas.slice(5).map((a) => a.codigo).join(', ')
+    throw new Error(
+      `El comprobante tiene ${alicuotas.length} alícuotas de IVA distintas y Tango admite 5. ` +
+        `No entran los códigos ${sobran}: unificá líneas antes de registrar.`,
+    )
+  }
   while (alicuotas.length < 5) alicuotas.push({ codigo: 0, porcentaje: 0, importe: 0 })
 
   // 2. Numero interno.

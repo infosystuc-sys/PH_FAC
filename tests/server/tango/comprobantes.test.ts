@@ -687,3 +687,124 @@ describe('leyendaComprobante', () => {
     expect(leyendaComprobante(null, 'CTA CTE 30-60-90-120-150-180 DIAS')).toHaveLength(30)
   })
 })
+
+describe('una alicuota de Tango no se repite y no se pierde ningun importe', () => {
+  // Las dos propiedades que pidio verificar el usuario (2026-09-11), juntas
+  // porque se condicionan: Tango admite un codigo una sola vez por
+  // comprobante --CPA18 tiene un indice unico y CPA04 tiene cinco slots
+  // distintos-- asi que dos lineas al mismo codigo solo pueden entrar
+  // sumadas. Lo que no puede pasar nunca es que se pierda un importe en el
+  // camino, que es la otra mitad.
+  async function contexto(tx: sql.Transaction) {
+    const prov = await tx.request().query(`
+      SELECT TOP 1 COD_PROVEE, N_CUIT FROM CPA01
+      WHERE N_CUIT IS NOT NULL AND LEN(REPLACE(REPLACE(N_CUIT,'-',''),' ','')) = 11
+      ORDER BY COD_PROVEE`)
+    const cond = await tx.request().query(
+      `SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`,
+    )
+    return {
+      codProvee: String(prov.recordset[0].COD_PROVEE).trim(),
+      cuit: String(prov.recordset[0].N_CUIT),
+      condCompra: String(cond.recordset[0].COD_CONDIC),
+    }
+  }
+
+  async function cabecera(tx: sql.Transaction, nro: string) {
+    const c = await contexto(tx)
+    const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+    await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+    await guardarCampoEn(tx, id, 'ptovta', '0099')
+    await guardarCampoEn(tx, id, 'nro', nro)
+    await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+    await guardarCampoEn(tx, id, 'cuit', c.cuit)
+    await guardarCampoEn(tx, id, 'codprovee', c.codProvee)
+    await guardarCampoEn(tx, id, 'condcompra', c.condCompra)
+    await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
+    await guardarCampoEn(tx, id, 'neto', '1.000,00')
+    return id
+  }
+
+  it('dos slots de IVA con la misma alicuota entran en uno, con la suma', async () => {
+    await conRollback(async (tx) => {
+      const id = await cabecera(tx, '00012401')
+      // El comprobante las imprime separadas; Tango las quiere en un slot.
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '100,00')
+      await guardarCampoEn(tx, id, 'porciva2', '21')
+      await guardarCampoEn(tx, id, 'impiva2', '50,00')
+      await guardarCampoEn(tx, id, 'total', '1.150,00')
+
+      const registro = await registrarComprobanteEn(tx, id)
+      const r = await tx.request().input('n', sql.Float, registro.ncompInC).query(`
+        SELECT COD_IVA1, IMP_IVA1, COD_IVA2, IMP_IVA2, COD_IVA3, COD_IVA4, COD_IVA5
+        FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      const f = r.recordset[0]
+
+      expect(Number(f.COD_IVA1)).toBe(1)
+      expect(Number(f.IMP_IVA1)).toBeCloseTo(150, 2)
+      const codigos = [f.COD_IVA1, f.COD_IVA2, f.COD_IVA3, f.COD_IVA4, f.COD_IVA5]
+        .map(Number)
+        .filter((c) => c !== 0)
+      expect(codigos).toEqual([...new Set(codigos)])
+      expect(Number(f.IMP_IVA2)).toBeCloseTo(0, 2)
+    })
+  }, 90000)
+
+  it('percepcion y vario al mismo codigo dejan una sola fila en CPA18, con la suma', async () => {
+    await conRollback(async (tx) => {
+      const id = await cabecera(tx, '00012402')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '210,00')
+      await guardarCampoEn(tx, id, 'percep1', 'Tucuman')
+      await guardarCampoEn(tx, id, 'imppercep1', '10,00')
+      await guardarCampoEn(tx, id, 'varios1', 'Otro rotulo')
+      await guardarCampoEn(tx, id, 'codvarios1', '60')
+      await guardarCampoEn(tx, id, 'impvarios1', '20,00')
+      await guardarCampoEn(tx, id, 'total', '1.240,00')
+
+      const registro = await registrarComprobanteEn(tx, id)
+      const cpa18 = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT COD_IMPUES, IMPORTE FROM CPA18 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n`)
+
+      const codigos = cpa18.recordset.map((x) => String(x.COD_IMPUES).trim())
+      expect(codigos).toEqual([...new Set(codigos)])
+      expect(cpa18.recordset).toHaveLength(1)
+      expect(codigos[0]).toBe('60')
+      expect(Number(cpa18.recordset[0].IMPORTE)).toBeCloseTo(30, 2)
+    })
+  }, 90000)
+
+  it('tres codigos distintos entran en tres slots, cada uno con su importe', async () => {
+    // La contracara: agrupar no puede fundir lo que es distinto.
+    await conRollback(async (tx) => {
+      const id = await cabecera(tx, '00012403')
+      await guardarCampoEn(tx, id, 'porciva1', '21')
+      await guardarCampoEn(tx, id, 'impiva1', '100,00')
+      await guardarCampoEn(tx, id, 'porciva2', '10,5')
+      await guardarCampoEn(tx, id, 'impiva2', '50,00')
+      await guardarCampoEn(tx, id, 'porciva3', '27')
+      await guardarCampoEn(tx, id, 'impiva3', '25,00')
+      await guardarCampoEn(tx, id, 'total', '1.175,00')
+
+      const registro = await registrarComprobanteEn(tx, id)
+      const r = await tx.request().input('n', sql.Float, registro.ncompInC).query(`
+        SELECT COD_IVA1, IMP_IVA1, COD_IVA2, IMP_IVA2, COD_IVA3, IMP_IVA3,
+               COD_IVA4, COD_IVA5
+        FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      const f = r.recordset[0]
+
+      const porCodigo = new Map<number, number>([
+        [Number(f.COD_IVA1), Number(f.IMP_IVA1)],
+        [Number(f.COD_IVA2), Number(f.IMP_IVA2)],
+        [Number(f.COD_IVA3), Number(f.IMP_IVA3)],
+      ])
+      expect(porCodigo.get(1)).toBeCloseTo(100, 2)
+      expect(porCodigo.get(3)).toBeCloseTo(50, 2)
+      expect(porCodigo.get(4)).toBeCloseTo(25, 2)
+      expect(Number(f.COD_IVA4)).toBe(0)
+      expect(Number(f.COD_IVA5)).toBe(0)
+    })
+  }, 90000)
+})
