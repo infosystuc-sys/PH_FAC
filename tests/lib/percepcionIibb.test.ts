@@ -122,32 +122,50 @@ describe('resolverIibbPorTipo', () => {
     expect(resolverIibbPorTipo('CABA', 'articulos')?.codigo).toBe('62')
   })
 
-  it('en tarjeta todo IIBB va al 64, diga lo que diga la jurisdiccion', () => {
-    expect(resolverIibbPorTipo('Tucumán', 'tarjeta')?.codigo).toBe('64')
-    expect(resolverIibbPorTipo('Salta', 'tarjeta')?.codigo).toBe('64')
+  it('en tarjeta, sin fila en la tabla, no resuelve: lo elige el operador', () => {
+    // La regla anterior mandaba toda linea de IIBB de una tarjeta al 64.
+    // Contradecia la tabla de imputacion del usuario, que manda el IIBB de
+    // Tucuman al 63 y reserva el 64 para el SIRTAC: la retencion de Tucuman
+    // terminaba imputada al codigo del SIRTAC. Se saco el 2026-09-11.
+    expect(resolverIibbPorTipo('Tucumán', 'tarjeta')).toBeNull()
+    expect(resolverIibbPorTipo('Salta', 'tarjeta')).toBeNull()
   })
 
-  it('en tarjeta SIRCREB conserva el suyo', () => {
-    expect(resolverIibbPorTipo('Ret. IIBB SIRCREB', 'tarjeta')?.codigo).toBe('66')
+  it('en tarjeta tampoco resuelve por alias', () => {
+    // Sacada la regla del 64 quedaba el alias, que manda "Tucuman" al 60 --
+    // tambien distinto del 63 de la tabla. En tarjeta la imputacion la
+    // define el emisor, no la jurisdiccion que nombre el rotulo.
+    expect(resolverIibbPorTipo('Ret.IB TUCUMAN 5,00 %', 'tarjeta', {}, CPA14)).toBeNull()
   })
 
-  it('lo aprendido GANA sobre la regla de tarjeta', () => {
-    // El pedido del usuario (2026-09-10): que la correccion se recuerde,
-    // igual que ya pasaba con las alicuotas. Antes la regla del 64 pisaba
-    // tambien lo aprendido, y como casi todas las percepciones que el
-    // operador corrige vienen de resumenes de tarjeta, el aprendizaje no
-    // servia para nada: las tres filas que habia en PHF_ALICUOTA_PROVEEDOR
-    // eran de tarjeta y ninguna se aplicaba.
-    expect(resolverIibbPorTipo('Tucumán', 'tarjeta', { tucuman: '60' }, CPA14)?.codigo).toBe('60')
+  it('en tarjeta el SIRCREB tampoco queda exceptuado', () => {
+    // Tenia el 66 fijo. No figura en la tabla del usuario, asi que entra en
+    // la misma regla: la primera liquidacion que lo traiga la imputa el
+    // operador y de ahi en mas sale sola.
+    expect(resolverIibbPorTipo('Ret. IIBB SIRCREB', 'tarjeta')).toBeNull()
+    expect(resolverIibbPorTipo('Ret. IIBB SIRCREB', 'conceptos')?.codigo).toBe('66')
   })
 
-  it('lo aprendido gana aunque sea un codigo que no es jurisdiccion', () => {
-    const r = resolverIibbPorTipo('Bancarias', 'tarjeta', { bancarias: '63' }, CPA14)
+  it('en tarjeta manda lo aprendido, que es donde vive la tabla', () => {
+    // La tabla se carga como filas aprendidas por proveedor
+    // (scripts/cargar-imputacion-tarjetas.ts), asi que es este camino el que
+    // la aplica. El rotulo impreso es la clave.
+    const r = resolverIibbPorTipo(
+      'Ret.IB TUCUMAN 5,00 %',
+      'tarjeta',
+      { 'ret.ib tucuman 5,00 %': '63' },
+      CPA14,
+    )
     expect(r?.codigo).toBe('63')
     expect(r?.jurisdiccion).toBe('RET IIBB TUCUMAN')
   })
 
-  it('sin nada aprendido, la regla de tarjeta sigue mandando', () => {
-    expect(resolverIibbPorTipo('Tucumán', 'tarjeta', { salta: '61' }, CPA14)?.codigo).toBe('64')
+  it('lo aprendido gana sobre la jurisdiccion leida, tambien fuera de tarjeta', () => {
+    expect(resolverIibbPorTipo('Tucumán', 'tarjeta', { tucuman: '60' }, CPA14)?.codigo).toBe('60')
+    expect(resolverIibbPorTipo('Tucumán', 'conceptos', { tucuman: '63' }, CPA14)?.codigo).toBe('63')
+  })
+
+  it('lo aprendido para OTRO rotulo no se aplica a este', () => {
+    expect(resolverIibbPorTipo('Tucumán', 'tarjeta', { salta: '61' }, CPA14)).toBeNull()
   })
 })

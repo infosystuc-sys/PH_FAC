@@ -31,7 +31,7 @@ import { aprenderImpuestoEn } from '../src/server/app/aprendizajeImpuestos'
 import { listarCodigosImpuesto } from '../src/server/tango/impuestos'
 
 /** [CUIT del comprobante, rótulo impreso, código de Tango]. */
-const TABLA: [string, string, string][] = [
+export const TABLA: [string, string, string][] = [
   ['30-68537634-9', 'IVA', '1'],
   ['30-68537634-9', 'Percepción de IVA', '16'],
   ['30-68537634-9', 'Percepción sobre Débitos/Créditos', '65'],
@@ -114,7 +114,13 @@ async function main() {
   await cerrarPool()
 }
 
-main().catch((e) => {
-  console.error(e)
-  process.exit(1)
-})
+// Solo cuando se corre el script, no cuando alguien importa TABLA: la
+// auditoria la importa para no transcribir la tabla dos veces, y sin esta
+// guarda ese import volvia a cargar las 74 filas como efecto secundario.
+const esEjecucionDirecta = (process.argv[1] ?? '').endsWith('cargar-imputacion-tarjetas.ts')
+if (esEjecucionDirecta) {
+  main().catch((e) => {
+    console.error(e)
+    process.exit(1)
+  })
+}

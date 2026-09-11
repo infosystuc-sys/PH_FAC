@@ -528,15 +528,28 @@ export function validarAlicuotas(lineas: LineaAlicuota[]): ResultadoValidacion {
     return { estado: 'ok', mensaje: 'No aplica.' }
   }
 
+  // Dos motivos distintos, y el operador hace cosas distintas con cada uno:
+  // un porcentaje que Tango no tiene se corrige en el porcentaje, y un
+  // rotulo sin imputar se resuelve eligiendo el codigo (y esa eleccion queda
+  // aprendida para ese proveedor). Desde el 2026-09-11 el segundo caso es
+  // frecuente: los rotulos sin porcentaje impreso ya no caen a un codigo por
+  // omision.
   const sinCodigo = lineas.filter((l) => l.estado === 'sin-codigo')
   if (sinCodigo.length > 0) {
-    const detalle = sinCodigo
-      .map((l) => `${formatPorcentaje(l.porcentaje)} (alícuota ${l.slot})`)
-      .join(', ')
-    return {
-      estado: 'error',
-      mensaje: `Tango no tiene una alícuota de IVA para ${detalle}. Corregí el porcentaje.`,
+    const conPorcentaje = sinCodigo.filter((l) => l.porcentaje > 0)
+    const porRotulo = sinCodigo.filter((l) => l.porcentaje === 0)
+    const partes: string[] = []
+    if (conPorcentaje.length > 0) {
+      const detalle = conPorcentaje
+        .map((l) => `${formatPorcentaje(l.porcentaje)} (alícuota ${l.slot})`)
+        .join(', ')
+      partes.push(`Tango no tiene una alícuota de IVA para ${detalle}: corregí el porcentaje.`)
     }
+    if (porRotulo.length > 0) {
+      const detalle = porRotulo.map((l) => `alícuota ${l.slot}`).join(', ')
+      partes.push(`Elegí el código de Tango de ${detalle} antes de registrar.`)
+    }
+    return { estado: 'error', mensaje: partes.join(' ') }
   }
 
   const omitidas = lineas.filter((l) => l.estado === 'omitida')
@@ -577,9 +590,12 @@ export function validarTipoFactura(tipoFactura: string | null | undefined): Resu
 export function validarPercepciones(lineas: LineaPercepcion[]): ResultadoValidacion {
   if (lineas.length === 0) return { estado: 'ok', mensaje: 'No aplica.' }
 
-  // La jurisdiccion la escribe la IA leyendo el comprobante, y el prompt es
-  // una instruccion, no una garantia. Una que no se reconoce no puede
-  // llegar a CPA18: ahi se grabaria con un codigo vacio.
+  // En conceptos y articulos la jurisdiccion la resuelve la lista curada; en
+  // tarjeta manda la tabla de imputacion del usuario, cargada por proveedor.
+  // En los dos casos, una linea que no resuelve no puede llegar a CPA18 --se
+  // grabaria con un codigo vacio-- y la imputa el operador. Su eleccion se
+  // aprende para ese proveedor, asi que la proxima liquidacion del mismo
+  // emisor ya sale sola.
   const sinCodigo = lineas.filter((l) => l.estado === 'sin-codigo')
   if (sinCodigo.length > 0) {
     const detalle = sinCodigo
@@ -587,7 +603,7 @@ export function validarPercepciones(lineas: LineaPercepcion[]): ResultadoValidac
       .join(', ')
     return {
       estado: 'error',
-      mensaje: `No se reconoce la jurisdicción de ${detalle}. Corregila para poder registrar.`,
+      mensaje: `Elegí el código de Tango de ${detalle} antes de registrar.`,
     }
   }
 

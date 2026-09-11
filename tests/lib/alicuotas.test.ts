@@ -135,6 +135,15 @@ describe('correccion manual del codigo', () => {
 })
 
 describe('validarAlicuotas', () => {
+  it('un rotulo sin imputar pide elegir el codigo, no corregir el porcentaje', () => {
+    // Los dos motivos por los que una linea queda sin codigo llevan a
+    // acciones distintas del operador, asi que el mensaje los separa.
+    const r = validarAlicuotas(resolverAlicuotas({ porciva1: 'Retención IVA', impiva1: '500,00' }, CPA14))
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('Elegí el código de Tango')
+    expect(r.mensaje).not.toContain('corregí el porcentaje')
+  })
+
   it('ok sin alicuotas', () => {
     expect(validarAlicuotas([]).estado).toBe('ok')
   })
@@ -307,8 +316,22 @@ describe('aprendizaje de IVA por rotulo', () => {
     expect(r[0].alicuota?.codigo).toBe(17)
   })
 
-  it('sin nada aprendido, un rotulo cae al codigo preferido como antes', () => {
+  it('sin nada aprendido, un rotulo NO se adivina: lo imputa el operador', () => {
+    // Hasta el 2026-09-11 caia al CODIGO_IVA_PREFERIDO. Acertaba en las
+    // percepciones de IVA, que son la mayoria de los rotulos sin porcentaje,
+    // y erraba en el resto --"Retencion IVA" va al 17-- sin que nada lo
+    // dijera. Con la tabla de imputacion cargada, un rotulo que no esta en
+    // ella queda sin codigo y la elige el operador; esa eleccion se aprende.
     const r = resolverAlicuotas({ porciva1: 'Retención IVA', impiva1: '500,00' }, CPA14)
+    expect(r[0].estado).toBe('sin-codigo')
+    expect(r[0].alicuota).toBeNull()
+  })
+
+  it('sin rotulo Y sin porcentaje si cae al codigo preferido', () => {
+    // Es el unico caso donde no hay nada contra que aprender: una eleccion
+    // del operador aca no tiene clave con la cual guardarse como regla. Es
+    // el caso tipico de una percepcion de IVA sin tasa propia.
+    const r = resolverAlicuotas({ porciva1: '', impiva1: '500,00' }, CPA14)
     expect(r[0].alicuota?.codigo).toBe(CODIGO_IVA_PREFERIDO)
   })
 

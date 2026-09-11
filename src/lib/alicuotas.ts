@@ -189,12 +189,28 @@ export function resolverAlicuotas(
       continue
     }
 
-    // Sin porcentaje impreso (no es 0%, es que no hay dato): casi siempre
-    // una percepcion de IVA sin tasa propia, no una alicuota real. Se
-    // resuelve directo a CODIGO_IVA_PREFERIDO, mismo criterio que ya usa el
-    // 3% ambiguo. El porcentaje que se graba es el que ese codigo tiene en
-    // Tango (CPA14), no un valor inventado.
+    // Sin porcentaje impreso hay dos casos, y no se tratan igual.
     if (porcentajeLeido === null) {
+      // Con rotulo ("Percepcion IVA RG 2408", "IVA S/ARANCEL + COSTO
+      // FINANCIERO", "Retencion IVA"): no se adivina. Si el rotulo no esta
+      // en lo aprendido para ese proveedor --que es donde vive la tabla de
+      // imputacion del usuario-- la linea queda sin codigo, la imputa el
+      // operador y esa eleccion se aprende. Decision del usuario del
+      // 2026-09-11. Antes caia derecho al CODIGO_IVA_PREFERIDO: acertaba en
+      // las percepciones de IVA, que son la mayoria, y erraba en el resto
+      // sin que nada lo dijera.
+      if (crudo !== '') {
+        lineas.push({ slot, porcentaje: 0, importe, estado: 'sin-codigo', alicuota: null })
+        continue
+      }
+
+      // Sin rotulo Y sin porcentaje no hay contra que aprender: una eleccion
+      // del operador aca no puede volverse regla porque no tiene clave con
+      // la cual guardarse. Se conserva el CODIGO_IVA_PREFERIDO, que es el
+      // caso tipico (una percepcion de IVA sin tasa propia), y el operador
+      // puede corregir la linea igual, comprobante por comprobante. El
+      // porcentaje que se graba es el que ese codigo tiene en CPA14, no un
+      // valor inventado.
       const preferida = alicuotas.find((a) => a.codigo === CODIGO_IVA_PREFERIDO) ?? null
       lineas.push({
         slot,

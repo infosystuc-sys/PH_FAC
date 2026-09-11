@@ -4,7 +4,6 @@ import {
   resolverVarios,
   resolverCodigoVarios,
   codigosVarios,
-  COD_VARIOS_SIRTAC,
   codigosPercepcion,
 } from '@/lib/percepciones'
 import { validarPercepciones, validarVarios } from '@/lib/validaciones'
@@ -219,6 +218,18 @@ describe('resolverVarios', () => {
 })
 
 describe('validarPercepciones', () => {
+  it('una linea sin imputar pide elegir el codigo', () => {
+    // Antes decia "no se reconoce la jurisdiccion", que desde el 2026-09-11
+    // ya no describe el caso: en tarjeta la jurisdiccion es irrelevante y lo
+    // que falta es la fila de la tabla de imputacion para ese emisor.
+    const r = validarPercepciones(
+      resolverPercepciones({ percep1: 'Ret.IB TUCUMAN 5,00 %', imppercep1: '1.000,00' }, 'tarjeta'),
+    )
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('Elegí el código de Tango')
+    expect(r.mensaje).toContain('Ret.IB TUCUMAN 5,00 %')
+  })
+
   it('ok sin lineas', () => {
     expect(validarPercepciones([]).estado).toBe('ok')
   })
@@ -261,22 +272,36 @@ describe('validarVarios', () => {
 })
 
 describe('resolverPercepciones en resumen de tarjeta', () => {
-  it('lleva toda linea de IIBB al 64, sin importar la jurisdiccion', () => {
-    // La retencion la practica la tarjeta o el banco: aunque el resumen
-    // diga "Tucuman", la cuenta contra la que va es RET IIBB BANCARIOS.
+  // La tabla de imputacion del usuario (48 filas, cargadas como aprendidas
+  // por proveedor) es la unica fuente en tarjeta. Lo que no esta en ella no
+  // se adivina: queda sin codigo y lo imputa el operador. Decision del
+  // 2026-09-11, despues de que la regla anterior --toda linea de IIBB de una
+  // tarjeta al 64-- imputara la retencion de Tucuman al codigo del SIRTAC.
+  it('sin fila en la tabla, la linea queda sin codigo', () => {
     for (const juris of ['Tucumán', 'Salta', 'CABA', 'Bancarias', 'Córdoba']) {
-      const l = resolverPercepciones(
-        { percep1: juris, imppercep1: '1.000,00' },
-        'tarjeta',
-      )
-      expect(l[0].codigo?.codigo, juris).toBe('64')
-      expect(l[0].estado).toBe('registra')
+      const l = resolverPercepciones({ percep1: juris, imppercep1: '1.000,00' }, 'tarjeta')
+      expect(l[0].codigo, juris).toBeNull()
+      expect(l[0].estado, juris).toBe('sin-codigo')
     }
   })
 
-  it('deja el SIRCREB en su propio codigo 66', () => {
+  it('el SIRCREB tampoco queda exceptuado', () => {
+    // Tenia el 66 fijo; no figura en la tabla del usuario.
     const l = resolverPercepciones({ percep1: 'SIRCREB', imppercep1: '500,00' }, 'tarjeta')
-    expect(l[0].codigo?.codigo).toBe('66')
+    expect(l[0].estado).toBe('sin-codigo')
+  })
+
+  it('con la fila de la tabla, resuelve al codigo que ella dice', () => {
+    // El rotulo impreso es la clave, y la tabla manda el IIBB de Tucuman de
+    // las liquidaciones al 63 -- no al 60 de la jurisdiccion ni al 64.
+    const l = resolverPercepciones(
+      { percep1: 'Ret.IB TUCUMAN 5,00 %', imppercep1: '1.000,00' },
+      'tarjeta',
+      { 'ret.ib tucuman 5,00 %': '63' },
+      CPA14_NO_IVA,
+    )
+    expect(l[0].codigo?.codigo).toBe('63')
+    expect(l[0].estado).toBe('registra')
   })
 
   it('no cambia nada en conceptos ni en articulos', () => {
@@ -286,9 +311,9 @@ describe('resolverPercepciones en resumen de tarjeta', () => {
     }
   })
 
-  it('la correccion manual sigue ganando sobre la regla del tipo', () => {
+  it('la correccion manual sigue ganando sobre todo', () => {
     // Si el operador eligio un codigo a mano, es porque sabe algo que la
-    // regla no: no se lo pisa.
+    // tabla no: no se lo pisa.
     const l = resolverPercepciones(
       { percep1: 'Tucumán', imppercep1: '1.000,00', codpercep1: '62' },
       'tarjeta',
@@ -302,44 +327,43 @@ describe('resolverPercepciones en resumen de tarjeta', () => {
       percep1: 'Salta',
       imppercep1: '300,00',
     })
-    expect(l[0].codigo?.codigo).toBe('64')
+    expect(l[0].estado).toBe('sin-codigo')
   })
 })
 
 describe('resolverCodigoVarios', () => {
   // La celda "En Tango" del formulario y resolverVarios llaman a esta misma
   // funcion. Hasta el 2026-09-06 la celda repetia la precedencia a mano y se
-  // le habia quedado afuera el SIRTAC: mostraba el desplegable vacio y en
-  // rojo mientras el registro imputaba bien al 67. Estos casos fijan la
+  // le habia quedado afuera un termino: mostraba el desplegable vacio y en
+  // rojo mientras el registro imputaba a otra cosa. Estos casos fijan la
   // precedencia entera para que las dos no puedan volver a separarse.
 
-  it('reconoce el SIRTAC de cualquier emisor, sin que nadie se lo enseñe', () => {
-    // Los cuatro rotulos, tal como los imprimen comprobantes reales de
-    // Macro, Credicoop, Santiago del Estero y Naranja.
+  it('la correccion del operador gana sobre lo aprendido', () => {
+    expect(
+      resolverCodigoVarios('Ret.IB SIRTAC', '56', CPA14_NO_IVA, { 'ret.ib sirtac': '63' }),
+    ).toBe('56')
+  })
+
+  it('lo aprendido del proveedor resuelve el rotulo', () => {
+    // Es el camino por el que se aplica la tabla de imputacion del usuario.
+    expect(resolverCodigoVarios('Ret.IB SIRTAC', '', CPA14_NO_IVA, { 'ret.ib sirtac': '63' })).toBe(
+      '63',
+    )
+  })
+
+  it('el SIRTAC ya no se resuelve solo: sin fila en la tabla, lo elige el operador', () => {
+    // Habia una regla que mandaba cualquier rotulo con la sigla a un codigo
+    // fijo. Esa constante dio cuatro vueltas --56, 63, 67, 64-- porque el
+    // codigo no se deduce de la sigla: lo define la tabla, por emisor. Se
+    // saco el 2026-09-11.
     for (const rotulo of [
       'Ret.IB SIRTAC',
       'RETENCION IIBB SIRTAC',
       'Retencion I.B. /SIRTAC',
       'Régimen de Retención SIRTAC',
     ]) {
-      expect(resolverCodigoVarios(rotulo, '', CPA14_NO_IVA, {})).toBe(COD_VARIOS_SIRTAC)
+      expect(resolverCodigoVarios(rotulo, '', CPA14_NO_IVA, {}), rotulo).toBe('')
     }
-  })
-
-  it('no depende de que el proveedor lo tenga aprendido', () => {
-    // El caso que reporto el usuario: en Banco Macro andaba porque habia una
-    // correccion guardada, y en Galicia, BBVA y Credicoop --sin nada
-    // aprendido-- el desplegable salia vacio.
-    expect(resolverCodigoVarios('Ret.IB SIRTAC', '', CPA14_NO_IVA)).toBe(COD_VARIOS_SIRTAC)
-  })
-
-  it('la correccion del operador gana sobre la regla del SIRTAC', () => {
-    expect(resolverCodigoVarios('Ret.IB SIRTAC', '56', CPA14_NO_IVA, {})).toBe('56')
-  })
-
-  it('lo aprendido del proveedor gana sobre la regla del SIRTAC', () => {
-    const r = resolverCodigoVarios('Ret.IB SIRTAC', '', CPA14_NO_IVA, { 'ret.ib sirtac': '63' })
-    expect(r).toBe('63')
   })
 
   it('acepta el codigo guardado en el campo del rotulo, de los comprobantes viejos', () => {
@@ -352,49 +376,16 @@ describe('resolverCodigoVarios', () => {
   })
 
   it('resuelve lo mismo que resolverVarios, que es el punto de que exista', () => {
+    const aprendidos = { 'ret.ib sirtac': '64' }
     const valores = { varios1: 'Ret.IB SIRTAC', impvarios1: '1.000,00' }
-    const porLinea = resolverVarios(valores, CPA14_NO_IVA, {})[0]
-    const suelto = resolverCodigoVarios('Ret.IB SIRTAC', '', codigosVarios(CPA14_NO_IVA), {})
+    const porLinea = resolverVarios(valores, CPA14_NO_IVA, aprendidos)[0]
+    const suelto = resolverCodigoVarios(
+      'Ret.IB SIRTAC',
+      '',
+      codigosVarios(CPA14_NO_IVA),
+      aprendidos,
+    )
     expect(porLinea.codigo).toBe(suelto)
     expect(porLinea.estado).toBe('registra')
-  })
-})
-
-describe('COD_VARIOS_SIRTAC', () => {
-  it('es el 64 (RET IIBB BANCARIOS), a proposito y por cuarta vez', () => {
-    // Hay cuatro candidatos en CPA14: el 56 ("RETENCION MUNICIPAL"), el 63
-    // ("RET IIBB TUCUMAN"), el 64 ("RET IIBB BANCARIOS") y el 67 ("RET
-    // SIRTAC"). Paso por cuatro valores --56 el 2026-08-17, 63 el 2026-09-05,
-    // 67 el 2026-09-06 y 64 el 2026-09-10-- y las cuatro veces por decision
-    // explicita del usuario. La ultima salio de su planilla de imputacion,
-    // donde el SIRTAC va al 64 en las nueve veces que aparece y el IIBB de
-    // Tucuman al 63.
-    //
-    // Este test existe para que una quinta vez sea una decision y no un
-    // descuido: el argumento del 67 --que es el codigo que se llama
-    // literalmente "RET SIRTAC"-- es el mas obvio de todos.
-    expect(COD_VARIOS_SIRTAC).toBe('64')
-  })
-
-  it('se resuelve solo por el rotulo, sin que nadie se lo enseñe', () => {
-    // Es un regimen conocido que aparece en casi todos los resumenes de
-    // tarjeta: no tiene sentido que el operador lo elija la primera vez.
-    const r = resolverVarios(
-      { varios1: 'Retencion I.B. /SIRTAC', impvarios1: '1.749,47' },
-      CPA14_NO_IVA,
-    )
-    expect(r[0].estado).toBe('registra')
-    expect(r[0].codigo).toBe(COD_VARIOS_SIRTAC)
-  })
-
-  it('lo aprendido del proveedor le gana a la regla del SIRTAC', () => {
-    // La correccion del operador para ese proveedor es mas especifica que
-    // una regla general de la app.
-    const r = resolverVarios(
-      { varios1: 'Ret. SIRTAC', impvarios1: '1.000,00' },
-      CPA14_NO_IVA,
-      { 'ret. sirtac': '56' },
-    )
-    expect(r[0].codigo).toBe('56')
   })
 })

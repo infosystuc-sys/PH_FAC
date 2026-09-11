@@ -54,8 +54,14 @@ describe('buscarOcPendientes', () => {
     for (const oc of await buscarOcPendientes(prov!)) {
       for (const r of oc.renglones) {
         expect(r.pendienteFacturar).toBeLessThanOrEqual(r.cantidadPedida)
-        // PENDIENTE_FACTURAR se mide contra lo pedido, no contra lo recibido.
-        expect(r.cantidadPedida - r.cantidadFacturada).toBeCloseTo(r.pendienteFacturar, 2)
+        // Es <= y no ==. Medido el 2026-09-11 sobre los 170 renglones con
+        // pendiente: los 170 cumplen esta desigualdad, y 168 cumplen ademas
+        // la igualdad. Los dos que no son renglones ya recibidos en parte,
+        // donde Tango bajo el pendiente a lo recibido: la OC 0000100000021
+        // tiene 20 pedidas, 16 recibidas, 0 facturadas y 16 pendientes. El
+        // test afirmaba la igualdad y fallaba con esos dos -- la igualdad era
+        // cierta de los datos de entonces, no de la regla.
+        expect(r.pendienteFacturar).toBeLessThanOrEqual(r.cantidadPedida - r.cantidadFacturada)
       }
     }
   })

@@ -11,32 +11,6 @@ export type { CodigoPercepcion }
 export const MAX_SLOTS_PERCEPCION = 4
 export const MAX_SLOTS_VARIOS = 2
 
-/**
- * El codigo de "Impuestos varios" al que va el SIRTAC de un resumen de
- * tarjeta: el 64, "RET IIBB BANCARIOS".
- *
- * Hay cuatro codigos candidatos en CPA14 -- el 56 ("RETENCION MUNICIPAL"),
- * el 63 ("RET IIBB TUCUMAN"), el 64 ("RET IIBB BANCARIOS") y el 67 ("RET
- * SIRTAC") -- y este dio cuatro vueltas antes de quedar donde esta:
- *
- *   2026-08-17  el 56, con el 56 y el 67 a la vista
- *   2026-09-05  el 63 -- "el impuesto correcto es Ingresos Brutos Tucuman"
- *   2026-09-06  el 67, corrigiendo lo anterior ("error mio")
- *   2026-09-10  el 64, por la planilla de imputacion del usuario
- *
- * Las cuatro son decisiones explicitas del usuario. La ultima llego con una
- * tabla de 48 filas que mapea el rotulo impreso de cada impuesto al codigo
- * de Tango, hecha por el: las nueve veces que aparece el SIRTAC ahi, va al
- * 64. Y en la misma tabla el IIBB de Tucuman va al 63, asi que el 64 y el 63
- * quedan repartidos entre los dos regimenes en vez de ser intercambiables.
- *
- * Queda escrito el recorrido porque el argumento del 67 --que es el codigo
- * que se llama "RET SIRTAC"-- es el mas obvio de todos y podria tentar a
- * "corregirlo" una quinta vez. Cambiarlo mueve la imputacion contable de
- * todos los resumenes de tarjeta.
- */
-export const COD_VARIOS_SIRTAC = '64'
-
 /** Un código de CPA14 tal como lo devuelve `listarCodigosImpuesto`. */
 export type CodigoTango = { codigo: number; descripcion: string }
 
@@ -171,17 +145,25 @@ function resolverCorreccionPercepcion(
  * Existe como función aparte porque la usan los dos lados -- `resolverVarios`,
  * que arma CPA18, y la celda "En Tango" del formulario -- y hasta el
  * 2026-09-06 la celda repetía esta precedencia a mano y se le había quedado
- * afuera el último término, el del SIRTAC. El efecto era que en una
- * liquidación que nadie hubiera corregido todavía el desplegable aparecía
- * vacío y en rojo mientras el registro imputaba bien al 67: la pantalla
- * decía una cosa y Tango recibía otra. Lo reportó el usuario con las
- * liquidaciones de Galicia, BBVA y Credicoop -- en las de Banco Macro no se
- * veía, porque ahí ya había una corrección guardada que tapaba el hueco.
+ * afuera un término. El efecto era que en una liquidación que nadie hubiera
+ * corregido todavía el desplegable aparecía vacío y en rojo mientras el
+ * registro imputaba a otra cosa: la pantalla decía una cosa y Tango recibía
+ * otra. Lo reportó el usuario con las liquidaciones de Galicia, BBVA y
+ * Credicoop.
  *
  * El orden es el mismo que en IVA e IIBB: lo que el operador corrigió en
- * este comprobante gana sobre lo aprendido del proveedor, y lo aprendido
- * gana sobre la regla general del SIRTAC -- una corrección para ese
- * proveedor es más específica que una regla para todos.
+ * este comprobante gana sobre lo aprendido para ese proveedor.
+ *
+ * **No hay regla general debajo.** Hasta el 2026-09-11 el SIRTAC se resolvía
+ * solo: cualquier rótulo que contuviera la sigla iba a un código fijo, con el
+ * argumento de que es un régimen conocido que aparece en casi todos los
+ * resúmenes de tarjeta. Esa constante dio cuatro vueltas -- 56, 63, 67, 64 --
+ * porque el código correcto no se deduce de la sigla: lo define la tabla de
+ * imputación del usuario, que lo mapea por emisor. Con la tabla cargada la
+ * regla ya no agrega nada donde acierta y contradice donde no, así que se
+ * fue: un rótulo sin fila en la tabla deja la línea en `sin-codigo`, la
+ * imputa el operador y esa elección se aprende para ese proveedor. Decisión
+ * del usuario del 2026-09-11.
  *
  * Devuelve '' si no resuelve a nada, que es lo que deja la línea en
  * `sin-codigo`.
@@ -202,20 +184,7 @@ export function resolverCodigoVarios(
   const codigoLegado =
     !corregido && /^\d+$/.test(t) && admitidos.some((c) => String(c.codigo) === t) ? t : ''
 
-  // El SIRTAC lo resuelve la app sin que nadie se lo enseñe: es un regimen
-  // conocido que aparece en casi todos los resumenes de tarjeta, de
-  // cualquier banco o procesadora. Se reconoce por la sigla, que es lo unico
-  // estable -- el resto del rotulo cambia con cada emisor ("Ret.IB SIRTAC",
-  // "RETENCION IIBB SIRTAC", "Retencion I.B. /SIRTAC", "Regimen de
-  // Retencion SIRTAC", todas vistas en comprobantes reales).
-  const esSirtac = t !== '' && normalizar(t).includes('sirtac')
-
-  return (
-    corregido ||
-    codigoLegado ||
-    (t ? (aprendidos[normalizar(t)] ?? '') : '') ||
-    (esSirtac ? COD_VARIOS_SIRTAC : '')
-  )
+  return corregido || codigoLegado || (t ? (aprendidos[normalizar(t)] ?? '') : '')
 }
 
 /**

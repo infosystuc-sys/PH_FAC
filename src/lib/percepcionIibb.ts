@@ -174,32 +174,39 @@ export function resolverPercepcionIibb(
 }
 
 /**
- * En un resumen de tarjeta, toda linea de Ingresos Brutos se imputa al 64
- * (RET IIBB BANCARIOS), sin importar la jurisdiccion que diga: la
- * retencion la practica la tarjeta o el banco, y esa es la cuenta contra
- * la que se lleva. Decision de registracion del usuario (2026-08-17).
- *
- * La excepcion es SIRCREB, que conserva su codigo 66. Tiene regimen y
- * cuenta propios, y meterlo en el 64 perderia esa distincion.
- */
-const COD_IIBB_TARJETA = '64'
-const COD_IIBB_SIRCREB = '66'
-
-/**
  * El codigo de IIBB que corresponde a una linea segun el tipo de
  * comprobante.
  *
  * En conceptos y articulos manda la jurisdiccion leida (ver
- * `resolverPercepcionIibb`). En tarjeta manda la regla de arriba, y por eso
- * no alcanza con la resolucion por texto: una linea que diga "Tucuman" en
- * un resumen de tarjeta va al 64 igual, no al 60.
+ * `resolverPercepcionIibb`): ahi el rotulo nombra la provincia y la lista
+ * curada la resuelve.
  *
- * Lo aprendido para este proveedor gana sobre las dos cosas -- cambio del
- * 2026-09-09, pedido del usuario. Antes la regla de tarjeta pisaba tambien
- * lo aprendido, y como casi todas las percepciones que el operador corrige
- * vienen justamente de resumenes de tarjeta, el aprendizaje no servia para
- * nada ahi: las tres filas que habia en PHF_ALICUOTA_PROVEEDOR eran de
- * comprobantes de tarjeta y ninguna se aplicaba nunca.
+ * **En tarjeta no se adivina nada.** Resuelve unicamente lo que ese emisor
+ * ya tiene aprendido para ese rotulo, que es donde vive la tabla de
+ * imputacion del usuario (`scripts/cargar-imputacion-tarjetas.ts`: 48 filas
+ * que mapean CUIT + rotulo impreso al codigo de Tango). Un rotulo que no
+ * este en la tabla deja la linea en `sin-codigo`, la elige el operador, y
+ * esa eleccion se aprende -- `aprenderImpuestoTango` en `acciones.ts` -- y
+ * pasa a ser la regla para ese emisor. Decision del usuario del 2026-09-11:
+ * "solo debes respetar las equivalencias que te subi; si no coincide debes
+ * dejar que el usuario elija la alicuota y escribe la regla para esa
+ * alicuota".
+ *
+ * Hasta ese dia habia dos reglas generales aca, y las dos contradecian la
+ * tabla:
+ *
+ * - Toda linea de IIBB de una tarjeta iba al 64 ("RET IIBB BANCARIOS"),
+ *   decision del 2026-08-17. La tabla manda el IIBB de Tucuman al 63 y
+ *   reserva el 64 para el SIRTAC, asi que esa regla imputaba la retencion de
+ *   Tucuman al codigo del SIRTAC. Es el error que reporto el usuario.
+ * - Sacada esa, quedaba la resolucion por alias, que manda "Tucuman" al 60
+ *   -- tambien distinto del 63 de la tabla.
+ *
+ * Ninguna de las dos se puede conservar sin volver a contradecirla: en una
+ * liquidacion de tarjeta la imputacion la define el emisor, no la
+ * jurisdiccion que nombre el rotulo. El SIRCREB tampoco queda exceptuado
+ * (tenia el 66 fijo): no figura en la tabla, asi que la primera liquidacion
+ * que lo traiga la imputa el operador y de ahi en mas sale sola.
  */
 export function resolverIibbPorTipo(
   texto: string,
@@ -210,15 +217,7 @@ export function resolverIibbPorTipo(
   const aprendido = aprendidoPara(normalizar(texto ?? ''), aprendidos, codigosImpuesto)
   if (aprendido) return aprendido
 
-  // Sin aprendidos: ya se consultaron arriba y tienen prioridad sobre todo
-  // lo que sigue, incluida la regla de tarjeta.
-  const porTexto = resolverPercepcionIibb(texto)
-  if (tipoFactura !== 'tarjeta') return porTexto
+  if (tipoFactura === 'tarjeta') return null
 
-  // SIRCREB se reconoce por el texto y se queda con el suyo.
-  if (porTexto?.codigo === COD_IIBB_SIRCREB) return porTexto
-
-  // El resto va al 64 aunque la jurisdiccion no se haya reconocido: en un
-  // resumen de tarjeta, que la linea sea de Ingresos Brutos alcanza.
-  return JURISDICCIONES_IIBB.find((j) => j.codigo === COD_IIBB_TARJETA) ?? null
+  return resolverPercepcionIibb(texto)
 }
