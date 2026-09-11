@@ -106,27 +106,42 @@ Ojo con dos que se le parecen y NO son de IVA: las de Ingresos Brutos
 créditos.`
 
 /**
- * El código de Ingresos Brutos que la app manda a CPA18. Los criterios
- * salen de `JURISDICCIONES_IIBB` para que la lista del prompt y la lista
- * de opciones que ve el operador no puedan separarse.
+ * Que va en `percepN`.
+ *
+ * Hasta el 2026-09-11 se le pedia al modelo la JURISDICCION normalizada --
+ * "Tucuman", "Bancarias"-- en vez del texto de la linea. El usuario lo
+ * reporto sobre una liquidacion de Valle Fertil cuyo renglon dice "Retencion
+ * Ingresos Brutos" y la pantalla mostraba "Bancarias": una etiqueta que no
+ * esta en el comprobante y que el operador no tiene contra que cotejar.
+ *
+ * Ahora va el rotulo tal cual. La resolucion no cambia: `resolverPercepcionIibb`
+ * busca los alias DENTRO del texto, asi que "Perc. IIBB Tucuman RG 22/18"
+ * sigue resolviendo al 60 igual que resolvia "Tucuman". Y lo aprendido por
+ * proveedor pasa a tener como clave el rotulo impreso, que es la misma clave
+ * con la que el usuario armo su tabla de imputacion.
  */
 const PERCEPCIONES = [
   `Las líneas de Ingresos Brutos van en los cuatro pares
 percepN/imppercepN, en orden desde el 1 y sin dejar huecos. En cada par,
-percepN es la JURISDICCIÓN de esa línea e imppercepN es su importe.
+percepN es el RÓTULO de esa línea tal como está impreso e imppercepN es su
+importe.
 
-En percepN escribí solo la jurisdicción, no el texto entero de la línea:
-de "Perc. IIBB Tucumán RG 22/18 ... 7.748,86" sale percep1 "Tucumán" e
-imppercep1 "7.748,86". El porcentaje de la percepción no se pide, y no
-sirve para identificarla.
+Copiá el rótulo como figura, sin normalizarlo, sin traducirlo y sin
+reemplazarlo por el nombre de la provincia: de "Retención Ingresos
+Brutos ... 6.030,58" sale percep1 "Retención Ingresos Brutos", y de
+"Ret.IB TUCUMAN 5,00 % ... 7.748,86" sale percep1 "Ret.IB TUCUMAN 5,00 %".
+El operador coteja ese texto contra el papel, así que tiene que decir lo
+mismo que el papel. A qué código de Tango va lo resuelve la app.
 
-Las jurisdicciones que la app registra son:`,
-  ...JURISDICCIONES_IIBB.map((j) => `- "${j.jurisdiccion}" para ${j.criterio}.`),
-  `Si el comprobante menciona SIRCREB, la jurisdicción es SIRCREB aunque la
-línea también diga que es bancaria. Si la línea es de una jurisdicción que
-no está en esa lista (Córdoba, Santa Fe y demás), escribila igual tal como
-figura: el operador la va a ver marcada como no reconocida y decide qué
-hacer. Lo que no hay que hacer es forzarla a una de la lista.`,
+Sacá del rótulo el importe y los puntos de relleno, nada más. El porcentaje
+que venga en el texto dejalo: es parte del rótulo.
+
+Qué cuenta como línea de Ingresos Brutos, que es lo que decide que vaya acá
+y no en variosN:`,
+  ...JURISDICCIONES_IIBB.map((j) => `- ${j.criterio}.`),
+  `Si la línea es de una jurisdicción que no está en esa lista (Córdoba,
+Santa Fe y demás), va acá igual, con su rótulo: el operador la va a ver
+marcada como no reconocida y decide qué hacer.`,
 ].join('\n')
 
 /**
@@ -266,7 +281,7 @@ atención: van en los pares percepN/imppercepN como en cualquier otro
 comprobante, con la jurisdicción tal como figure. La app se encarga de
 imputarlas; vos solo transcribí lo que dice.
 Prestá atención a tres líneas que aparecen casi solo acá:
-- SIRCREB: ponelo como jurisdicción en percepN, tal cual.
+- SIRCREB: va en percepN, con su rótulo tal como figure.
 - SIRTAC: NO va en percepN. Va en los pares variosN/impvariosN, con el
   rótulo tal como esté impreso en variosN ("Retención I.B. /SIRTAC",
   "Ret. SIRTAC", lo que figure) y el importe en impvariosN. El código de
@@ -320,4 +335,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v9'
+export const VERSION_PROMPT = 'v10'

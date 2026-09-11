@@ -87,16 +87,33 @@ describe('PROMPTS_EXTRACCION', () => {
     expect(PROMPTS_EXTRACCION.tarjeta).toContain('dejá tipo y ptovta vacíos')
   })
 
-  it('los tres listan las jurisdicciones de IIBB con su criterio', () => {
-    // El prompt pide la JURISDICCION, no el codigo: el codigo lo resuelve
-    // la app despues (ver resolverPercepcionIibb). Pedirle el codigo al
+  it('los tres explican que cuenta como linea de Ingresos Brutos', () => {
+    // El prompt NO pide la jurisdiccion normalizada: pide el rotulo tal como
+    // esta impreso -- cambio del 2026-09-11, pedido del usuario. Lo que si
+    // se le sigue diciendo es que cuenta como linea de IIBB, porque eso es
+    // lo que decide que vaya en percepN y no en variosN. El codigo lo
+    // resuelve la app despues (ver resolverPercepcionIibb): pedirselo al
     // modelo seria pedirle que memorice un maestro de Tango.
     for (const t of TIPOS_FACTURA) {
       const p = PROMPTS_EXTRACCION[t.clave]
       for (const j of JURISDICCIONES_IIBB) {
-        expect(p, `${t.clave} no lista ${j.jurisdiccion}`).toContain(`"${j.jurisdiccion}" para`)
-        expect(p, `${t.clave} no explica cuando usar ${j.jurisdiccion}`).toContain(j.criterio)
+        expect(p, `${t.clave} no explica cuando es ${j.jurisdiccion}`).toContain(j.criterio)
       }
+    }
+  })
+
+  it('los tres piden el rotulo impreso y no la jurisdiccion normalizada', () => {
+    // La regresion concreta: una liquidacion de Valle Fertil cuyo renglon
+    // dice "Retencion Ingresos Brutos" mostraba "Bancarias" en pantalla, una
+    // etiqueta que no esta en el comprobante y que el operador no tiene
+    // contra que cotejar.
+    for (const t of TIPOS_FACTURA) {
+      const p = PROMPTS_EXTRACCION[t.clave]
+      expect(p, `${t.clave} no pide el rotulo`).toContain('percepN es el RÓTULO de esa línea')
+      // La frase corta en el medio: se busca un tramo que no cruce el salto.
+      expect(p, `${t.clave} no prohibe normalizar`).toContain(
+        'reemplazarlo por el nombre de la provincia',
+      )
     }
   })
 
