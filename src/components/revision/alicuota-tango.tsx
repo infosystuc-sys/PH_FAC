@@ -1,6 +1,6 @@
 'use client'
 
-import { resolverCodigoIva, CODIGO_IVA_PREFERIDO, type AlicuotaTango } from '@/lib/alicuotas'
+import { resolverAlicuotas, type AlicuotaTango } from '@/lib/alicuotas'
 import { JURISDICCIONES_IIBB, resolverIibbPorTipo } from '@/lib/percepcionIibb'
 import { codigosVarios, codigosPercepcion, resolverCodigoVarios } from '@/lib/percepciones'
 import { parsearImporte } from '@/lib/formato'
@@ -146,32 +146,28 @@ export function CeldaAlicuotaTango({
     )
   }
 
-  const crudo = porcentaje.trim()
-  const p = crudo === '' ? null : parsearImporte(crudo)
-
-  // Sin porcentaje impreso (no es 0%, es que no hay dato): casi siempre una
-  // percepcion de IVA sin tasa propia (ej. "Percepcion IVA RG 2408"), no una
-  // alicuota real. Se resuelve directo al codigo preferido, mismo criterio
-  // que el 3% ambiguo -- decision del usuario, 2026-08-21. Antes esto
-  // mostraba "—" sin resolver nada, y la linea quedaba omitida del registro
-  // salvo que el operador la corrigiera a mano cada vez.
-  if (p === null) {
-    const preferida = alicuotas.find((a) => a.codigo === CODIGO_IVA_PREFERIDO) ?? null
-    return (
-      <CeldaLista
-        opciones={opciones}
-        valor={preferida ? String(preferida.codigo) : ''}
-        placeholder="—"
-        tono={preferida ? 'ok' : 'vacio'}
-        bloqueado={bloqueado}
-        onCambio={onCambio}
-      />
-    )
-  }
+  // Resuelve con `resolverAlicuotas`, la MISMA funcion que arma CPA04, en vez
+  // de repetir su criterio aca. Hasta el 2026-09-11 esta celda lo repetia a
+  // mano y las dos ramas ya habian divergido: hacia `parsearImporte` sobre el
+  // contenido de porcivaN, que para un rotulo como "Percep./Retenc.AFIP -
+  // DGI" --sin un solo digito-- da 0, asi que la celda lo mostraba como
+  // "No se registra" (la regla del 0%) mientras el registro lo imputaba al
+  // 16 por lo aprendido. Ademas nunca miraba `aprendidos`, que recibia como
+  // prop y no usaba: la tabla de imputacion del usuario no llegaba a la
+  // pantalla. Lo reporto el usuario con la liquidacion 4500 de BBVA.
+  //
+  // Es el mismo error que ya habia pasado en la celda de impuestos varios y
+  // se arreglo igual: una sola funcion para los dos lados. Se le pasa un
+  // unico slot porque la celda es una sola linea.
+  const linea = resolverAlicuotas(
+    { porciva1: porcentaje, impiva1: importe, codiva1: correccion },
+    alicuotas,
+    aprendidos,
+  )[0]
 
   // Norma de registración: la alícuota 0% no se graba. Se avisa acá mismo
   // para que el operador no descubra el faltante al registrar.
-  if (p === 0) {
+  if (!linea || linea.estado === 'omitida') {
     return (
       <CeldaLista
         opciones={opciones}
@@ -184,13 +180,12 @@ export function CeldaAlicuotaTango({
     )
   }
 
-  const encontrada = resolverCodigoIva(p, alicuotas, aprendidos)
   return (
     <CeldaLista
       opciones={opciones}
-      valor={encontrada ? String(encontrada.codigo) : ''}
-      placeholder="Sin código en Tango"
-      tono={encontrada ? 'ok' : 'error'}
+      valor={linea.alicuota ? String(linea.alicuota.codigo) : ''}
+      placeholder="Elegí el impuesto"
+      tono={linea.alicuota ? 'ok' : 'error'}
       bloqueado={bloqueado}
       onCambio={onCambio}
     />

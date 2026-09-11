@@ -269,6 +269,21 @@ describe('lineas con importe en cero', () => {
 })
 
 describe('aprendizaje de IVA por rotulo', () => {
+  it('aplica lo aprendido a un rotulo aunque cambie el espacio antes del %', () => {
+    // La celda "En Tango" y el registro llaman a esta misma funcion, asi que
+    // este caso fija los dos. Hasta el 2026-09-11 la celda resolvia por su
+    // cuenta, hacia parsearImporte sobre el rotulo --que para
+    // "Percep./Retenc.AFIP - DGI" da 0-- y mostraba "No se registra"
+    // mientras el registro imputaba al 16.
+    const r = resolverAlicuotas(
+      { porciva1: 'Percep./Retenc.AFIP - DGI', impiva1: '9.367,48' },
+      CPA14,
+      { 'percep./retenc.afip - dgi': '16' },
+    )
+    expect(r[0].alicuota?.codigo).toBe(16)
+    expect(r[0].estado).toBe('registra')
+  })
+
   // Las lineas que no imprimen porcentaje llevan su rotulo en porcivaN, y es
   // lo unico que dice a que alicuota van. Viene de la planilla de imputacion
   // del usuario (2026-09-10): "IVA S/ARANCEL + COSTO FINANCIERO" va al 1 y

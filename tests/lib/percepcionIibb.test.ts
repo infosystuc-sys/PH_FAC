@@ -3,6 +3,7 @@ import {
   JURISDICCIONES_IIBB,
   resolverPercepcionIibb,
   resolverIibbPorTipo,
+  buscarAprendido,
 } from '@/lib/percepcionIibb'
 
 describe('JURISDICCIONES_IIBB', () => {
@@ -167,5 +168,42 @@ describe('resolverIibbPorTipo', () => {
 
   it('lo aprendido para OTRO rotulo no se aplica a este', () => {
     expect(resolverIibbPorTipo('Tucumán', 'tarjeta', { salta: '61' }, CPA14)).toBeNull()
+  })
+})
+
+describe('buscarAprendido', () => {
+  it('encuentra la clave exacta', () => {
+    expect(buscarAprendido({ 'ret.ib sirtac 2,00%': '64' }, 'Ret.IB SIRTAC 2,00%')).toBe('64')
+  })
+
+  it('ignora el espacio antes del %', () => {
+    // El caso real: la tabla de imputacion trae "Ret.IB SIRTAC 2,00%" y la
+    // liquidacion de BBVA imprime "Ret.IB SIRTAC 2,00 %". Comprobante 4500.
+    expect(buscarAprendido({ 'ret.ib sirtac 2,00%': '64' }, 'Ret.IB SIRTAC 2,00 %')).toBe('64')
+    // Y al reves, que es como esta guardado el IIBB de Tucuman.
+    expect(buscarAprendido({ 'ret.ib tucuman 5,00 %': '63' }, 'Ret.IB TUCUMAN 5,00%')).toBe('63')
+  })
+
+  it('sobrevive a un cambio de tasa', () => {
+    // Las tasas cambian y el rotulo impreso las lleva adentro. El impuesto y
+    // el codigo siguen siendo los mismos.
+    expect(buscarAprendido({ 'ret.ib sirtac 2,00%': '64' }, 'Ret.IB SIRTAC 2,50 %')).toBe('64')
+  })
+
+  it('se abstiene si dos filas colapsan a la misma clave con codigos distintos', () => {
+    // No es hipotetico: el proveedor 010139 tiene "IVA 21% DEC 879" -> 1 e
+    // "IVA 10,5% DEC 879" -> 3. Sin la tasa son el mismo texto, asi que la
+    // busqueda no devuelve nada y la linea la imputa el operador.
+    const aprendidos = { 'iva 21% dec 879': '1', 'iva 10,5% dec 879': '3' }
+    expect(buscarAprendido(aprendidos, 'IVA 27% DEC 879')).toBeUndefined()
+    // Pero la exacta sigue resolviendo.
+    expect(buscarAprendido(aprendidos, 'IVA 21% DEC 879')).toBe('1')
+  })
+
+  it('no inventa nada con un rotulo desconocido ni con el mapa vacio', () => {
+    expect(buscarAprendido({ 'ret.ib sirtac 2,00%': '64' }, 'Impuesto de sellos')).toBeUndefined()
+    expect(buscarAprendido({}, 'Ret.IB SIRTAC')).toBeUndefined()
+    expect(buscarAprendido(undefined, 'Ret.IB SIRTAC')).toBeUndefined()
+    expect(buscarAprendido({ 'ret.ib sirtac 2,00%': '64' }, '   ')).toBeUndefined()
   })
 })

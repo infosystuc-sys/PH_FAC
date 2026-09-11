@@ -2,7 +2,7 @@ import { parsearImporte } from './formato'
 import {
   JURISDICCIONES_IIBB,
   resolverIibbPorTipo,
-  normalizar,
+  buscarAprendido,
   type CodigoPercepcion,
 } from './percepcionIibb'
 
@@ -184,7 +184,7 @@ export function resolverCodigoVarios(
   const codigoLegado =
     !corregido && /^\d+$/.test(t) && admitidos.some((c) => String(c.codigo) === t) ? t : ''
 
-  return corregido || codigoLegado || (t ? (aprendidos[normalizar(t)] ?? '') : '')
+  return corregido || codigoLegado || (t ? (buscarAprendido(aprendidos, t) ?? '') : '')
 }
 
 /**

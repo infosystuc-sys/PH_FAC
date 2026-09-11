@@ -1,5 +1,5 @@
 import { parsearImporte, parsearImporteONulo } from './formato'
-import { normalizar } from './percepcionIibb'
+import { buscarAprendido, normalizar } from './percepcionIibb'
 
 export const MAX_SLOTS_IVA = 5
 
@@ -174,7 +174,13 @@ export function resolverAlicuotas(
     // (2026-09-10). Es lo unico que puede resolver una linea cuyo rotulo no
     // dice el porcentaje: "IVA S/ARANCEL + COSTO FINANCIERO" va al 1 y
     // "Retencion IVA" al 17, y ninguna de las dos se deduce de nada.
-    const aprendido = crudo ? aprendidos?.[claveAprendidaIva(crudo)] : undefined
+    // Un porcentaje se busca por su valor exacto; un rotulo, con tolerancia
+    // al espacio antes del % y a un cambio de tasa (ver buscarAprendido).
+    const aprendido = !crudo
+      ? undefined
+      : esPorcentaje(crudo)
+        ? aprendidos?.[claveAprendidaIva(crudo)]
+        : buscarAprendido(aprendidos, crudo)
     const porAprendido = aprendido
       ? (alicuotas.find((a) => String(a.codigo) === aprendido) ?? null)
       : null

@@ -92,6 +92,89 @@ export function normalizar(texto: string): string {
     .trim()
 }
 
+
+/**
+ * Igual que `normalizar`, pero además pega el `%` al número.
+ *
+ * El rótulo lo transcribe una persona a la tabla de imputación y lo lee la
+ * IA del PDF, y las dos grafías del mismo impuesto difieren en ese espacio:
+ * la tabla trae "Ret.IB SIRTAC 2,00%" y la liquidación de BBVA imprime
+ * "Ret.IB SIRTAC 2,00 %". Son el mismo impuesto y no matcheaban.
+ *
+ * No se hace dentro de `normalizar` a propósito: esa función define la clave
+ * con la que las filas ya están GUARDADAS en `PHF_ALICUOTA_PROVEEDOR`.
+ * Cambiarla dejaría fuera de juego a las filas existentes -- la del IIBB de
+ * Tucumán está guardada como "ret.ib tucuman 5,00 %", con el espacio -- hasta
+ * volver a cargarlas. Esto compara las dos puntas en el momento de buscar, y
+ * no toca lo guardado.
+ */
+function canonica(t: string): string {
+  return normalizar(t).replace(/\s+%/g, '%')
+}
+
+/**
+ * La misma clave, pero sin la tasa: "ret.ib sirtac 2,00%" → "ret.ib sirtac".
+ *
+ * Es el último recurso de la búsqueda, y existe porque las tasas cambian. El
+ * día que el SIRTAC pase del 2,00% al 2,50%, el rótulo impreso cambia y la
+ * fila de la tabla --que lleva la tasa adentro-- deja de matchear sola. El
+ * impuesto sigue siendo el mismo y el código también.
+ */
+function canonicaSinTasa(t: string): string {
+  return canonica(t)
+    .replace(/\d+([.,]\d+)?\s*%/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * El código aprendido para este rótulo, con las tres formas de buscarlo.
+ *
+ * Se prueban en orden de exactitud y la primera que encuentra algo gana:
+ *
+ *   1. la clave exacta, que es como está guardada;
+ *   2. la clave canónica, que además ignora el espacio antes del `%`;
+ *   3. la clave sin la tasa, para cuando el porcentaje impreso cambió.
+ *
+ * Los pasos 2 y 3 **se abstienen si hay ambigüedad**: si dos filas distintas
+ * del mismo proveedor colapsan a la misma clave con códigos distintos, no
+ * devuelve ninguna y la línea queda para que la impute el operador. No es
+ * hipotético -- el proveedor 010139 tiene "IVA 21% DEC 879" → 1 e "IVA 10,5%
+ * DEC 879" → 3, que sin la tasa son el mismo texto. Adivinar ahí sería
+ * exactamente lo que esta app dejó de hacer el 2026-09-11.
+ */
+export function buscarAprendido(
+  aprendidos: Record<string, string> | undefined,
+  texto: string,
+): string | undefined {
+  if (!aprendidos) return undefined
+  const t = normalizar(texto)
+  if (t === '') return undefined
+
+  const exacto = aprendidos[t]
+  if (exacto) return exacto
+
+  return unicoQueCoincide(aprendidos, canonica(t), canonica) ??
+    unicoQueCoincide(aprendidos, canonicaSinTasa(t), canonicaSinTasa)
+}
+
+/**
+ * El código de las filas cuya clave colapsa a `objetivo`, solo si todas
+ * coinciden en el mismo código. Con dos códigos distintos devuelve
+ * `undefined`: ver el comentario de `buscarAprendido`.
+ */
+function unicoQueCoincide(
+  aprendidos: Record<string, string>,
+  objetivo: string,
+  clave: (t: string) => string,
+): string | undefined {
+  if (objetivo === '') return undefined
+  const codigos = new Set<string>()
+  for (const [k, v] of Object.entries(aprendidos)) {
+    if (clave(k) === objetivo) codigos.add(v)
+  }
+  return codigos.size === 1 ? [...codigos][0] : undefined
+}
 /**
  * El código de Tango al que va una línea de percepción, ya resuelto.
  *
@@ -121,7 +204,9 @@ function aprendidoPara(
   aprendidos?: Record<string, string>,
   codigosImpuesto?: CodigoTango[],
 ): CodigoPercepcion | null {
-  const cod = aprendidos?.[t]
+  // Busca con tolerancia al espacio antes del % y a un cambio de tasa: ver
+  // buscarAprendido. `t` ya viene normalizado por los dos llamadores.
+  const cod = buscarAprendido(aprendidos, t)
   if (!cod) return null
 
   const jurisdiccion = JURISDICCIONES_IIBB.find((j) => j.codigo === cod)
