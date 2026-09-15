@@ -131,6 +131,12 @@ export const CAMPOS: DefCampo[] = [
   // celda del medio. Ver OCULTOS_EN_GRILLA mas abajo.
   c('neto',        'Neto gravado',          'importes',    3, 'decimal', true),
   c('exento',      'No gravado / exento',   'importes',    3, 'decimal', true),
+  // El descuento global que algunos proveedores imprimen al pie, antes del
+  // neto gravado. Solo artículos (ver CAMPOS_NO_ANALIZADOS): es el dato que
+  // permite saber si los subtotales impresos de los renglones ya son netos
+  // o si hay que restarles el descuento para que cierren contra el neto.
+  // Ver descuentoGlobal.ts. Pedido del usuario, 2026-09-15.
+  c('descuentogeneral', 'Descuento general', 'importes',  2, 'decimal', true),
   c('porciva1',    'Alícuota 1',            'importes',    2, 'porcentaje', true),
   c('impiva1',     'Importe 1',             'importes',    2, 'decimal', true),
   c('porciva2',    'Alícuota 2',            'importes',    2, 'porcentaje', true),

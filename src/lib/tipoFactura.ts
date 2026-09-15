@@ -113,6 +113,13 @@ const REMITOS = ['remito1', 'remito2'] as const
 const CONDICION_PAGO = ['condpago'] as const
 
 /**
+ * El descuento global del pie. Solo tiene sentido en artículos, donde hay
+ * renglones contra los cuales aplicarlo (ver descuentoGlobal.ts). En
+ * conceptos y tarjeta el neto viene impreso y no hay nada que descontar.
+ */
+const DESCUENTO_GENERAL = ['descuentogeneral'] as const
+
+/**
  * Los slots que se le sacan a tarjeta para hacerle lugar al array de cargos
  * (ver ANALIZA_CARGOS). El array cuesta el equivalente a cuatro campos y
  * baja el techo de 35 a 31, asi que habia que liberar espacio.
@@ -139,7 +146,7 @@ const SLOTS_LIBERADOS_TARJETA = [
 ] as const
 
 export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
-  conceptos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, ...CONDICION_PAGO],
+  conceptos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, ...CONDICION_PAGO, ...DESCUENTO_GENERAL],
   // Los remitos salieron de articulos el 2026-09-06, cuando las facturas de
   // articulos pasaron a imputarse a una orden de compra en vez de cotejarse
   // contra un remito. No es solo que dejaran de usarse: hacen falta los dos
@@ -153,12 +160,20 @@ export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
   // combustible, que son facturas de conceptos. El campo se sigue mostrando
   // y se puede escribir a mano (ver `siempreVisible` en campos.ts): lo que
   // no hace en artículos es precargarse solo.
-  articulos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, 'leyendaAsiento'],
+  //
+  // El 5º slot de IVA salió de artículos el 2026-09-15 para hacerle lugar a
+  // `descuentogeneral` y a los dos datos nuevos por renglón (precio y
+  // subtotal impresos). Medido contra la API ese día: con 4 datos por ítem
+  // el array entra con 31 campos de cabecera y no con 32. El slot no se
+  // pierde nada: de las 16.522 facturas FP del historial de CPA04, ninguna
+  // usó jamás COD_IVA5 (70 usaron el 4º).
+  articulos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, 'leyendaAsiento', 'porciva5', 'impiva5'],
   tarjeta: [
     ...NO_ANALIZADOS_COMUNES,
     ...REMITOS,
     ...CONDICION_PAGO,
     ...SLOTS_LIBERADOS_TARJETA,
+    ...DESCUENTO_GENERAL,
   ],
 }
 
@@ -253,7 +268,9 @@ const COMPROBANTE_A_MEDIA_FILA = {
 
 const SPAN_POR_TIPO: Record<TipoFactura, Readonly<Record<string, number>>> = {
   conceptos: COMPROBANTE_A_MEDIA_FILA,
-  articulos: { ...COMPROBANTE_A_MEDIA_FILA, condpago: 6 },
+  // En artículos entra `descuentogeneral` (2) en la fila del neto: neto y
+  // exento bajan de 3 a 2 para que la fila siga sumando 6.
+  articulos: { ...COMPROBANTE_A_MEDIA_FILA, condpago: 6, neto: 2, exento: 2 },
   tarjeta: COMPROBANTE_A_MEDIA_FILA,
 }
 

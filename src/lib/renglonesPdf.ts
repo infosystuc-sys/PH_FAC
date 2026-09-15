@@ -1,23 +1,30 @@
 /**
  * Un renglón tal como lo lee la IA del PDF de una factura de artículos:
- * solo el código del artículo y la cantidad, los dos como texto sin
- * interpretar.
+ * código, cantidad, precio unitario y subtotal, los cuatro como texto sin
+ * interpretar, tal como están impresos.
  *
- * Existe para cotejar la factura contra la orden de compra imputada
- * (decisión del usuario, 2026-09-06): la OC dice qué se pidió y cuánto
- * queda por facturar, y esto dice qué está cobrando el papel. Lo que se
- * graba en Tango sale de la OC, no de acá -- estos renglones nunca se
- * escriben en `CPA46`.
+ * Nació con dos datos (código y cantidad) para cotejar contra la orden de
+ * compra (decisión del usuario, 2026-09-06): la OC decía qué se pidió y el
+ * precio salía de ahí. El 2026-09-15 el usuario dio vuelta la fuente de
+ * verdad: **los importes que valen son los de la factura**. Hay proveedores
+ * que imprimen el precio de lista en el renglón y aplican un descuento
+ * global al pie, mientras la OC ya tiene el precio neto; para comparar y
+ * para grabar hace falta leer lo que la factura cobra por renglón. Ver
+ * `descuentoGlobal.ts`.
  *
- * Son dos datos y no cinco por una razón medida, no por gusto: el JSON
- * Schema de structured outputs tiene un techo de tamaño, y con los 32
- * campos de cabecera de una factura de artículos entra un array de dos o
- * tres datos por ítem, pero no el de cinco que usa el circuito de remito
- * (`CLAVES_RENGLON`). Medido contra la API el 2026-09-06.
+ * Son cuatro datos y no cinco (no se pide la descripción) por una razón
+ * medida: el JSON Schema de structured outputs tiene un techo de tamaño, y
+ * con cuatro datos por ítem el array entra con 31 campos de cabecera y no
+ * con 32 (medido contra la API el 2026-09-15). Para hacerle lugar, artículos
+ * dejó de pedir el 5º slot de IVA -- ver CAMPOS_NO_ANALIZADOS.
  */
 export type RenglonPdf = {
   codigo: string | null
   cantidad: string | null
+  /** El precio unitario tal como está impreso. Puede ser el de lista, bruto. */
+  precioUnitario: string | null
+  /** El subtotal del renglón tal como está impreso. */
+  subtotal: string | null
 }
 
-export const CLAVES_RENGLON_PDF = ['codigo', 'cantidad'] as const
+export const CLAVES_RENGLON_PDF = ['codigo', 'cantidad', 'precioUnitario', 'subtotal'] as const

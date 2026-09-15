@@ -200,16 +200,24 @@ percepciones del pie: son los únicos datos que se imputan.`,
   articulos: `Este comprobante es una FACTURA DE ARTÍCULOS: una compra de mercadería
 con detalle de renglones.
 Transcribí ese detalle en el array "renglones_pdf": una entrada por cada
-artículo que la factura cobra, con el CÓDIGO tal como está impreso en
-"codigo" y la CANTIDAD en "cantidad". No se te piden el precio, la
-descripción ni el importe: el sistema los toma de la orden de compra.
-El código es el que imprime el proveedor. A veces es el mismo que usamos
-nosotros y a veces es el suyo propio; copiá el que figure, sin traducirlo.
-Si un renglón no trae código, dejá "codigo" vacío y completá la cantidad
-igual: una línea sin código sigue sirviendo para saber cuántos renglones
-cobra la factura.
-No metas en ese array los totales, subtotales, descuentos generales ni las
+artículo que la factura cobra, con cuatro datos tal como están impresos:
+- "codigo": el CÓDIGO del artículo. Es el que imprime el proveedor: a veces
+  es el mismo que usamos nosotros y a veces es el suyo propio; copiá el que
+  figure, sin traducirlo. Si el renglón no trae código, dejalo vacío.
+- "cantidad": la CANTIDAD facturada.
+- "precioUnitario": el PRECIO UNITARIO tal como está impreso, aunque sea el
+  de lista antes de un descuento. No lo recalcules.
+- "subtotal": el IMPORTE del renglón tal como está impreso (la columna
+  "Subtotal", "Importe", "Total" del renglón). No lo recalcules: si
+  cantidad × precio no da el subtotal, copiá igual lo que dice el papel --
+  el sistema resuelve el descuento después.
+No se te pide la descripción del artículo.
+No metas en ese array los totales, subtotales generales, descuentos ni las
 líneas de impuestos del pie: solo la mercadería.
+Si el pie trae un DESCUENTO GLOBAL sobre toda la compra -- "Descuento
+General", "Descuento", "Bonificación", "Dto. global" o similar, como
+importe --, ponelo en descuentogeneral, en positivo. Si no hay, dejalo
+vacío. No lo restes vos de ningún otro campo.
 También buscá la CONDICIÓN DE PAGO O DE VENTA, con etiquetas como
 "Condición de Venta", "Condiciones de Pago", "Forma de Pago" o similar.
 Devolvela tal como está impresa en condpago -- "Cuenta Corriente", "D026",
@@ -335,4 +343,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v10'
+export const VERSION_PROMPT = 'v11'

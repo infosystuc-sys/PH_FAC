@@ -39,6 +39,15 @@ describe('catalogo de campos', () => {
     const porGrupo = new Map<string, number>()
     for (const c of CAMPOS) {
       if (!analizaCampo(tipo, c.clave) && c.extraePorIA) continue
+      // La celda del medio (codivaN / codpercepN / codvariosN) la pinta la
+      // fila de su porcentaje o rotulo: si esa fila no se muestra en este
+      // tipo, la celda tampoco. Hasta el 2026-09-15 esto se contaba igual y
+      // en tarjeta cerraba por coincidencia (-12 de slots, +6 de celdas).
+      const fila = /^cod(iva|percep|varios)(\d)$/.exec(c.clave)
+      if (fila) {
+        const izquierda = { iva: 'porciva', percep: 'percep', varios: 'varios' }[fila[1]] + fila[2]
+        if (!analizaCampo(tipo, izquierda)) continue
+      }
       porGrupo.set(c.grupo, (porGrupo.get(c.grupo) ?? 0) + spanDe(tipo, c.clave, c.span))
     }
 
@@ -67,7 +76,7 @@ describe('catalogo de campos', () => {
       for (const excluido of CAMPOS_NO_ANALIZADOS[tipo]) {
         expect(claves, `${tipo} no deberia analizar ${excluido}`).not.toContain(excluido)
       }
-      expect(claves).toHaveLength(42 - CAMPOS_NO_ANALIZADOS[tipo].length)
+      expect(claves).toHaveLength(43 - CAMPOS_NO_ANALIZADOS[tipo].length)
 
       // Todos siguen en el catalogo: la IA no los lee, pero el operador
       // puede tener uno cargado a mano de antes y el formulario tiene que
@@ -78,19 +87,21 @@ describe('catalogo de campos', () => {
     },
   )
 
-  it('el catalogo tiene 42 campos que la IA puede llegar a extraer', () => {
+  it('el catalogo tiene 43 campos que la IA puede llegar a extraer', () => {
     // El numero exacto es un tripwire, no una formalidad: la API ya rechazo
     // este schema tres veces por tamaño -- por superar las 16 uniones de
     // tipos, por "compiled grammar is too large" con 29 campos anidados, y
     // el 2026-09-08 al llevar articulos a 33 campos con el array (por eso
     // `leyendaAsiento` sale del schema de articulos y no de los otros dos).
     //
-    // Ningun tipo pide los 42: cada uno saca los suyos (ver
-    // CAMPOS_NO_ANALIZADOS). Hoy conceptos y articulos piden 32 y tarjeta
-    // 26, y los tres los acepta la API -- medido, no deducido. Si este test
-    // salta al agregar campos, corre scripts/verificar-schema.ts antes de
-    // dar por hecho que el schema sigue entrando.
-    expect(CAMPOS_IA.length).toBe(42)
+    // Ningun tipo pide los 43: cada uno saca los suyos (ver
+    // CAMPOS_NO_ANALIZADOS). Hoy conceptos pide 32, articulos 31 (con un
+    // array de CUATRO datos por renglon, que es lo que le baja el techo a
+    // 31 -- medido el 2026-09-15) y tarjeta 26, y los tres los acepta la
+    // API -- medido, no deducido. Si este test salta al agregar campos,
+    // corre scripts/verificar-schema.ts antes de dar por hecho que el
+    // schema sigue entrando.
+    expect(CAMPOS_IA.length).toBe(43)
   })
 
   it('los campos calculados y de imputacion no los extrae la IA', () => {

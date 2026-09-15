@@ -185,12 +185,23 @@ const DEFINICIONES: Definicion[] = [
         -- ser el nuestro o el de el (ver CPA15.COD_SINONI).
         CODIGO          NVARCHAR(60)   NULL,
         CANTIDAD        DECIMAL(19,4)  NULL,
+        PRECIO_IMPRESO  DECIMAL(19,4)  NULL,
+        SUBTOTAL_IMPRESO DECIMAL(19,4) NULL,
         CONSTRAINT PK_PHF_RENGLON_PDF PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON_PDF UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_PDF_COMP FOREIGN KEY (COMPROBANTE_ID)
           REFERENCES PHF_COMPROBANTE (ID) ON DELETE CASCADE
       );
     `,
+    columnas: [
+      // El precio unitario y el subtotal tal como los imprime la factura,
+      // desde el 2026-09-15: los importes que valen son los de la factura
+      // (decision del usuario), asi que hay que leerlos. El precio impreso
+      // puede ser el de lista, bruto, con el descuento aplicado recien al pie
+      // o ya dentro del subtotal: descuentoGlobal.ts decide cual de los dos.
+      { nombre: 'PRECIO_IMPRESO', ddl: 'PRECIO_IMPRESO DECIMAL(19,4) NULL' },
+      { nombre: 'SUBTOTAL_IMPRESO', ddl: 'SUBTOTAL_IMPRESO DECIMAL(19,4) NULL' },
+    ],
   },
   {
     tabla: 'PHF_RENGLON',

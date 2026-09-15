@@ -23,9 +23,23 @@ describe('PROMPTS_EXTRACCION', () => {
     // a una orden de compra y estos renglones son con lo que se cotejan.
     expect(PROMPTS_EXTRACCION.articulos).toContain('FACTURA DE ARTÍCULOS')
     expect(PROMPTS_EXTRACCION.articulos).toContain('renglones_pdf')
-    // Solo codigo y cantidad: el precio y la descripcion salen de la OC, y
-    // pedirlos no entraria en el techo del schema (medido contra la API).
-    expect(PROMPTS_EXTRACCION.articulos).toContain('No se te piden el precio')
+    // Desde el 2026-09-15 pide tambien el precio y el subtotal impresos: los
+    // importes que valen son los de la factura (decision del usuario), y el
+    // descuento global del pie hay que resolverlo contra ellos. La
+    // descripcion sigue sin pedirse: con cuatro datos por item el array entra
+    // en el techo del schema con 31 campos, con cinco no (medido).
+    expect(PROMPTS_EXTRACCION.articulos).toContain('"precioUnitario"')
+    expect(PROMPTS_EXTRACCION.articulos).toContain('"subtotal"')
+    expect(PROMPTS_EXTRACCION.articulos).toContain('No se te pide la descripción')
+    expect(PROMPTS_EXTRACCION.articulos).toContain('descuentogeneral')
+    // El precio impreso puede ser el de lista: se copia, no se recalcula.
+    expect(PROMPTS_EXTRACCION.articulos).toContain('No lo recalcules')
+  })
+
+  it('el descuento general solo se le pide a articulos', () => {
+    expect(PROMPTS_EXTRACCION.articulos).toContain('- descuentogeneral:')
+    expect(PROMPTS_EXTRACCION.conceptos).not.toContain('descuentogeneral')
+    expect(PROMPTS_EXTRACCION.tarjeta).not.toContain('descuentogeneral')
   })
 
   it('no le pide renglones a los tipos que no los usan', () => {

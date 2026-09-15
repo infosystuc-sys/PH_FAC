@@ -69,6 +69,10 @@ export type RenglonPdfGuardado = {
   orden: number
   codigo: string | null
   cantidad: string | null
+  /** El precio unitario impreso, que puede ser el de lista. Ver descuentoGlobal.ts. */
+  precioImpreso: string | null
+  /** El subtotal impreso del renglón. */
+  subtotalImpreso: string | null
 }
 
 export type Detalle = {
@@ -185,9 +189,11 @@ export async function guardarExtraccionEn(
       .input('orden', sql.Int, ordenPdf)
       .input('codigo', sql.NVarChar(60), r.codigo)
       .input('cant', sql.Decimal(19, 4), parsearImporteONulo(r.cantidad))
+      .input('precio', sql.Decimal(19, 4), parsearImporteONulo(r.precioUnitario))
+      .input('subtotal', sql.Decimal(19, 4), parsearImporteONulo(r.subtotal))
       .query(`
-        INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, CANTIDAD)
-        VALUES (@id, @orden, @codigo, @cant)
+        INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO)
+        VALUES (@id, @orden, @codigo, @cant, @precio, @subtotal)
       `)
   }
 
@@ -215,7 +221,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       SELECT ID, ORDEN, CONCEPTO, IMPORTE, GRAVADO
       FROM PHF_CARGO WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
-      SELECT ID, ORDEN, CODIGO, CANTIDAD
+      SELECT ID, ORDEN, CODIGO, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO
       FROM PHF_RENGLON_PDF WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
     `)
 
@@ -254,6 +260,8 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       orden: Number(x.ORDEN),
       codigo: x.CODIGO === null ? null : String(x.CODIGO),
       cantidad: x.CANTIDAD === null ? null : String(x.CANTIDAD),
+      precioImpreso: x.PRECIO_IMPRESO === null ? null : String(x.PRECIO_IMPRESO),
+      subtotalImpreso: x.SUBTOTAL_IMPRESO === null ? null : String(x.SUBTOTAL_IMPRESO),
     })),
     cargos: cg.map((x) => ({
       id: Number(x.ID),
