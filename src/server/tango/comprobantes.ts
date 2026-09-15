@@ -312,7 +312,31 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   while (alicuotas.length < 5) alicuotas.push({ codigo: 0, porcentaje: 0, importe: 0 })
 
   // 2. Numero interno.
-  const maxR = await tx.request().query(`SELECT ISNULL(MAX(NCOMP_IN_C),0) AS mx FROM CPA04 WHERE TCOMP_IN_C='FP'`)
+  //
+  // NCOMP_IN_C es UNA serie compartida por facturas, notas de credito y
+  // debito (TCOMP_IN_C FP/CP/DP/FS); solo las ordenes de pago (OP) numeran
+  // aparte. Medido el 2026-09-15 sobre los 27.229 comprobantes de CPA04: 0
+  // numeros repetidos entre FP/CP/DP/FS y 0 huecos en los ultimos 200, y
+  // ASIENTO_COMPROBANTE_CP tiene un indice unico sobre NCOMP_IN_C a secas,
+  // que solo puede existir si la serie es una.
+  //
+  // Hasta ese dia se tomaba el MAX de las FP nada mas, y fallo en produccion:
+  // la app calculo 17533 (MAX de FP + 1) mientras una nota de credito cargada
+  // desde Tango esa misma manana ya tenia ese numero. CPA04 lo acepto --su
+  // indice unico es (TCOMP_IN_C, NCOMP_IN_C)-- y la escritura reviento
+  // recien en ASIENTO_COMPROBANTE_CP con "duplicate key (17533)". Rollback
+  // limpio, pero el comprobante no se pudo registrar.
+  //
+  // Se mira tambien ASIENTO_COMPROBANTE_CP porque es la tabla que impone la
+  // unicidad: si alguna vez tuviera un numero que CPA04 no tiene, es ese el
+  // que hay que saltar.
+  const maxR = await tx.request().query(`
+    SELECT MAX(mx) AS mx FROM (
+      SELECT ISNULL(MAX(NCOMP_IN_C), 0) AS mx FROM CPA04 WHERE TCOMP_IN_C <> 'OP'
+      UNION ALL
+      SELECT ISNULL(MAX(NCOMP_IN_C), 0) FROM ASIENTO_COMPROBANTE_CP
+    ) series
+  `)
   const ncompInC = Number(maxR.recordset[0].mx) + 1
 
   const horaAhora = horaActual()

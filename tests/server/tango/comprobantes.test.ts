@@ -115,6 +115,24 @@ describe('registrarComprobanteEn', () => {
       expect(registro.nComp).toBe('A0009900012345')
       expect(registro.ncompInC).toBeGreaterThan(0)
 
+      // El numero es nuevo en TODA la serie que comparten facturas, notas de
+      // credito y debito (todo menos OP), y en ASIENTO_COMPROBANTE_CP, que
+      // tiene un indice unico sobre NCOMP_IN_C a secas. Hasta el 2026-09-15
+      // se tomaba el MAX de las FP nada mas, y una nota de credito cargada
+      // desde Tango esa manana ya tenia el numero que la app calculo: CPA04
+      // lo acepto y la escritura reviento en ASIENTO_COMPROBANTE_CP con
+      // "duplicate key (17533)". Con los datos de la base ese dia --CP en
+      // 17536, FP en 17532-- este chequeo falla con el codigo viejo.
+      const serie = await tx.request()
+        .input('n', sql.Float, registro.ncompInC)
+        .query<{ mx: number }>(`
+          SELECT MAX(mx) AS mx FROM (
+            SELECT MAX(NCOMP_IN_C) AS mx FROM CPA04 WHERE TCOMP_IN_C <> 'OP' AND NCOMP_IN_C <> @n
+            UNION ALL
+            SELECT MAX(NCOMP_IN_C) FROM ASIENTO_COMPROBANTE_CP WHERE NCOMP_IN_C <> @n
+          ) s`)
+      expect(registro.ncompInC).toBeGreaterThan(Number(serie.recordset[0].mx))
+
       const cpa04 = await tx.request()
         .input('n', sql.Float, registro.ncompInC)
         .query(`SELECT * FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
