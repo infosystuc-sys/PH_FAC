@@ -19,6 +19,7 @@ import { cargarAprendidosEn } from '@/server/app/aprendizajeImpuestos'
 import { escribirAsientoEn } from './asiento'
 import { escribirCuotasEn } from './cuotas'
 import { fechaContableDe } from '@/lib/fechaContable'
+import { resolverDescuentoDeDetalle, netosPorOrden, describirDescuento } from '@/lib/descuentoGlobal'
 import { cierreContable } from './parametros'
 
 export type ComprobanteCpa04 = {
@@ -619,6 +620,19 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const renglonesConOc = detalle.renglones.filter((r) => r.ocNOrdenCo && r.ocNRenglOc)
   const ocsAfectadas = new Set<string>()
 
+  // Lo que cobra la factura por renglon, resuelto una vez para todos: ver el
+  // comentario del precio, mas abajo. Si no cierra contra el neto gravado se
+  // corta aca, antes de tocar CPA46: es la misma condicion que bloquea el
+  // panel de la revision.
+  const descuento = resolverDescuentoDeDetalle(
+    detalle.renglonesPdf,
+    valores.descuentogeneral,
+    valores.neto,
+  )
+  if (renglonesConOc.length > 0 && !descuento.ok) {
+    throw new Error(describirDescuento(descuento))
+  }
+
   for (const renglon of renglonesConOc) {
     const nOrdenCo = renglon.ocNOrdenCo!
     const nRenglOc = renglon.ocNRenglOc!
@@ -666,34 +680,37 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     const codArticu = renglon.codigoFinal?.trim() || String(sta.COD_ARTICU).trim()
     const codDeposi = String(sta.COD_DEPOSI ?? '').trim()
 
-    // El precio es el pactado en la OC. Se cae al que quedo guardado en el
-    // renglon solo si la OC no lo trae, y si no hay ninguno de los dos se
-    // corta: grabar una compra a precio cero deja la cuenta corriente del
-    // proveedor mal y no lo señala nada.
-    const precioOc = Number(sta.PRECIO)
-    const precioLista = precioOc > 0 ? precioOc : parsearImporte(renglon.precioUnitario)
-    if (!(precioLista > 0)) {
+    // El precio es el que COBRA LA FACTURA, no el pactado en la OC --
+    // decision del usuario, 2026-09-15: "los importes que valen son los de
+    // la factura". Hay proveedores que imprimen el precio de lista y
+    // descuentan al pie; el neto de cada renglon lo deriva
+    // resolverDescuentoDeDetalle del subtotal impreso, y es la MISMA
+    // resolucion que mostro la pantalla y valido el panel (ver
+    // validarRenglonesContraNeto), asi que si la revision dijo que cierra,
+    // esto graba exactamente esos importes.
+    //
+    // Hasta ese dia se grababa el precio de la OC con una bonificacion por
+    // renglon: en una factura con descuento global el comprobante quedaba
+    // inflado y la suma de los renglones no cerraba contra el neto.
+    //
+    // Se graba el neto directo, con PRECIO_PAN = PRECIO_NET y PORCE_DCTO en
+    // 0 (decision del usuario): el descuento ya esta resuelto adentro del
+    // precio, Tango no tiene que volver a aplicarlo.
+    //
+    // Un renglon sin resolucion --sin vinculo al PDF, o con el PDF sin precio
+    // o subtotal-- corta: no se inventa un precio ni se cae al de la OC.
+    // Decision del usuario: bloquear y reprocesar.
+    const neto = renglon.pdfOrden === null ? null : (netosPorOrden(descuento).get(renglon.pdfOrden) ?? null)
+    if (!neto) {
       throw new Error(
-        `El renglón del artículo ${codArticu} no tiene precio unitario: ` +
-          `no figura en la orden de compra ${nOrdenCo.trim()} ni en la factura.`,
+        `El renglón del artículo ${codArticu} no tiene precio ni subtotal leídos de la factura: ` +
+          `reprocesá el comprobante antes de registrarlo.`,
       )
     }
-
-    // Tango guarda las tres cosas por separado, y asi las usa (verificado
-    // contra 475 renglones reales de CPA46 con descuento):
-    //
-    //   PRECIO_PAN = precio de lista, antes del descuento
-    //   PORCE_DCTO = el porcentaje
-    //   PRECIO_NET = PRECIO_PAN x (1 - dcto/100)
-    //   IMP_NETO_P = CANTIDAD x PRECIO_NET
-    //
-    // Antes se escribia el mismo precio en PRECIO_NET y PRECIO_PAN con
-    // PORCE_DCTO en 0. En una factura real de TOPPER con 7% de
-    // bonificacion eso inflaba el comprobante en $139.341,24 y la suma de
-    // los renglones no cerraba contra el neto gravado de la cabecera.
-    const bonificacion = parsearImporte(renglon.porcBonif)
-    const precioNeto = Math.round(precioLista * (1 - bonificacion / 100) * 10000) / 10000
-    const importeNetoRenglon = Math.round(cantidad * precioNeto * 100) / 100
+    const precioNeto = neto.precioNeto
+    const precioLista = precioNeto
+    const bonificacion = 0
+    const importeNetoRenglon = neto.importeNeto
 
     const nRenglC = renglonesConOc.indexOf(renglon) + 1
 

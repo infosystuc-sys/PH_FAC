@@ -64,6 +64,11 @@ export function ListoParaRegistrar({
     // Y pegada a él, su contracara sobre las cantidades ya corregidas: el
     // cotejo mira lo que la IA leyó del PDF y ésta lo que se va a registrar.
     resultado.cantidadesOc,
+    // Lo que la factura cobra por renglon contra su neto gravado -- resuelve
+    // el descuento global del pie. Bloquea: es lo que se graba en CPA46.
+    resultado.renglonesNeto,
+    // Y esos precios contra los de la orden. Solo advierte: la factura manda.
+    resultado.preciosOc,
   ]
 
   return (

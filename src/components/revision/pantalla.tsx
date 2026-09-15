@@ -8,10 +8,11 @@ import { PanelObservacion } from './panel-observacion'
 import { PanelValidaciones } from './validaciones'
 import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
+import { RenglonesOc } from './renglones-oc'
 import { Cargos } from './cargos'
 import { SelectorOc } from './selector-oc'
 import { Historial } from './historial'
-import type { RenglonGuardado, CargoGuardado, EntradaAuditoria } from '@/server/app/detalle'
+import type { RenglonGuardado, RenglonPdfGuardado, CargoGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
 import type { CodigoImpuesto } from '@/server/tango/impuestos'
@@ -61,6 +62,7 @@ export function Pantalla({
   confianza,
   hayCorrecciones,
   renglones,
+  renglonesPdf,
   cargos,
   auditoria,
   validaciones,
@@ -87,6 +89,8 @@ export function Pantalla({
   confianza: number | null
   hayCorrecciones: boolean
   renglones: RenglonGuardado[]
+  /** Lo que la IA leyó del PDF, con precio y subtotal impresos. Solo artículos. */
+  renglonesPdf: RenglonPdfGuardado[]
   cargos: CargoGuardado[]
   auditoria: EntradaAuditoria[]
   validaciones: Validaciones
@@ -218,14 +222,26 @@ export function Pantalla({
           netoVigente={iniciales.neto?.valor ?? null}
           soloLectura={soloLectura}
         />
-        <Renglones
-          comprobanteId={comprobanteId}
-          renglones={renglones}
-          remitos={remitosPendientes}
-          codProvee={codProvee}
-          netoFactura={iniciales.neto?.valor ?? null}
-          soloLectura={soloLectura}
-        />
+        {/* Con una OC imputada, la tarjeta muestra la factura y la orden lado
+            a lado (decision del usuario, 2026-09-15). La de remito sigue para
+            los comprobantes que quedaron en ese circuito. */}
+        {renglones.some((r) => r.ocNOrdenCo !== null) ? (
+          <RenglonesOc
+            renglones={renglones}
+            renglonesPdf={renglonesPdf}
+            descuentoGeneral={iniciales.descuentogeneral?.valor ?? null}
+            netoFactura={iniciales.neto?.valor ?? null}
+          />
+        ) : (
+          <Renglones
+            comprobanteId={comprobanteId}
+            renglones={renglones}
+            remitos={remitosPendientes}
+            codProvee={codProvee}
+            netoFactura={iniciales.neto?.valor ?? null}
+            soloLectura={soloLectura}
+          />
+        )}
         <Historial entradas={auditoria} />
       </div>
     </div>

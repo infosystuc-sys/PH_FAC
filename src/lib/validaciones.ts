@@ -2,6 +2,7 @@ import { totalImputado, parsearImporte } from './formato'
 import { formatPorcentaje, esIvaSobreLaBase, type LineaAlicuota } from './alicuotas'
 import type { LineaPercepcion, LineaVarios } from './percepciones'
 import { describirCotejo, type ResultadoCotejoOc } from './cotejoOc'
+import { describirDescuento, type ResultadoDescuento } from './descuentoGlobal'
 import { LARGO_LEYENDA_COMPROBANTE } from './campos'
 
 export { LARGO_LEYENDA_COMPROBANTE }
@@ -320,6 +321,89 @@ export function validarCantidadesOc(
   return {
     estado: 'error',
     mensaje: `Hay renglones que facturan más de lo que la orden tiene pendiente: ${detalle}.`,
+  }
+}
+
+/**
+ * Que lo que la factura cobra por renglón cierre contra su neto gravado --
+ * pedido del usuario, 2026-09-15: "los importes que valen son los de la
+ * factura", y hay proveedores que imprimen el precio de lista y descuentan
+ * al pie. `resolverDescuentoGlobal` decide cómo cierra (subtotales netos o
+ * brutos) y deriva el precio neto de cada renglón, que es el que se graba.
+ *
+ * Bloquea cuando no cierra de ninguna forma, o cuando a un renglón le falta
+ * cantidad, precio o subtotal: decisión del usuario, bloquear y reprocesar
+ * antes que dejar cargar un importe a mano.
+ *
+ * Solo artículos: en conceptos y tarjeta no hay renglones.
+ */
+export function validarRenglonesContraNeto(
+  tipoFactura: string | null | undefined,
+  resultado: ResultadoDescuento | null,
+): ResultadoValidacion {
+  if (tipoFactura !== 'articulos') {
+    return { estado: 'ok', mensaje: 'No aplica: solo las facturas de artículos tienen renglones.' }
+  }
+  if (!resultado) {
+    return { estado: 'error', mensaje: 'La factura no tiene renglones leídos. Reprocesá el comprobante.' }
+  }
+  return {
+    estado: resultado.ok ? 'ok' : 'error',
+    mensaje: describirDescuento(resultado),
+  }
+}
+
+/**
+ * Un renglón imputado y sus dos precios: el que cobra la factura (neto,
+ * derivado del subtotal impreso) y el pactado en la orden de compra.
+ */
+export type PrecioContraOc = {
+  codigo: string | null
+  precioFactura: number | null
+  precioOc: number | null
+}
+
+/**
+ * Tolerancia al comparar precios: cuatro decimales es la precisión de
+ * `CPA36.PRECIO` y de `CPA46.PRECIO_NET`, y el precio neto de la factura se
+ * deriva dividiendo un subtotal de dos decimales por la cantidad -- medio
+ * centavo de diferencia es redondeo, no una diferencia de precio.
+ */
+const TOLERANCIA_PRECIO = 0.005
+
+/**
+ * Que el precio que cobra la factura sea el pactado en la orden de compra.
+ *
+ * ADVIERTE, no bloquea -- decisión del usuario, 2026-09-15: la factura
+ * manda, y la OC es la referencia contra la que se compara. Lo que sí
+ * bloquea contra la OC es el código y la cantidad (`validarCotejoOc`,
+ * `validarCantidadesOc`), que son el compromiso.
+ */
+export function validarPreciosContraOc(
+  tipoFactura: string | null | undefined,
+  renglones: PrecioContraOc[],
+): ResultadoValidacion {
+  if (tipoFactura !== 'articulos') return { estado: 'ok', mensaje: 'No aplica.' }
+  if (renglones.length === 0) return { estado: 'ok', mensaje: 'No hay renglones imputados.' }
+
+  const fmt = (n: number) => `$ ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const distintos = renglones.filter(
+    (r) =>
+      r.precioFactura !== null &&
+      r.precioOc !== null &&
+      Math.abs(r.precioFactura - r.precioOc) > TOLERANCIA_PRECIO,
+  )
+  if (distintos.length === 0) {
+    return { estado: 'ok', mensaje: 'Los precios de la factura coinciden con los de la orden de compra.' }
+  }
+  const detalle = distintos
+    .map((r) => `${r.codigo ?? '(sin código)'}: factura ${fmt(r.precioFactura!)}, orden ${fmt(r.precioOc!)}`)
+    .join('; ')
+  return {
+    estado: 'advertencia',
+    mensaje:
+      `${distintos.length === 1 ? 'Un precio difiere' : `${distintos.length} precios difieren`} de la orden de compra ` +
+      `(se registra el de la factura): ${detalle}.`,
   }
 }
 

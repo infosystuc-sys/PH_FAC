@@ -118,12 +118,15 @@ export async function agregarOcEn(
       .input('tal', sql.Int, oc.talonario)
       .input('nr', sql.Int, enOc.nRenglOc)
       .input('pend', sql.Decimal(19, 4), enOc.pendienteFacturar)
+      // El renglon del PDF del que salio: es lo que despues permite ponerle
+      // al lado el subtotal impreso y derivar el precio neto que se graba.
+      .input('pdfOrden', sql.Int, linea.orden)
       .query(`
         INSERT INTO PHF_RENGLON
           (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
            PRECIO_UNITARIO_IA, IMPORTE_IA,
-           OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE)
-        VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @oc, @tal, @nr, @pend)
+           OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN)
+        VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @oc, @tal, @nr, @pend, @pdfOrden)
       `)
   }
 

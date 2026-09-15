@@ -49,6 +49,8 @@ export type RenglonGuardado = RenglonExtraido & {
   ocNRenglOc: number | null
   /** Lo que la OC tenía pendiente al elegirla, para cotejar en pantalla. */
   ocPendiente: string | null
+  /** El renglón del PDF del que salió (PHF_RENGLON_PDF.ORDEN). Ver descuentoGlobal.ts. */
+  pdfOrden: number | null
 }
 
 export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
@@ -212,7 +214,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       SELECT ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
              PRECIO_UNITARIO_IA, IMPORTE_IA, REMITO_NCOMP_IN_S, REMITO_N_RENGL_S,
              REMITO_NUMERO, CANTIDAD_REMITO, CODIGO_FINAL, PORC_BONIF, COD_PROVEEDOR,
-             OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE
+             OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN
       FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
       SELECT FECHA, TEXTO, USUARIO
@@ -254,6 +256,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       ocTalonario: x.OC_TALONARIO === null ? null : Number(x.OC_TALONARIO),
       ocNRenglOc: x.OC_N_RENGL_OC === null ? null : Number(x.OC_N_RENGL_OC),
       ocPendiente: x.OC_PENDIENTE === null ? null : String(x.OC_PENDIENTE),
+      pdfOrden: x.PDF_ORDEN === null ? null : Number(x.PDF_ORDEN),
     })),
     renglonesPdf: rp.map((x) => ({
       id: Number(x.ID),

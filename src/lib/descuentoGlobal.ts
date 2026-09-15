@@ -208,3 +208,39 @@ export function describirDescuento(r: ResultadoDescuento): string {
     ` y el neto es $ ${fmt.format(r.netoGravado)}.`
   )
 }
+
+/** Un renglón del PDF tal como lo guarda `PHF_RENGLON_PDF` (ver detalle.ts). */
+export type RenglonPdfParaDescuento = {
+  orden: number
+  cantidad: string | null
+  precioImpreso: string | null
+  subtotalImpreso: string | null
+}
+
+/**
+ * La misma resolución, desde lo guardado. Es la entrada que usan los tres
+ * lados -- el panel de validaciones, la tarjeta de renglones y el armado de
+ * CPA46 -- para que no puedan discrepar: si la pantalla dijo que cierra,
+ * el registro graba exactamente esos importes.
+ */
+export function resolverDescuentoDeDetalle(
+  renglonesPdf: RenglonPdfParaDescuento[],
+  descuentoGeneral: string | null | undefined,
+  netoGravado: string | null | undefined,
+): ResultadoDescuento {
+  return resolverDescuentoGlobal(
+    renglonesPdf.map((r) => ({
+      orden: r.orden,
+      cantidad: r.cantidad,
+      precioUnitario: r.precioImpreso,
+      subtotal: r.subtotalImpreso,
+    })),
+    descuentoGeneral,
+    netoGravado,
+  )
+}
+
+/** Los renglones netos indexados por su orden en el PDF, o vacío si no resolvió. */
+export function netosPorOrden(r: ResultadoDescuento): Map<number, RenglonNeto> {
+  return new Map(r.ok ? r.renglones.map((x) => [x.orden, x]) : [])
+}

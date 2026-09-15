@@ -3,7 +3,7 @@ import sql from 'mssql'
 import { getPool } from '@/server/db/pool'
 import { cerrarPool } from '@/server/db/pool'
 import { conRollback } from '@/server/db/tx'
-import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
+import { insertarComprobantePrueba, insertarRenglonPrueba, insertarRenglonPdfPrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
 import {
   buscarFacturaEnCpa04,
@@ -425,8 +425,12 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
         .input('p', sql.Decimal(19, 4), Number(oc.PENDIENTE_FACTURAR))
         .query(`
           UPDATE PHF_RENGLON
-          SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, OC_PENDIENTE=@p
+          SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, OC_PENDIENTE=@p, PDF_ORDEN=1
           WHERE ID=@id`)
+      // Lo que imprime la factura: precio de lista 1.250 y subtotal 1.000 --
+      // un 20% de descuento que solo se ve en el subtotal. El neto gravado es
+      // 1.000, asi que los subtotales ya son netos.
+      await insertarRenglonPdfPrueba(tx, id, 1, String(oc.COD_ARTICU), '1', '1250', '1000')
 
       const registro = await registrarComprobanteEn(tx, id)
 
@@ -435,6 +439,13 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
         .query(`SELECT * FROM CPA46 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n`)
       expect(cpa46.recordset).toHaveLength(1)
       expect(cpa46.recordset[0].COD_ARTICU.trim()).toBe(String(oc.COD_ARTICU))
+      // El precio es el que COBRA LA FACTURA (subtotal / cantidad), no el de
+      // la OC ni el de lista impreso -- decision del usuario, 2026-09-15. Y
+      // se graba neto directo: PRECIO_PAN igual al neto y sin PORCE_DCTO.
+      expect(Number(cpa46.recordset[0].PRECIO_NET)).toBe(1000)
+      expect(Number(cpa46.recordset[0].PRECIO_PAN)).toBe(1000)
+      expect(Number(cpa46.recordset[0].PORCE_DCTO)).toBe(0)
+      expect(Number(cpa46.recordset[0].IMP_NETO_P)).toBe(1000)
 
       // FECHA_CONT no es FECHA_EMIS: sale de la regla del cierre contable
       // (CPA10.CIERRE_CON) -- pedido del usuario, 2026-09-07. La factura de
@@ -513,7 +524,8 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
         .input('tal', sql.Int, Number(oc.TALONARIO))
         .input('r', sql.Int, Number(oc.N_RENGL_OC))
         .query(`
-          UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r WHERE ID=@id`)
+          UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, PDF_ORDEN=1 WHERE ID=@id`)
+      await insertarRenglonPdfPrueba(tx, id, 1, String(oc.COD_ARTICU), String(exceso), '1000', '1000')
 
       await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/pendiente/i)
     })

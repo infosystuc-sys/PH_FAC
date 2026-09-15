@@ -19,6 +19,8 @@ import {
   validarNetoContraIva,
   validarCotejoOc,
   validarCantidadesOc,
+  validarRenglonesContraNeto,
+  validarPreciosContraOc,
   validarCodigosRepetidos,
   validarLeyenda,
   netoQueImplicaElIva,
@@ -31,7 +33,8 @@ import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impues
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
 import { cotejarConOc, type ResultadoCotejoOc } from '@/lib/cotejoOc'
-import { parsearImporte } from '@/lib/formato'
+import { parsearImporte, parsearImporteONulo } from '@/lib/formato'
+import { resolverDescuentoDeDetalle, netosPorOrden } from '@/lib/descuentoGlobal'
 import { articulosPorSinonimo } from '@/server/tango/articulos'
 import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
@@ -183,6 +186,13 @@ export type ResultadoListoParaRegistrar = {
   /** Que ningún renglón facture más de lo que la orden tiene pendiente. */
   cantidadesOc: ResultadoValidacion
   /**
+   * Que lo que la factura cobra por renglón cierre contra su neto gravado,
+   * resolviendo el descuento global del pie. Bloquea. Ver descuentoGlobal.ts.
+   */
+  renglonesNeto: ResultadoValidacion
+  /** Precio de la factura contra el de la OC. Advierte: la factura manda. */
+  preciosOc: ResultadoValidacion
+  /**
    * Qué líneas terminan sumadas por caer en el mismo código de Tango. Avisa,
    * no bloquea: el registro las suma solo -- decisión del usuario, 2026-09-08.
    */
@@ -289,6 +299,28 @@ export async function validarListoParaRegistrarEn(
     })),
   )
 
+  // Lo que la factura cobra por renglon, contra su neto gravado. Es la
+  // misma resolucion que despues usa el armado de CPA46: el precio que se
+  // graba es el neto derivado del subtotal impreso, no el de la OC
+  // (decision del usuario, 2026-09-15). Bloquea si no cierra.
+  const descuento =
+    valores.tipoFactura === 'articulos' && detalle.renglonesPdf.length > 0
+      ? resolverDescuentoDeDetalle(detalle.renglonesPdf, valores.descuentogeneral, valores.neto)
+      : null
+  const renglonesNeto = validarRenglonesContraNeto(valores.tipoFactura, descuento)
+
+  // Y el precio de la factura contra el pactado en la OC: advierte, no
+  // bloquea -- la factura manda y la orden es la referencia.
+  const netos = descuento ? netosPorOrden(descuento) : new Map()
+  const preciosOc = validarPreciosContraOc(
+    valores.tipoFactura,
+    conOc.map((r) => ({
+      codigo: r.codigoFinal ?? r.codigo,
+      precioFactura: r.pdfOrden === null ? null : (netos.get(r.pdfOrden)?.precioNeto ?? null),
+      precioOc: parsearImporteONulo(r.precioUnitario),
+    })),
+  )
+
   // El concepto aplica en conceptos (sale de la ficha del proveedor) y en
   // tarjeta (es el fijo de comisiones). Las de articulos se imputan por
   // renglon: ahi no hay concepto y el item dice "No aplica".
@@ -340,6 +372,7 @@ export async function validarListoParaRegistrarEn(
     netoIva,
     ordenCompra,
     cantidadesOc,
+    renglonesNeto,
   ].some((v) => v.estado === 'error')
 
   return {
@@ -354,6 +387,8 @@ export async function validarListoParaRegistrarEn(
     netoIva,
     ordenCompra,
     cantidadesOc,
+    renglonesNeto,
+    preciosOc,
     codigosRepetidos,
     leyenda,
     netoSegunIva,

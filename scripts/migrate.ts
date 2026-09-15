@@ -280,6 +280,12 @@ const DEFINICIONES: Definicion[] = [
       // OC deja de aparecer en la lista de pendientes y el dato quedaria
       // huerfano. El pendiente REAL se relee de Tango al registrar.
       { nombre: 'OC_PENDIENTE', ddl: 'OC_PENDIENTE DECIMAL(19,4) NULL' },
+      // De que renglon del PDF (PHF_RENGLON_PDF.ORDEN) salio este renglon
+      // imputado. Desde el 2026-09-15 los importes que valen son los de la
+      // factura, y el precio neto de cada renglon se deriva del subtotal
+      // impreso (ver descuentoGlobal.ts): sin este vinculo no hay forma de
+      // saber que subtotal le corresponde a que renglon de la OC.
+      { nombre: 'PDF_ORDEN', ddl: 'PDF_ORDEN INT NULL' },
     ],
   },
   {

@@ -17,7 +17,10 @@ import {
   validarCantidadesOc,
   validarCodigosRepetidos,
   validarLeyenda,
+  validarRenglonesContraNeto,
+  validarPreciosContraOc,
 } from '@/lib/validaciones'
+import { resolverDescuentoGlobal } from '@/lib/descuentoGlobal'
 import type { LineaAlicuota } from '@/lib/alicuotas'
 
 describe('letraComprobante', () => {
@@ -470,5 +473,67 @@ describe('validarLeyenda', () => {
     expect(r.mensaje).toContain('TEL.MOVIL-20/7-19/8-AMEX-VTO:9')
     // Y que se entienda que en el asiento no se pierde nada.
     expect(r.mensaje).toContain('asiento')
+  })
+})
+
+describe('validarRenglonesContraNeto', () => {
+  it('no aplica fuera de articulos', () => {
+    expect(validarRenglonesContraNeto('conceptos', null).estado).toBe('ok')
+    expect(validarRenglonesContraNeto('tarjeta', null).estado).toBe('ok')
+  })
+
+  it('en articulos sin renglones leidos bloquea y pide reprocesar', () => {
+    const r = validarRenglonesContraNeto('articulos', null)
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('Reprocesá')
+  })
+
+  it('refleja lo que resolvio descuentoGlobal: ok si cierra, error si no', () => {
+    const cierra = resolverDescuentoGlobal(
+      [{ orden: 1, cantidad: '10', precioUnitario: '9.500,00', subtotal: '74.586,80' }],
+      '10.000,00',
+      '74.586,80',
+    )
+    expect(validarRenglonesContraNeto('articulos', cierra).estado).toBe('ok')
+    expect(validarRenglonesContraNeto('articulos', cierra).mensaje).toContain('ya está dentro')
+
+    const noCierra = resolverDescuentoGlobal(
+      [{ orden: 1, cantidad: '10', precioUnitario: '9.500,00', subtotal: '95.000,00' }],
+      null,
+      '74.586,80',
+    )
+    const r = validarRenglonesContraNeto('articulos', noCierra)
+    expect(r.estado).toBe('error')
+    expect(r.mensaje).toContain('no cierran')
+  })
+})
+
+describe('validarPreciosContraOc', () => {
+  it('advierte, no bloquea, cuando el precio de la factura no es el de la orden', () => {
+    // Decision del usuario (2026-09-15): la factura manda, la OC es referencia.
+    const r = validarPreciosContraOc('articulos', [
+      { codigo: '18070', precioFactura: 7458.68, precioOc: 7458.68 },
+      { codigo: '12640', precioFactura: 81448.76, precioOc: 80000 },
+    ])
+    expect(r.estado).toBe('advertencia')
+    expect(r.mensaje).toContain('12640')
+    expect(r.mensaje).toContain('se registra el de la factura')
+    expect(r.mensaje).not.toContain('18070')
+  })
+
+  it('ok cuando coinciden, con tolerancia de medio centavo', () => {
+    const r = validarPreciosContraOc('articulos', [
+      { codigo: '18070', precioFactura: 7458.68, precioOc: 7458.684 },
+    ])
+    expect(r.estado).toBe('ok')
+  })
+
+  it('un renglon sin precio de factura no se compara: eso lo bloquea la otra validacion', () => {
+    const r = validarPreciosContraOc('articulos', [{ codigo: 'x', precioFactura: null, precioOc: 10 }])
+    expect(r.estado).toBe('ok')
+  })
+
+  it('no aplica fuera de articulos', () => {
+    expect(validarPreciosContraOc('conceptos', []).estado).toBe('ok')
   })
 })

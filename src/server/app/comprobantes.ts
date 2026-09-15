@@ -328,3 +328,27 @@ export async function insertarRenglonPrueba(
       FROM PHF_RENGLON WHERE COMPROBANTE_ID = @cid`)
   return Number(r.recordset[0].ID)
 }
+
+/**
+ * Un renglón del PDF (PHF_RENGLON_PDF) para los tests de registro contra
+ * una orden de compra: desde el 2026-09-15 el precio que se graba en CPA46
+ * sale del subtotal impreso, así que sin esta fila el registro corta.
+ */
+export async function insertarRenglonPdfPrueba(
+  e: Ejecutor,
+  comprobanteId: number,
+  orden: number,
+  codigo: string,
+  cantidad: string,
+  precioImpreso: string,
+  subtotalImpreso: string,
+): Promise<void> {
+  await e.request()
+    .input('cid', sql.Int, comprobanteId).input('orden', sql.Int, orden)
+    .input('cod', sql.NVarChar(60), codigo).input('cant', sql.Decimal(19, 4), Number(cantidad))
+    .input('precio', sql.Decimal(19, 4), Number(precioImpreso))
+    .input('sub', sql.Decimal(19, 4), Number(subtotalImpreso))
+    .query(`
+      INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO)
+      VALUES (@cid, @orden, @cod, @cant, @precio, @sub)`)
+}

@@ -164,6 +164,7 @@ export default async function RevisionPage({
           confianza={encabezado.confianzaPromedio}
           hayCorrecciones={hayCorrecciones}
           renglones={detalle.renglones}
+          renglonesPdf={detalle.renglonesPdf}
           cargos={detalle.cargos}
           auditoria={detalle.auditoria}
           validaciones={validaciones}
