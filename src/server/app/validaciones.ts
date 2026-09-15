@@ -299,28 +299,6 @@ export async function validarListoParaRegistrarEn(
     })),
   )
 
-  // Lo que la factura cobra por renglon, contra su neto gravado. Es la
-  // misma resolucion que despues usa el armado de CPA46: el precio que se
-  // graba es el neto derivado del subtotal impreso, no el de la OC
-  // (decision del usuario, 2026-09-15). Bloquea si no cierra.
-  const descuento =
-    valores.tipoFactura === 'articulos' && detalle.renglonesPdf.length > 0
-      ? resolverDescuentoDeDetalle(detalle.renglonesPdf, valores.descuentogeneral, valores.neto)
-      : null
-  const renglonesNeto = validarRenglonesContraNeto(valores.tipoFactura, descuento)
-
-  // Y el precio de la factura contra el pactado en la OC: advierte, no
-  // bloquea -- la factura manda y la orden es la referencia.
-  const netos = descuento ? netosPorOrden(descuento) : new Map()
-  const preciosOc = validarPreciosContraOc(
-    valores.tipoFactura,
-    conOc.map((r) => ({
-      codigo: r.codigoFinal ?? r.codigo,
-      precioFactura: r.pdfOrden === null ? null : (netos.get(r.pdfOrden)?.precioNeto ?? null),
-      precioOc: parsearImporteONulo(r.precioUnitario),
-    })),
-  )
-
   // El concepto aplica en conceptos (sale de la ficha del proveedor) y en
   // tarjeta (es el fijo de comisiones). Las de articulos se imputan por
   // renglon: ahi no hay concepto y el item dice "No aplica".
@@ -350,6 +328,34 @@ export async function validarListoParaRegistrarEn(
   // faltante se arrastra al total, a las cuotas y al asiento entero.
   const netoIva = validarNetoContraIva(lineasIva, valores.neto, valores.tipoFactura)
   const netoSegunIva = netoQueImplicaElIva(lineasIva)
+
+  // Lo que la factura cobra por renglon, contra su base gravada. Decide con
+  // el IVA de arriba si los subtotales son netos o brutos. Es la
+  // misma resolucion que despues usa el armado de CPA46: el precio que se
+  // graba es el neto derivado del subtotal impreso, no el de la OC
+  // (decision del usuario, 2026-09-15). Bloquea si no cierra.
+  const descuento =
+    valores.tipoFactura === 'articulos' && detalle.renglonesPdf.length > 0
+      ? resolverDescuentoDeDetalle(
+          detalle.renglonesPdf,
+          valores.descuentogeneral,
+          valores.neto,
+          netoSegunIva,
+        )
+      : null
+  const renglonesNeto = validarRenglonesContraNeto(valores.tipoFactura, descuento)
+
+  // Y el precio de la factura contra el pactado en la OC: advierte, no
+  // bloquea -- la factura manda y la orden es la referencia.
+  const netos = descuento ? netosPorOrden(descuento) : new Map()
+  const preciosOc = validarPreciosContraOc(
+    valores.tipoFactura,
+    conOc.map((r) => ({
+      codigo: r.codigoFinal ?? r.codigo,
+      precioFactura: r.pdfOrden === null ? null : (netos.get(r.pdfOrden)?.precioNeto ?? null),
+      precioOc: parsearImporteONulo(r.precioUnitario),
+    })),
+  )
 
   // Va despues de resolver las tres familias porque las mira a las tres
   // juntas: CPA18 no admite dos veces el mismo codigo, y ahi caen tanto las

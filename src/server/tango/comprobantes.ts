@@ -7,6 +7,7 @@ import {
   letraComprobante,
   parsearFechaArg,
   LARGO_LEYENDA_COMPROBANTE,
+  netoQueImplicaElIva,
 } from '@/lib/validaciones'
 import { parsearImporte, totalImputado } from '@/lib/formato'
 import { resolverAlicuotas, resolverCodigoIva } from '@/lib/alicuotas'
@@ -628,6 +629,9 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     detalle.renglonesPdf,
     valores.descuentogeneral,
     valores.neto,
+    // La base que implica el IVA impreso, que es la evidencia con la que se
+    // decide si los subtotales son netos o brutos (ver descuentoGlobal.ts).
+    netoQueImplicaElIva(resolverAlicuotas(valores, await listarAlicuotasIva(), aprendidosIva)),
   )
   if (renglonesConOc.length > 0 && !descuento.ok) {
     throw new Error(describirDescuento(descuento))

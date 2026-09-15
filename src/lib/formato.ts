@@ -130,9 +130,18 @@ export function parsearImporte(v: string | null | undefined): number {
  * - Se excluye `total`: es el total leído del PDF. El imputado existe
  *   justamente para contrastarlo contra esa lectura; sumarlo lo
  *   duplicaría.
+ * - Se excluye `descuentogeneral`: no es un componente del total sino un
+ *   dato informativo que ya está resuelto ADENTRO del neto gravado (ver
+ *   descuentoGlobal.ts: o los subtotales ya lo tienen aplicado, o se resta
+ *   de ellos para llegar al neto -- en los dos casos el neto que se suma
+ *   acá ya es neto). Sumarlo lo cobraba dos veces: el usuario lo vio en
+ *   ZOZZOLI el 2026-09-15, con un imputado que superaba al total en
+ *   exactamente 2 x 107.843,06.
  */
+const NO_SUMAN_AL_IMPUTADO = new Set(['total', 'descuentogeneral'])
+
 const CLAVES_IMPUTADO = camposDelGrupo('importes')
-  .filter((c) => c.tipo === 'decimal' && !c.soloLectura && c.clave !== 'total')
+  .filter((c) => c.tipo === 'decimal' && !c.soloLectura && !NO_SUMAN_AL_IMPUTADO.has(c.clave))
   .map((c) => c.clave)
 
 export function totalImputado(valores: Record<string, string | null | undefined>): number {

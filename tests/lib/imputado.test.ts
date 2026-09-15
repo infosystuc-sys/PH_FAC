@@ -34,6 +34,20 @@ describe('totalImputado', () => {
     const v = { neto: '100,00', impiva1: 'ilegible' }
     expect(totalImputado(v)).toBeCloseTo(100, 2)
   })
+
+  it('no suma el descuento general: ya esta resuelto adentro del neto', () => {
+    // ZOZZOLI, 2026-09-15: neto 1.106.082,67 + IVA 209.630,32 + percepcion
+    // 24.955,99 = 1.340.668,98, que es el total de la factura. El descuento
+    // general de 107.843,06 ya esta dentro del neto; sumarlo daba un
+    // imputado que superaba al total en exactamente ese importe.
+    const v = {
+      neto: '1,106,082.67',
+      descuentogeneral: '107,843.06',
+      impiva1: '209,630.32',
+      imppercep1: '24,955.99',
+    }
+    expect(totalImputado(v)).toBeCloseTo(1340668.98, 2)
+  })
 })
 
 describe('parsearImporte (ya existente, no se reescribe)', () => {

@@ -231,6 +231,10 @@ export function Pantalla({
             renglonesPdf={renglonesPdf}
             descuentoGeneral={iniciales.descuentogeneral?.valor ?? null}
             netoFactura={iniciales.neto?.valor ?? null}
+            // La base que implica el IVA, ya calculada por el servidor con las
+            // mismas lineas que valida el panel: es la evidencia con la que
+            // se decide si los subtotales son netos o brutos.
+            baseSegunImpuestos={listoParaRegistrar?.netoSegunIva ?? null}
           />
         ) : (
           <Renglones

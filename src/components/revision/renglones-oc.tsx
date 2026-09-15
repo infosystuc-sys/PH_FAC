@@ -32,6 +32,7 @@ export function RenglonesOc({
   renglonesPdf,
   descuentoGeneral,
   netoFactura,
+  baseSegunImpuestos,
 }: {
   /** Los renglones imputados (PHF_RENGLON con OC). */
   renglones: RenglonGuardado[]
@@ -39,13 +40,20 @@ export function RenglonesOc({
   renglonesPdf: RenglonPdfGuardado[]
   /** El descuento global del pie, tal como está en la revisión. */
   descuentoGeneral: string | null
-  /** El neto gravado de la cabecera, contra el que todo tiene que cerrar. */
+  /** El neto gravado de la cabecera, tal como está en la revisión. */
   netoFactura: string | null
+  /** La base que implica el IVA impreso: la evidencia que decide el caso. */
+  baseSegunImpuestos: number | null
 }) {
   const conOc = renglones.filter((r) => r.ocNOrdenCo !== null)
   if (conOc.length === 0) return null
 
-  const resultado = resolverDescuentoDeDetalle(renglonesPdf, descuentoGeneral, netoFactura)
+  const resultado = resolverDescuentoDeDetalle(
+    renglonesPdf,
+    descuentoGeneral,
+    netoFactura,
+    baseSegunImpuestos,
+  )
   const netos = netosPorOrden(resultado)
 
   const filas = conOc.map((r) => {
@@ -156,8 +164,8 @@ export function RenglonesOc({
             className={styles.marca}
             title={
               resultado.ok
-                ? 'Cierra contra el neto gravado de la factura'
-                : 'No cierra contra el neto gravado de la factura'
+                ? 'Cierra contra la base gravada de la factura'
+                : 'No cierra contra la base gravada de la factura'
             }
           >
             {resultado.ok ? '✓' : '✕'}

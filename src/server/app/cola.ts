@@ -44,6 +44,7 @@ import {
   parsearFechaArg,
 } from '@/lib/validaciones'
 import { resolverAlicuotas } from '@/lib/alicuotas'
+import { resolverDescuentoDeDetalle, netoCorregido } from '@/lib/descuentoGlobal'
 import { fechaContableDe } from '@/lib/fechaContable'
 import { cierreContable } from '@/server/tango/parametros'
 import { listarAlicuotasIva } from '@/server/tango/impuestos'
@@ -392,6 +393,54 @@ export async function ajustarNetoConIvaEn(
     corregidoPorUsuario: false,
   })
   return { ajustado: true, neto: esperado, sumaCargos: actual }
+}
+
+/**
+ * En una factura de artículos con descuento general al pie, deja en `neto`
+ * la base gravada REAL.
+ *
+ * Hay proveedores que imprimen "Neto Gravado" con la suma de los subtotales
+ * ANTES del descuento general (ZOZZOLI: 1.106.082,67 impreso, 998.239,61
+ * real). La IA copia lo impreso -- es lo que se le pide -- y el IVA lo
+ * contradice. `resolverDescuentoDeDetalle` decide con el IVA cuál es la
+ * base; si el campo de la revisión no coincide, se reemplaza, con línea en
+ * el historial. Solo corrige cuando resolvió con el IVA como evidencia (ver
+ * `netoCorregido`): sin esa confirmación no pisa lo leído.
+ *
+ * Va después de `mudarPercepcionIvaEn`, para que los slots de IVA ya estén
+ * acomodados, y no toca conceptos ni tarjeta: ahí no hay renglones.
+ */
+export async function corregirNetoTrasDescuentoEn(
+  e: Ejecutor,
+  id: number,
+  codProvee: string | null,
+  tipoFactura: string,
+): Promise<void> {
+  if (tipoFactura !== 'articulos') return
+  const detalle = await obtenerDetalleEn(e, id)
+  if (detalle.renglonesPdf.length === 0) return
+  const valores: Record<string, string | null | undefined> = {}
+  for (const c of detalle.campos) valores[c.clave] = c.valorFinal
+
+  const prov = (codProvee ?? '').trim()
+  const aprendidos = prov ? await cargarAprendidosEn(e, prov, 'iva') : {}
+  const lineas = resolverAlicuotas(valores, await listarAlicuotasIva(), aprendidos)
+  const resultado = resolverDescuentoDeDetalle(
+    detalle.renglonesPdf,
+    valores.descuentogeneral,
+    valores.neto,
+    netoQueImplicaElIva(lineas),
+  )
+  const corregido = netoCorregido(resultado)
+  if (corregido === null || !resultado.ok) return
+
+  await guardarCampoEn(e, id, 'neto', corregido, { corregidoPorUsuario: false })
+  await auditarEn(
+    e,
+    id,
+    `Neto gravado corregido a ${corregido}: la factura imprime ${valores.neto ?? '—'} antes del ` +
+      `descuento general de ${resultado.descuentoGeneral.toFixed(2)}, y el IVA impreso confirma la base real`,
+  )
 }
 
 /**
@@ -1036,6 +1085,10 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // `esIvaSobreLaBase` la deja afuera-- pero el orden correcto es que la
       // mudanza termine antes de que alguien lea de ahi.
       await mudarPercepcionIvaEn(tx, id, tipoFactura)
+
+      // Solo articulos: si el "neto gravado" impreso es el de antes del
+      // descuento general, lo reemplaza por la base real que confirma el IVA.
+      await corregirNetoTrasDescuentoEn(tx, id, cod, tipoFactura)
 
       // La fecha con la que el comprobante entra a la contabilidad. Depende
       // de la de emision y del cierre de Tango, asi que va despues de

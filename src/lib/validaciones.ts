@@ -347,8 +347,13 @@ export function validarRenglonesContraNeto(
   if (!resultado) {
     return { estado: 'error', mensaje: 'La factura no tiene renglones leídos. Reprocesá el comprobante.' }
   }
+  // Bloquea tambien si cerro pero el campo "neto gravado" de la revision no
+  // es la base real: ese campo es lo que va a CPA04.IMPORTE_NE. Pasa cuando
+  // la factura imprime el neto ANTES del descuento general y la IA lo copio
+  // (ZOZZOLI). Al leer, corregirNetoTrasDescuentoEn ya lo arregla solo; esto
+  // cubre el caso en que el operador lo vuelva a tocar despues.
   return {
-    estado: resultado.ok ? 'ok' : 'error',
+    estado: resultado.ok && !resultado.netoDesactualizado ? 'ok' : 'error',
     mensaje: describirDescuento(resultado),
   }
 }

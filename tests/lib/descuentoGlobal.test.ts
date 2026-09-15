@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolverDescuentoGlobal, describirDescuento } from '@/lib/descuentoGlobal'
+import { resolverDescuentoGlobal, describirDescuento, netoCorregido } from '@/lib/descuentoGlobal'
 
 // La factura real que motivó esto: ZOZZOLI S.A. (Maxiking), A-00059-00023095
 // del 12/09/2026. P.Unit. de lista, subtotales ya netos, y un "Descuento
@@ -14,21 +14,55 @@ const ZOZZOLI = [
 ]
 
 describe('resolverDescuentoGlobal', () => {
-  it('ZOZZOLI: los subtotales ya son netos y el descuento del pie es informativo', () => {
-    const r = resolverDescuentoGlobal(ZOZZOLI, '107,843.06', '1,106,082.67')
+  it('ZOZZOLI: el IVA revela que el "neto gravado" impreso es el de ANTES del descuento', () => {
+    // Imprime "Importe Neto Gravado 1.106.082,67" (la suma de los subtotales)
+    // y "Descuento General 107.843,06". Leido por el rotulo pareceria que
+    // los subtotales ya son netos. Pero el IVA impreso es 209.630,32 = 21%
+    // de 998.239,61 = 1.106.082,67 - 107.843,06: los subtotales son BRUTOS
+    // respecto del descuento general, y la base real es 998.239,61. La
+    // primera version de esta funcion decidia por el rotulo y se equivoco
+    // justo con esta factura -- el usuario lo vio en el total imputado.
+    const baseSegunIva = 209630.32 / 0.21
+    const r = resolverDescuentoGlobal(ZOZZOLI, '107,843.06', '1,106,082.67', baseSegunIva)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.caso).toBe('subtotales-brutos')
+    expect(r.evidencia).toBe('iva')
+    expect(r.sumaSubtotales).toBe(1106082.67)
+    expect(r.netoGravado).toBe(998239.61)
+    // El precio neto lleva el descuento general prorrateado: 74.586,80 x
+    // (998.239,61 / 1.106.082,67) = 67.314,59 por 10 unidades.
+    expect(r.renglones[0].importeNeto).toBe(67314.59)
+    expect(r.renglones[0].precioNeto).toBe(6731.459)
+    expect(r.renglones[0].precioImpreso).toBe(9500)
+    // La suma de los importes netos ES la base real, al centavo.
+    const suma = r.renglones.reduce((a, x) => a + x.importeNeto, 0)
+    expect(Math.round(suma * 100) / 100).toBe(998239.61)
+    // Y el campo de la revision quedo con el numero impreso: hay que corregirlo.
+    expect(r.netoDesactualizado).toBe(true)
+    expect(netoCorregido(r)).toBe('998239,61')
+    expect(describirDescuento(r)).toContain('corregilo a $ 998.239,61')
+  })
+
+  it('sin IVA que lo confirme, se cae al neto de la revision y no corrige nada', () => {
+    // Sin evidencia independiente, lo unico que queda es el rotulo. Con el
+    // neto impreso igual a la suma de los subtotales, lee "netos" -- y no
+    // pisa el campo, porque no tiene con que confirmarlo.
+    const r = resolverDescuentoGlobal(ZOZZOLI, '107,843.06', '1,106,082.67', null)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.caso).toBe('subtotales-netos')
-    expect(r.sumaSubtotales).toBe(1106082.67)
-    // El precio neto es subtotal ÷ cantidad, no el P.Unit. impreso.
-    expect(r.renglones[0].precioNeto).toBe(7458.68)
-    expect(r.renglones[0].precioImpreso).toBe(9500)
-    expect(r.renglones[0].importeNeto).toBe(74586.8)
-    // 21,49% efectivo: los dos descuentos encadenados (13,83% + 8,88%).
-    expect(r.renglones[0].descuentoPorc).toBeCloseTo(21.4876, 3)
-    // La suma de los importes netos ES el neto gravado.
-    const suma = r.renglones.reduce((a, x) => a + x.importeNeto, 0)
-    expect(suma).toBeCloseTo(1106082.67, 2)
+    expect(r.evidencia).toBe('neto-revision')
+    expect(r.netoDesactualizado).toBe(false)
+    expect(netoCorregido(r)).toBeNull()
+  })
+
+  it('con IVA y el neto ya corregido, no marca nada para corregir', () => {
+    const r = resolverDescuentoGlobal(ZOZZOLI, '107,843.06', '998,239.61', 209630.32 / 0.21)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.netoDesactualizado).toBe(false)
+    expect(netoCorregido(r)).toBeNull()
   })
 
   it('subtotales brutos: el descuento del pie se prorratea y la suma cierra al centavo', () => {
