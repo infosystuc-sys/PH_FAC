@@ -59,6 +59,7 @@ export function SelectorOc({
           articulosDisponibles: [],
           imputadas: [],
           sinOrden: [],
+          codigosFactura: {},
         }),
       )
   }, [comprobanteId, codProvee])
@@ -287,7 +288,16 @@ export function SelectorOc({
                     .map((r) => (
                       <div key={r.nRenglOc} className={styles.fila}>
                         <span className={styles.marca}>✓</span>
-                        <span className={styles.codigo}>{r.codArticu}</span>
+                        <span className={styles.codigo}>
+                          {/* El codigo del proveedor primero: es el que el
+                              operador ve impreso en el papel. */}
+                          {oferta?.codigosFactura[r.codArticu.toUpperCase()] && (
+                            <span className={styles.codigoFactura}>
+                              {oferta.codigosFactura[r.codArticu.toUpperCase()]} →{' '}
+                            </span>
+                          )}
+                          {r.codArticu}
+                        </span>
                         <span className={styles.desc}>{r.descripcion}</span>
                         <span className={styles.cant}>
                           {formatCantidad(r.pendienteFacturar)} pend.

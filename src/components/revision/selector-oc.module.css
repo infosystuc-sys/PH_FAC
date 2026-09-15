@@ -266,7 +266,9 @@
    de la orden no ayuda a decidir y son casi siempre muchos mas. */
 .fila {
   display: grid;
-  grid-template-columns: 12px 90px 1fr 110px;
+  /* La columna del codigo pasa de 90 a 150px para que entren los dos:
+     el del proveedor y el nuestro ("18070 → 103938"). */
+  grid-template-columns: 12px 150px 1fr 110px;
   gap: 8px;
   padding: 2px 0;
   font-size: 11.5px;
@@ -288,4 +290,10 @@
 .cant {
   font-family: var(--mono);
   text-align: right;
+}
+
+/* El codigo con el que el proveedor imprime el articulo, delante del
+   nuestro. Mas tenue: el nuestro es el que se graba. */
+.codigoFactura {
+  color: var(--texto-3);
 }

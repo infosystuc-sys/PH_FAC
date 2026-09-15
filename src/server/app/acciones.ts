@@ -520,6 +520,14 @@ export type OfertaOc = {
   /** Las OC ya imputadas a este comprobante. */
   imputadas: string[]
   /**
+   * Con qué código imprime la factura cada artículo nuestro que coincidió:
+   * nuestro código → el del proveedor. Solo los que difieren; si el
+   * proveedor factura con nuestro propio código no hay nada que mostrar.
+   * Pedido del usuario, 2026-09-15: al cotejar contra el papel, el código
+   * que el operador ve impreso es el del proveedor.
+   */
+  codigosFactura: Record<string, string>
+  /**
    * Los renglones de la factura que todavía no tienen artículo en ninguna
    * orden imputada. Mientras quede alguno, el comprobante no se registra.
    *
@@ -627,11 +635,20 @@ export async function listarOcParaComprobante(
     reconocidoComo: reconocidos.get(normalizarCodigo(r.codigo)) ?? null,
   }))
 
+  // Nuestro codigo -> el impreso, para los que coincidieron via sinonimo.
+  const codigosFactura: Record<string, string> = {}
+  for (const impreso of codigos) {
+    const crudo = (impreso ?? '').trim()
+    const nuestro = resolverCodigoArticulo(crudo, enAlgunaOc, sinonimos)
+    if (nuestro && nuestro !== normalizarCodigo(crudo)) codigosFactura[nuestro] = crudo
+  }
+
   const base = {
     sinResolver,
     articulosDisponibles,
     imputadas,
     sinOrden: sinOrdenAnotado,
+    codigosFactura,
   }
 
   if (coinciden.length === 0) {
