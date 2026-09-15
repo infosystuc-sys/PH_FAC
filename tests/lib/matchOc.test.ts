@@ -75,6 +75,19 @@ describe('emparejarOcs', () => {
     expect(r.sinResolver).toEqual(['NO-EXISTE'])
   })
 
+  it('separa el codigo reconocido sin saldo del que no se reconoce', () => {
+    // ZOZZOLI, 2026-09-15: 12100 tiene sinonimo en CPA15 (101406) pero ese
+    // articulo no tiene pendiente en ninguna orden. Hasta ese dia iba a
+    // sinResolver, la pantalla decia "no se reconoce" y ofrecia enseñar un
+    // sinonimo que ya existia. Enseñar no lo arregla: falta una orden con
+    // saldo. Es otra cosa y se informa aparte.
+    const sinonimos = new Map([...SINONIMOS, ['12100', '101406']])
+    const r = emparejarOcs(['12100', 'NO-EXISTE'], OCS, sinonimos)
+    expect(r.coinciden).toEqual([])
+    expect(r.reconocidosSinPendiente).toEqual([{ codigo: '12100', codArticu: '101406' }])
+    expect(r.sinResolver).toEqual(['NO-EXISTE'])
+  })
+
   it('no repite un codigo sin resolver que la factura trae dos veces', () => {
     const r = emparejarOcs(['NO-EXISTE', 'no-existe'], OCS, new Map())
     expect(r.sinResolver).toEqual(['NO-EXISTE'])

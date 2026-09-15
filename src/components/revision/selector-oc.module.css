@@ -100,11 +100,30 @@
 
 .faltanteFila {
   display: grid;
-  grid-template-columns: 1fr 90px;
+  grid-template-columns: auto 1fr 90px;
   gap: 8px;
   padding: 1px 0;
   font-size: 11.5px;
   color: var(--texto-2);
+}
+
+/* Sin nada en la columna del medio, la cantidad tiene que seguir a la
+   derecha: la celda vacia ocupa el 1fr. */
+.faltanteFila > .codigo + .cant {
+  grid-column: 3;
+}
+
+/* A que articulo nuestro corresponde un codigo reconocido pero sin saldo.
+   En Mono el codigo, porque se coteja contra Tango; la nota en Sans y mas
+   tenue, porque es explicacion y no dato. */
+.reconocido {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.reconocidoNota {
+  font-family: var(--sans);
+  color: var(--texto-3);
 }
 
 .faltantesNota {

@@ -170,12 +170,24 @@ export function SelectorOc({
           {sinCandidata.map((r) => (
             <div key={r.orden} className={styles.faltanteFila}>
               <span className={styles.codigo}>{r.codigo || '(sin código)'}</span>
+              {/* Reconocido pero sin saldo: se dice cual es, para que quede
+                  claro que el problema no es el codigo sino la orden. */}
+              {r.reconocidoComo && (
+                <span className={styles.reconocido}>
+                  → {r.reconocidoComo.codArticu}
+                  {r.reconocidoComo.descripcion && ` · ${r.reconocidoComo.descripcion}`}
+                  <span className={styles.reconocidoNota}> · reconocido, sin pendiente de facturar</span>
+                </span>
+              )}
               <span className={styles.cant}>{r.cantidad ?? '—'}</span>
             </div>
           ))}
           <p className={styles.faltantesNota}>
-            No se puede registrar hasta que todos los renglones tengan su orden. Si es un artículo
-            que la orden sí trae con otro nombre, asociá el código más abajo.
+            No se puede registrar hasta que todos los renglones tengan su orden.
+            {sinCandidata.some((r) => r.reconocidoComo) &&
+              ' Los reconocidos necesitan una orden de compra con saldo en Tango: enseñar el código no lo resuelve.'}
+            {sinCandidata.some((r) => !r.reconocidoComo) &&
+              ' Si es un artículo que la orden sí trae con otro nombre, asociá el código más abajo.'}
           </p>
         </div>
       )}

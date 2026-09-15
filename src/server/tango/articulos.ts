@@ -239,3 +239,34 @@ export async function sinonimosDelProveedor(
   }
   return m
 }
+
+/**
+ * La descripción de cada uno de estos artículos según el maestro (STA11),
+ * o ausente si el código no existe.
+ *
+ * Sirve para dos cosas en la tarjeta de la orden de compra (2026-09-15):
+ * mostrarle al operador qué artículo es un código que se reconoció pero no
+ * tiene saldo en ninguna orden, y detectar que un código impreso que no
+ * tiene sinónimo es en realidad uno de los NUESTROS -- hay proveedores que
+ * facturan con nuestro propio código -- y que tampoco tiene saldo. Sin esto,
+ * las dos situaciones se mostraban como "este código no se reconoce".
+ */
+export async function describirArticulos(codigos: string[]): Promise<Map<string, string>> {
+  const buscados = [...new Set(codigos.map(normalizarCodigo).filter((c) => c !== ''))]
+  const m = new Map<string, string>()
+  if (buscados.length === 0) return m
+
+  const pool = await getPool()
+  const req = pool.request()
+  const marcadores = buscados.map((c, i) => {
+    req.input(`c${i}`, sql.VarChar(20), c)
+    return `@c${i}`
+  })
+  const r = await req.query<Record<string, unknown>>(`
+    SELECT LTRIM(RTRIM(COD_ARTICU)) AS codArticu, LTRIM(RTRIM(ISNULL(DESCRIPCIO, ''))) AS descripcion
+    FROM STA11
+    WHERE UPPER(LTRIM(RTRIM(COD_ARTICU))) IN (${marcadores.join(', ')})
+  `)
+  for (const f of r.recordset) m.set(normalizarCodigo(String(f.codArticu)), String(f.descripcion))
+  return m
+}

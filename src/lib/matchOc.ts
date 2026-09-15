@@ -94,6 +94,16 @@ export type Emparejamiento<T> = {
    * operador puede enseñar.
    */
   sinResolver: string[]
+  /**
+   * Los códigos impresos que SÍ se reconocen -- hay sinónimo cargado en
+   * CPA15 -- pero cuyo artículo no tiene pendiente de facturar en ninguna
+   * orden del proveedor. No es lo mismo que `sinResolver`, y hasta el
+   * 2026-09-15 iban juntos: la pantalla decía "este código no se reconoce" y
+   * ofrecía enseñar un sinónimo que ya existía. Lo reportó el usuario con
+   * ZOZZOLI (12100 → 101406, 37 renglones de OC, ninguno con pendiente).
+   * Enseñar no arregla nada acá: lo que falta es una orden con saldo.
+   */
+  reconocidosSinPendiente: { codigo: string; codArticu: string }[]
 }
 
 /**
@@ -113,7 +123,7 @@ export function emparejarOcs<T extends OcParaMatch>(
   sinonimos: Map<string, string>,
 ): Emparejamiento<T> {
   const codigos = codigosPdf.map((c) => normalizarCodigo(c ?? '')).filter((c) => c !== '')
-  if (codigos.length === 0) return { coinciden: [], sinResolver: [] }
+  if (codigos.length === 0) return { coinciden: [], sinResolver: [], reconocidosSinPendiente: [] }
 
   // Todos los artículos que las OC de este proveedor tienen pendientes. Un
   // código impreso que ya sea uno de estos no necesita traducción: hay
@@ -123,10 +133,23 @@ export function emparejarOcs<T extends OcParaMatch>(
 
   const resueltos = new Set<string>()
   const sinResolver: string[] = []
+  const reconocidosSinPendiente: { codigo: string; codArticu: string }[] = []
   for (const codigo of codigos) {
     const nuestro = resolverCodigoArticulo(codigo, nuestros, sinonimos)
-    if (nuestro) resueltos.add(nuestro)
-    else if (!sinResolver.includes(codigo)) sinResolver.push(codigo)
+    if (nuestro) {
+      resueltos.add(nuestro)
+      continue
+    }
+    // Se distingue "no hay sinonimo" de "hay sinonimo pero el articulo no
+    // tiene saldo": la primera se arregla enseñando, la segunda no.
+    const traducido = normalizarCodigo(sinonimos.get(codigo) ?? '')
+    if (traducido) {
+      if (!reconocidosSinPendiente.some((r) => r.codigo === codigo)) {
+        reconocidosSinPendiente.push({ codigo, codArticu: traducido })
+      }
+    } else if (!sinResolver.includes(codigo)) {
+      sinResolver.push(codigo)
+    }
   }
 
   const coinciden: OcEmparejada<T>[] = []
@@ -138,5 +161,5 @@ export function emparejarOcs<T extends OcParaMatch>(
   }
   coinciden.sort((a, b) => b.articulos.length - a.articulos.length)
 
-  return { coinciden, sinResolver }
+  return { coinciden, sinResolver, reconocidosSinPendiente }
 }

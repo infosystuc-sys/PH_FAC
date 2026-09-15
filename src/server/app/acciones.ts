@@ -23,6 +23,7 @@ import {
   buscarArticulos,
   asociarArticuloProveedor,
   articulosPorSinonimo,
+  describirArticulos,
   type ArticuloTango,
 } from '@/server/tango/articulos'
 import { emparejarOcs, resolverCodigoArticulo } from '@/lib/matchOc'
@@ -533,6 +534,13 @@ export type OfertaOc = {
     codigo: string
     cantidad: string | null
     hayCandidata: boolean
+    /**
+     * A qué artículo nuestro corresponde el código impreso, cuando se
+     * reconoce (por sinónimo en CPA15, o porque ya es un código nuestro)
+     * pero ninguna orden lo tiene con saldo. `null` cuando de verdad no se
+     * reconoce: ese es el que el operador puede enseñar.
+     */
+    reconocidoComo: { codArticu: string; descripcion: string } | null
   }[]
 }
 
@@ -579,11 +587,34 @@ export async function listarOcParaComprobante(
   // Solo se ofrecen las OC que puedan aportar algo que todavia falta: si un
   // articulo ya lo trajo otra orden, esa orden no tiene nada nuevo que dar.
   const pendientesDeCubrir = sinOrden.map((r) => r.codigo)
-  const { coinciden, sinResolver } = emparejarOcs(
+  const emparejamiento = emparejarOcs(
     imputadas.length > 0 ? pendientesDeCubrir : codigos,
     todas,
     sinonimos,
   )
+  const { coinciden } = emparejamiento
+
+  // Dos cosas que hasta el 2026-09-15 se mostraban igual ("no se reconoce")
+  // y no lo son: un codigo sin sinonimo, que el operador puede enseñar, y un
+  // codigo que SI se reconoce pero cuyo articulo no tiene saldo en ninguna
+  // orden, donde enseñar no arregla nada. Un codigo sin sinonimo puede ademas
+  // ser directamente uno de los nuestros -- hay proveedores que facturan con
+  // nuestro codigo --, asi que se consulta el maestro antes de darlo por
+  // desconocido.
+  const descripciones = await describirArticulos([
+    ...emparejamiento.reconocidosSinPendiente.map((r) => r.codArticu),
+    ...emparejamiento.sinResolver,
+  ])
+  const reconocidos = new Map<string, { codArticu: string; descripcion: string }>()
+  for (const r of emparejamiento.reconocidosSinPendiente) {
+    reconocidos.set(r.codigo, { codArticu: r.codArticu, descripcion: descripciones.get(r.codArticu) ?? '' })
+  }
+  const sinResolver: string[] = []
+  for (const codigo of emparejamiento.sinResolver) {
+    const propio = descripciones.get(normalizarCodigo(codigo))
+    if (propio !== undefined) reconocidos.set(codigo, { codArticu: normalizarCodigo(codigo), descripcion: propio })
+    else sinResolver.push(codigo)
+  }
 
   // Un renglon sin orden imputada no es necesariamente un problema: si
   // alguna orden pendiente lo tiene, solo falta imputarla.
@@ -593,6 +624,7 @@ export async function listarOcParaComprobante(
   const sinOrdenAnotado = sinOrden.map((r) => ({
     ...r,
     hayCandidata: resolverCodigoArticulo(r.codigo, enAlgunaOc, sinonimos) !== null,
+    reconocidoComo: reconocidos.get(normalizarCodigo(r.codigo)) ?? null,
   }))
 
   const base = {
