@@ -148,6 +148,7 @@ export default async function RevisionPage({
           key={id}
           comprobanteId={id}
           nombreArchivo={encabezado.archivoNombre}
+          esImagen={encabezado.esImagen}
           // `valorFinal` es el que se muestra: arranca igual al leído por la
           // IA y pasa a ser la corrección del operador en cuanto guarda algo
           // (ver guardarCampoEn en server/app/detalle.ts). `VALOR_IA` nunca

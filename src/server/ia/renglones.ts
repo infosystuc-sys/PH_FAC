@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { bloqueComprobante } from './extraccion'
 import type { LineaRemito, RenglonFacturado } from '@/lib/cotejo'
 
 /**
@@ -248,10 +249,7 @@ export async function extraerRenglonesFacturados(
         {
           role: 'user',
           content: [
-            {
-              type: 'document',
-              source: { type: 'base64', media_type: 'application/pdf', data: pdf.toString('base64') },
-            },
+            bloqueComprobante(pdf),
             { type: 'text', text: 'Leé los renglones de esta factura.' },
           ],
         },

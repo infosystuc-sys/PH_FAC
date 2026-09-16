@@ -1,6 +1,7 @@
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { tipoPorNombre } from '@/lib/tipoArchivo'
 
 /**
  * Los PDFs no van a la base: inflarian los backups del ERP. Van a una
@@ -22,17 +23,18 @@ function nombreSeguro(nombre: string): string {
   const limpio = base.replace(/^\.+/, '').slice(0, 120)
   if (limpio === '') return 'comprobante.pdf'
 
-  // Obtener la extension y el stem
-  const lowercaseLimpio = limpio.toLowerCase()
-  const hasPdf = lowercaseLimpio.endsWith('.pdf')
-  const stem = hasPdf ? limpio.slice(0, -4) : limpio
-  const ext = hasPdf ? '.pdf' : ''
+  // La extension se conserva si es una admitida (.pdf, .jpg, .jpeg, .png):
+  // es lo que despues le dice al visor y a la API como servir el archivo.
+  // Sin extension admitida se asume PDF, que es lo que siempre fue.
+  const tipo = tipoPorNombre(limpio)
+  const ext = tipo ? limpio.slice(limpio.lastIndexOf('.')) : '.pdf'
+  const stem = tipo ? limpio.slice(0, -ext.length) : limpio
 
   // Nombres de dispositivo reservados en Windows: no se pueden crear ni escribir
   const reservados = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
   const nuevoStem = reservados.test(stem) ? 'comprobante' : stem
 
-  return `${nuevoStem}${ext ? ext : '.pdf'}`
+  return `${nuevoStem}${ext}`
 }
 
 export async function guardarPdf(

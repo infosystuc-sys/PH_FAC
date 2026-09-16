@@ -12,6 +12,7 @@ import { RenglonesOc } from './renglones-oc'
 import { Cargos } from './cargos'
 import { SelectorOc } from './selector-oc'
 import { Historial } from './historial'
+import { VisorImagen } from './visor-imagen'
 import type { RenglonGuardado, RenglonPdfGuardado, CargoGuardado, EntradaAuditoria } from '@/server/app/detalle'
 import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
@@ -55,6 +56,7 @@ const CLAVE_PDF_OCULTO = 'phf.pdfOculto'
 export function Pantalla({
   comprobanteId,
   nombreArchivo,
+  esImagen,
   iniciales,
   campos,
   ms,
@@ -82,6 +84,8 @@ export function Pantalla({
 }: {
   comprobanteId: number
   nombreArchivo: string
+  /** El archivo es JPG/PNG: va al visor de imagen, sin capa de texto. */
+  esImagen: boolean
   iniciales: Record<string, ValorInicial>
   campos: number
   ms: number | null
@@ -162,7 +166,14 @@ export function Pantalla({
     <div className={`${styles.cuerpo} ${pdfOculto ? styles.sinPdf : ''}`}>
       {/* Desmontado y no escondido con CSS: el Visor carga pdf.js y renderiza
           la pagina, trabajo que no tiene sentido hacer para algo invisible. */}
-      {!pdfOculto && <Visor id={comprobanteId} nombre={nombreArchivo} resaltar={enfocado} />}
+      {/* Una imagen (JPG/PNG) no tiene capa de texto que resaltar: va al
+          visor simple. El tipo sale de la extension con la que se guardo. */}
+      {!pdfOculto &&
+        (esImagen ? (
+          <VisorImagen id={comprobanteId} nombre={nombreArchivo} />
+        ) : (
+          <Visor id={comprobanteId} nombre={nombreArchivo} resaltar={enfocado} />
+        ))}
       <div className={styles.derecha}>
         <div className={styles.barraVista}>
           <button

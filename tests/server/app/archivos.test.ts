@@ -43,6 +43,18 @@ describe('guardarPdf', () => {
     expect(ruta.endsWith('.pdf')).toBe(true)
   })
 
+  it('conserva la extension de una imagen, en minusculas como vino', async () => {
+    // Desde el 2026-09-16 se admiten JPG y PNG. La extension guardada es la
+    // que despues le dice al visor y a la API que es una imagen.
+    const jpg = await guardarPdf('foto.JPG', Buffer.from('x'))
+    creados.push(jpg.ruta)
+    expect(jpg.ruta.toLowerCase().endsWith('.jpg')).toBe(true)
+    expect(jpg.ruta.endsWith('.pdf')).toBe(false)
+    const png = await guardarPdf('escaneo.png', Buffer.from('x'))
+    creados.push(png.ruta)
+    expect(png.ruta.endsWith('.png')).toBe(true)
+  })
+
   it('rechaza traversal con backslash (Windows)', async () => {
     const { ruta } = await guardarPdf('..\\..\\evadido.pdf', Buffer.from('x'))
     creados.push(ruta)

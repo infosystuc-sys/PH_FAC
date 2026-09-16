@@ -10,6 +10,7 @@ import {
   type TipoFactura,
 } from '@/lib/tipoFactura'
 import { PROMPTS_EXTRACCION } from './prompt'
+import { tipoPorContenido, TIPOS_ARCHIVO } from '@/lib/tipoArchivo'
 
 export type CampoExtraido = { valor: string | null; confianza: number }
 
@@ -38,6 +39,19 @@ let cliente: Anthropic | null = null
 function getCliente(): Anthropic {
   if (!cliente) cliente = new Anthropic()
   return cliente
+}
+
+/** El bloque de contenido con el comprobante, segun sea PDF o imagen. */
+export function bloqueComprobante(datos: Buffer): Anthropic.Messages.ContentBlockParam {
+  const tipo = tipoPorContenido(datos) ?? 'pdf'
+  const data = datos.toString('base64')
+  if (tipo === 'pdf') {
+    return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
+  }
+  return {
+    type: 'image',
+    source: { type: 'base64', media_type: TIPOS_ARCHIVO[tipo].mediaType as 'image/jpeg' | 'image/png', data },
+  }
 }
 
 function texto(v: unknown): string | null {
@@ -197,15 +211,11 @@ export async function extraerDePdf(
         {
           role: 'user',
           content: [
-            // El documento va antes del texto.
-            {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: pdf.toString('base64'),
-              },
-            },
+            // El documento va antes del texto. Un PDF va como `document`; una
+            // foto o un escaneo en JPG/PNG, como `image` -- el modelo lee los
+            // dos igual, pero rechaza un `document` que no sea PDF de verdad,
+            // asi que el tipo sale de los bytes (2026-09-16, pedido del usuario).
+            bloqueComprobante(pdf),
             { type: 'text', text: 'Extraé los campos de este comprobante.' },
           ],
         },

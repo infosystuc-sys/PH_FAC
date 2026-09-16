@@ -152,3 +152,16 @@
   border-radius: 4px;
   transition: background 0.15s, outline-color 0.15s;
 }
+
+/* Un comprobante que llego como imagen (ver visor-imagen.tsx): misma
+   sombra y fondo que una hoja de PDF, al ancho del panel. Sin tope de
+   altura: una foto vertical de una factura es larga, y se scrollea igual
+   que un PDF de varias hojas. */
+.imagen {
+  display: block;
+  width: 100%;
+  max-width: 1200px;
+  height: auto;
+  background: var(--superficie);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.13);
+}

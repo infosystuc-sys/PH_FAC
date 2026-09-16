@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { importarComprobantes } from '@/server/app/acciones'
 import { useToast } from '@/components/toast/toast-provider'
 import { TIPOS_FACTURA, TIPO_FACTURA_DEFAULT, type TipoFactura } from '@/lib/tipoFactura'
+import { ACCEPT_ARCHIVOS, NOMBRES_ADMITIDOS, tipoPorMime, tipoPorNombre } from '@/lib/tipoArchivo'
 import styles from './importar.module.css'
 
 export function BotonImportar() {
@@ -12,7 +13,7 @@ export function BotonImportar() {
   return (
     <>
       <button type="button" className={styles.primario} onClick={() => setAbierto(true)}>
-        + Importar PDF
+        + Importar
       </button>
       {abierto && <ModalImportar onCerrar={() => setAbierto(false)} />}
     </>
@@ -29,9 +30,18 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
 
   function agregar(lista: FileList | null) {
     if (!lista) return
-    const pdfs = Array.from(lista).filter((f) => f.type === 'application/pdf')
-    setArchivos((a) => [...a, ...pdfs].slice(0, 50))
-    setError(pdfs.length === lista.length ? null : 'Se ignoraron archivos que no son PDF.')
+    // Por MIME, y por extension cuando el navegador no lo informa (pasa con
+    // archivos arrastrados desde algunos exploradores). El server action lo
+    // vuelve a validar por contenido.
+    const admitidos = Array.from(lista).filter(
+      (f) => tipoPorMime(f.type) !== null || tipoPorNombre(f.name) !== null,
+    )
+    setArchivos((a) => [...a, ...admitidos].slice(0, 50))
+    setError(
+      admitidos.length === lista.length
+        ? null
+        : `Se ignoraron archivos que no son ${NOMBRES_ADMITIDOS}.`,
+    )
   }
 
   function importar() {
@@ -96,7 +106,7 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
           id="importar-archivos"
           className={styles.inputArchivo}
           type="file"
-          accept="application/pdf"
+          accept={ACCEPT_ARCHIVOS}
           multiple
           onChange={(e) => agregar(e.target.files)}
         />
@@ -111,9 +121,9 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
           }}
         >
           <span className={styles.icono}>⇪</span>
-          <span className={styles.dzTitulo}>Arrastrá los PDF acá</span>
+          <span className={styles.dzTitulo}>Arrastrá los comprobantes acá</span>
           <span className={styles.dzDetalle}>
-            o hacé clic para elegirlos · hasta 50 archivos · PDF, máx. 10 MB c/u
+            o hacé clic para elegirlos · hasta 50 archivos · {NOMBRES_ADMITIDOS}, máx. 10 MB c/u
           </span>
         </label>
 
@@ -121,7 +131,9 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
           <div className={styles.lista}>
             {archivos.map((a, i) => (
               <div key={`${a.name}-${i}`} className={styles.fila}>
-                <span className={styles.etiqueta}>PDF</span>
+                <span className={styles.etiqueta}>
+                  {(tipoPorMime(a.type) ?? tipoPorNombre(a.name) ?? 'pdf').toUpperCase().replace('JPEG', 'JPG')}
+                </span>
                 <span className={styles.nombre}>{a.name}</span>
                 <span className={styles.estado}>{pendiente ? 'Subiendo…' : 'Listo para importar'}</span>
               </div>

@@ -1,6 +1,7 @@
 import sql from 'mssql'
 import { getPool } from '@/server/db/pool'
 import { leerPdf } from '@/server/app/archivos'
+import { tipoPorContenido, TIPOS_ARCHIVO } from '@/lib/tipoArchivo'
 
 /**
  * ARCHIVO_NOMBRE guarda el nombre tal como lo mandó el navegador al
@@ -42,9 +43,12 @@ export async function GET(
 
   try {
     const pdf = await leerPdf(String(r.recordset[0].ARCHIVO_RUTA))
+    // El tipo sale de los bytes, no del nombre: es lo que hace que el
+    // navegador muestre una imagen como imagen y un PDF como PDF.
+    const tipo = tipoPorContenido(pdf) ?? 'pdf'
     return new Response(new Uint8Array(pdf), {
       headers: {
-        'Content-Type': 'application/pdf',
+        'Content-Type': TIPOS_ARCHIVO[tipo].mediaType,
         'Content-Disposition': `inline; filename="${nombreParaHeader(String(r.recordset[0].ARCHIVO_NOMBRE))}"`,
         'Cache-Control': 'private, max-age=3600',
       },

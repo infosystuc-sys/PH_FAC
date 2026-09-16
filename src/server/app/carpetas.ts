@@ -1,4 +1,5 @@
 import sql from 'mssql'
+import { tipoPorNombre } from '@/lib/tipoArchivo'
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
@@ -82,7 +83,7 @@ async function asegurarSubcarpetas(carpetaTipo: string): Promise<void> {
 }
 
 /**
- * Los `*.pdf` directamente adentro de `dir` (nunca recursivo: no vuelve a
+ * Los comprobantes (PDF, JPG, PNG) directamente adentro de `dir` (nunca recursivo: no vuelve a
  * entrar a `procesados/`/`error/`), descartando los que se modificaron hace
  * menos de `ESPERA_ESTABILIDAD_MS` -- para no agarrar un archivo que un
  * proceso externo todavia esta terminando de copiar a la carpeta.
@@ -92,7 +93,8 @@ async function listarPdfsEstables(dir: string): Promise<string[]> {
   const ahora = Date.now()
   const candidatos: string[] = []
   for (const entrada of entradas) {
-    if (!entrada.isFile() || !entrada.name.toLowerCase().endsWith('.pdf')) continue
+    // PDF, JPG o PNG (ver src/lib/tipoArchivo.ts); el resto se ignora.
+    if (!entrada.isFile() || tipoPorNombre(entrada.name) === null) continue
     const ruta = path.join(dir, entrada.name)
     const info = await stat(ruta)
     if (ahora - info.mtimeMs < ESPERA_ESTABILIDAD_MS) continue

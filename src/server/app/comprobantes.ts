@@ -1,4 +1,5 @@
 import sql from 'mssql'
+import { tipoPorNombre, esImagen } from '@/lib/tipoArchivo'
 import { getPool } from '../db/pool'
 import type { Estado, ClaveTab } from '@/lib/estados'
 import { usuarioActual } from '@/lib/usuario'
@@ -162,6 +163,12 @@ export async function contarPorEstado(query: string): Promise<Conteos> {
 export type Encabezado = {
   id: number
   archivoNombre: string
+  /**
+   * Si el archivo guardado es una imagen (JPG/PNG) y no un PDF. Sale de la
+   * extension de ARCHIVO_RUTA, que `nombreSeguro` garantiza admitida -- el
+   * nombre original puede no tener extension. Decide que visor se abre.
+   */
+  esImagen: boolean
   estado: Estado
   tipo: string | null
   puntoVenta: string | null
@@ -192,7 +199,7 @@ export async function obtenerEncabezadoEn(e: Ejecutor, id: number): Promise<Enca
     .request()
     .input('id', sql.Int, id)
     .query<Record<string, unknown>>(`
-      SELECT ID, ARCHIVO_NOMBRE, ESTADO, TIPO, PUNTO_VENTA, NUMERO,
+      SELECT ID, ARCHIVO_NOMBRE, ARCHIVO_RUTA, ESTADO, TIPO, PUNTO_VENTA, NUMERO,
              RAZON_SOCIAL, CUIT, CONFIANZA_PROMEDIO, EXTRACCION_MS,
              EXTRACCION_MODELO, ERROR_MENSAJE, TANGO_N_COMP,
              MOTIVO_OBSERVACION, NOTA_OBSERVACION
@@ -204,6 +211,10 @@ export async function obtenerEncabezadoEn(e: Ejecutor, id: number): Promise<Enca
   return {
     id: Number(row.ID),
     archivoNombre: String(row.ARCHIVO_NOMBRE),
+    esImagen: (() => {
+      const t = tipoPorNombre(String(row.ARCHIVO_RUTA ?? ''))
+      return t !== null && esImagen(t)
+    })(),
     estado: String(row.ESTADO) as Estado,
     tipo: row.TIPO ? String(row.TIPO) : null,
     puntoVenta: row.PUNTO_VENTA ? String(row.PUNTO_VENTA) : null,

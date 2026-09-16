@@ -27,6 +27,7 @@ import {
   type ArticuloTango,
 } from '@/server/tango/articulos'
 import { emparejarOcs, resolverCodigoArticulo } from '@/lib/matchOc'
+import { tipoPorContenido, NOMBRES_ADMITIDOS } from '@/lib/tipoArchivo'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import {
   listarConceptos,
@@ -69,13 +70,22 @@ export async function importarComprobantes(fd: FormData): Promise<{ importados: 
   // operador se entere: el mensaje de error no dice nada de ellos, la
   // bandeja no se refresca porque revalidatePath no llega a correr, y si
   // el operador reintenta todo el lote esos ya importados se duplican.
+  //
+  // El tipo se decide por CONTENIDO (los primeros bytes), no por el MIME
+  // que informa el navegador ni por la extension: ninguno de los dos es de
+  // fiar, y el modelo rechaza un bloque `document` que no sea PDF de
+  // verdad. Desde el 2026-09-16 se admiten tambien JPG y PNG (pedido del
+  // usuario) -- ver src/lib/tipoArchivo.ts.
+  const leidos: { archivo: File; datos: Buffer }[] = []
   for (const archivo of archivos) {
-    if (archivo.type !== 'application/pdf') {
-      throw new Error(`${archivo.name} no es un PDF.`)
-    }
     if (archivo.size > MAX_BYTES) {
       throw new Error(`${archivo.name} supera los 10 MB.`)
     }
+    const datos = Buffer.from(await archivo.arrayBuffer())
+    if (tipoPorContenido(datos) === null) {
+      throw new Error(`${archivo.name} no es un archivo ${NOMBRES_ADMITIDOS}.`)
+    }
+    leidos.push({ archivo, datos })
   }
 
   // Después de validar los archivos y antes de escribir nada: el tipo
@@ -92,8 +102,7 @@ export async function importarComprobantes(fd: FormData): Promise<{ importados: 
   }
 
   let importados = 0
-  for (const archivo of archivos) {
-    const datos = Buffer.from(await archivo.arrayBuffer())
+  for (const { archivo, datos } of leidos) {
     await conTransaccion((tx) => importarComprobanteEn(tx, archivo.name, datos, tipoFactura))
     importados += 1
   }

@@ -53,7 +53,7 @@ describe('importarComprobantes', () => {
     expect(despues.recordset[0].n).toBe(antes.recordset[0].n)
   })
 
-  it('rechaza un lote con un archivo que no es PDF, sin importar nada', async () => {
+  it('rechaza un lote con un archivo que no es PDF ni imagen, sin importar nada', async () => {
     const pool = await getPool()
     const antes = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
 
@@ -61,7 +61,15 @@ describe('importarComprobantes', () => {
     fd.append('archivos', new File([PDF], 'chico.pdf', { type: 'application/pdf' }))
     fd.append('archivos', new File([Buffer.from('no es un pdf')], 'no-es-pdf.txt', { type: 'text/plain' }))
 
-    await expect(importarComprobantes(fd)).rejects.toThrow('no-es-pdf.txt no es un PDF.')
+    await expect(importarComprobantes(fd)).rejects.toThrow('no-es-pdf.txt no es un archivo PDF, JPG o PNG.')
+
+    // Y renombrarlo a .pdf con MIME de PDF tampoco alcanza: el tipo se decide
+    // por los primeros bytes (2026-09-16), porque el modelo rechaza un
+    // `document` que no sea PDF de verdad.
+    const fd2 = new FormData()
+    fd2.append('archivos', new File([Buffer.from('no es un pdf')], 'disfrazado.pdf', { type: 'application/pdf' }))
+    fd2.append('tipoFactura', 'conceptos')
+    await expect(importarComprobantes(fd2)).rejects.toThrow('disfrazado.pdf no es un archivo PDF, JPG o PNG.')
 
     const despues = await pool.request().query('SELECT COUNT(*) AS n FROM PHF_COMPROBANTE')
     expect(despues.recordset[0].n).toBe(antes.recordset[0].n)
