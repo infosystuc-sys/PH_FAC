@@ -524,9 +524,13 @@ const RE_CAE = /^\d{14}$/
  * puntos no matcheaba, `parsearFechaArg` devolvía `null`, y el llamador
  * hacía `?? new Date()` -- la factura quedaba grabada en Tango con la
  * fecha de HOY en vez de la fecha real, en silencio, sin ningún error.
+ *
+ * El día y el mes admiten uno o dos dígitos (2026-09-16, pedido del
+ * usuario): C C AGRO imprime "16/9/2026" y la validación la rechazaba como
+ * ilegible. `normalizarFechaArg` la deja después en la forma canónica.
  */
 export function parsearFechaArg(f: string): Date | null {
-  const m = /^(\d{2})[/.-](\d{2})[/.-](\d{4})$/.exec(f.trim())
+  const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(f.trim())
   if (!m) return null
   const dia = Number(m[1])
   const mes = Number(m[2])
@@ -536,6 +540,20 @@ export function parsearFechaArg(f: string): Date | null {
   // siguiente en vez de fallar. Detectarlo comparando el dia de vuelta.
   if (d.getDate() !== dia) return null
   return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
+ * La misma fecha en la forma canónica `dd/mm/aaaa`, o `null` si no se
+ * pudo interpretar. Es lo que se guarda en `fecha` al terminar de leer,
+ * para que el operador vea siempre la misma forma y no la que cada
+ * proveedor imprime ("16/9/2026", "30.07.2026", "01-06-2026").
+ */
+export function normalizarFechaArg(f: string | null | undefined): string | null {
+  const d = parsearFechaArg((f ?? '').trim())
+  if (!d) return null
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}/${mm}/${d.getFullYear()}`
 }
 
 export function validarCae(

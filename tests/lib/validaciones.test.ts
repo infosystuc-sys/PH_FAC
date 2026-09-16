@@ -12,6 +12,7 @@ import {
   validarCondCompra,
   validarTipoFactura,
   parsearFechaArg,
+  normalizarFechaArg,
   sinCerosDeRelleno,
   validarNetoContraIva,
   validarCantidadesOc,
@@ -167,6 +168,26 @@ describe('parsearFechaArg', () => {
   it('rechaza vacio o formato irreconocible', () => {
     expect(parsearFechaArg('')).toBeNull()
     expect(parsearFechaArg('30 de julio de 2026')).toBeNull()
+  })
+  it('acepta dia y mes de un solo digito', () => {
+    // C C AGRO imprime "16/9/2026" (2026-09-16). Antes se rechazaba como
+    // ilegible y el comprobante no se podia confirmar.
+    expect(parsearFechaArg('16/9/2026')).toEqual(new Date(2026, 8, 16))
+    expect(parsearFechaArg('1/6/2026')).toEqual(new Date(2026, 5, 1))
+    expect(parsearFechaArg('1.6.2026')).toEqual(new Date(2026, 5, 1))
+  })
+})
+
+describe('normalizarFechaArg', () => {
+  it('deja la fecha en dd/mm/aaaa, venga como venga', () => {
+    expect(normalizarFechaArg('16/9/2026')).toBe('16/09/2026')
+    expect(normalizarFechaArg('1.6.2026')).toBe('01/06/2026')
+    expect(normalizarFechaArg('30-07-2026')).toBe('30/07/2026')
+    expect(normalizarFechaArg(' 30/07/2026 ')).toBe('30/07/2026')
+  })
+  it('devuelve null si no se puede leer, para no pisar lo que vino', () => {
+    expect(normalizarFechaArg('30 de julio')).toBeNull()
+    expect(normalizarFechaArg(null)).toBeNull()
   })
 })
 

@@ -40,6 +40,7 @@ import {
   letraComprobante,
   nComp as armarNComp,
   netoQueImplicaElIva,
+  normalizarFechaArg,
   netoCierraConIva,
   parsearFechaArg,
 } from '@/lib/validaciones'
@@ -1090,10 +1091,21 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // descuento general, lo reemplaza por la base real que confirma el IVA.
       await corregirNetoTrasDescuentoEn(tx, id, cod, tipoFactura)
 
+      // La fecha de emision, en la forma canonica dd/mm/aaaa. Cada proveedor
+      // la imprime como quiere ("16/9/2026", "30.07.2026") y la IA la copia
+      // tal cual; si se puede leer, se guarda normalizada para que el
+      // operador vea siempre lo mismo. Si no se puede leer se deja como vino,
+      // que es lo que validarFecha va a señalar.
+      const fechaLeida = r.extraccion.campos.fecha?.valor ?? null
+      const fechaCanonica = normalizarFechaArg(fechaLeida)
+      if (fechaCanonica !== null && fechaCanonica !== fechaLeida) {
+        await guardarCampoEn(tx, id, 'fecha', fechaCanonica, { corregidoPorUsuario: false })
+      }
+
       // La fecha con la que el comprobante entra a la contabilidad. Depende
       // de la de emision y del cierre de Tango, asi que va despues de
       // guardarExtraccionEn, que es quien escribe `fecha`.
-      await calcularFechaContableEn(tx, id, r.extraccion.campos.fecha?.valor ?? null)
+      await calcularFechaContableEn(tx, id, fechaCanonica ?? fechaLeida)
 
       // Va despues de resolverProveedorEn porque el punto de venta se
       // aprende por proveedor: sin `cod` no hay a quien preguntarle.
