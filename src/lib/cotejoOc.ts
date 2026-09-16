@@ -48,15 +48,27 @@ export type ResultadoCotejoOc = {
 const TOLERANCIA = 0.00005
 
 /**
- * Cómo se comparan dos códigos de artículo: sin espacios y en mayúsculas.
+ * Cómo se comparan dos códigos de artículo: en mayúsculas y SIN NINGÚN
+ * espacio, ni en las puntas ni adentro.
  *
  * `CPA15` y `CPA36` están en `Latin1_General_BIN`, que distingue mayúsculas,
  * y uno de los dos códigos siempre sale de un PDF transcripto por el
  * modelo. Comparar byte a byte dejaría sin emparejar un artículo que sí está
  * cargado, por una diferencia que en el papel no existe.
+ *
+ * Los espacios interiores se ignoran desde el 2026-09-16, pedido del
+ * usuario: C C AGRO factura "RO1274DW MT/1-12" y el sinónimo en Tango es
+ * "RO1274DWMT/1-12". No es un caso aislado -- 50 de los 174 sinónimos de
+ * CPA15 y 1.642 códigos de STA11 tienen espacios adentro, y el modelo los
+ * transcribe como puede. Es seguro: medido ese día, al quitar los espacios
+ * no colisiona ningún par de sinónimos del mismo proveedor ni ningún par de
+ * códigos del maestro.
+ *
+ * El resultado es una CLAVE de comparación, no un código: lo que se graba
+ * en Tango es siempre el código tal como está en la OC o en el maestro.
  */
 export function normalizarCodigo(codigo: string): string {
-  return codigo.trim().toUpperCase()
+  return codigo.replace(/\s+/g, '').toUpperCase()
 }
 
 /**

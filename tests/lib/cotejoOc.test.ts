@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cotejarConOc, describirCotejo, type LineaOc } from '@/lib/cotejoOc'
+import { cotejarConOc, describirCotejo, normalizarCodigo, type LineaOc } from '@/lib/cotejoOc'
 import { validarCotejoOc } from '@/lib/validaciones'
 
 /** Una OC de dos renglones, con lo que le queda por facturar. */
@@ -124,5 +124,30 @@ describe('validarCotejoOc', () => {
     expect(r.estado).toBe('error')
     expect(r.mensaje).toContain('41')
     expect(r.mensaje).toContain('40')
+  })
+})
+
+describe('normalizarCodigo', () => {
+  it('ignora mayusculas y los espacios de las puntas', () => {
+    expect(normalizarCodigo('  abc-1 ')).toBe('ABC-1')
+  })
+
+  it('ignora tambien los espacios de ADENTRO', () => {
+    // C C AGRO, 2026-09-16: la factura imprime "RO1274DW MT/1-12" y el
+    // sinonimo en CPA15 es "RO1274DWMT/1-12". No es un caso aislado: 50 de
+    // los 174 sinonimos de CPA15 y 1.642 codigos de STA11 tienen espacios
+    // adentro (TOPPER: "21870  001 40"), y el modelo los transcribe como
+    // puede. Medido ese dia: quitar los espacios no colisiona ningun par.
+    expect(normalizarCodigo('RO1274DW MT/1-12')).toBe('RO1274DWMT/1-12')
+    expect(normalizarCodigo('21870  001 40')).toBe(normalizarCodigo('21870 001 40'))
+  })
+
+  it('con eso, cotejarConOc empareja un codigo impreso con espacio contra la OC', () => {
+    const oc: LineaOc[] = [
+      { nRenglOc: 1, codArticu: '106543', descripcion: 'LAVARROPAS CANDY', pendiente: 24 },
+    ]
+    const sinonimos = new Map([['RO1274DWMT/1-12', '106543']])
+    const r = cotejarConOc([{ orden: 1, codigo: 'RO1274DW MT/1-12', cantidad: '24' }], oc, sinonimos)
+    expect(r.problemas).toEqual([])
   })
 })

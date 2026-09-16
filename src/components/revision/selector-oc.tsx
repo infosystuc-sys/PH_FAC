@@ -10,6 +10,7 @@ import {
 } from '@/server/app/acciones'
 import { useToast } from '@/components/toast/toast-provider'
 import { formatMoneda, formatCantidad } from '@/lib/formato'
+import { normalizarCodigo } from '@/lib/cotejoOc'
 import styles from './selector-oc.module.css'
 
 /**
@@ -284,16 +285,16 @@ export function SelectorOc({
                     orden no ayuda a decidir y son casi siempre muchos más. */}
                 <div className={styles.detalle}>
                   {oc.renglones
-                    .filter((r) => oc.articulosQueCoinciden.includes(r.codArticu.toUpperCase()))
+                    .filter((r) => oc.articulosQueCoinciden.includes(normalizarCodigo(r.codArticu)))
                     .map((r) => (
                       <div key={r.nRenglOc} className={styles.fila}>
                         <span className={styles.marca}>✓</span>
                         <span className={styles.codigo}>
                           {/* El codigo del proveedor primero: es el que el
                               operador ve impreso en el papel. */}
-                          {oferta?.codigosFactura[r.codArticu.toUpperCase()] && (
+                          {oferta?.codigosFactura[normalizarCodigo(r.codArticu)] && (
                             <span className={styles.codigoFactura}>
-                              {oferta.codigosFactura[r.codArticu.toUpperCase()]} →{' '}
+                              {oferta.codigosFactura[normalizarCodigo(r.codArticu)]} →{' '}
                             </span>
                           )}
                           {r.codArticu}

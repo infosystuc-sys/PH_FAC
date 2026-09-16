@@ -615,12 +615,13 @@ export async function listarOcParaComprobante(
   ])
   const reconocidos = new Map<string, { codArticu: string; descripcion: string }>()
   for (const r of emparejamiento.reconocidosSinPendiente) {
-    reconocidos.set(r.codigo, { codArticu: r.codArticu, descripcion: descripciones.get(r.codArticu) ?? '' })
+    const enMaestro = descripciones.get(r.codArticu)
+    reconocidos.set(r.codigo, enMaestro ?? { codArticu: r.codArticu, descripcion: '' })
   }
   const sinResolver: string[] = []
   for (const codigo of emparejamiento.sinResolver) {
     const propio = descripciones.get(normalizarCodigo(codigo))
-    if (propio !== undefined) reconocidos.set(codigo, { codArticu: normalizarCodigo(codigo), descripcion: propio })
+    if (propio) reconocidos.set(codigo, propio)
     else sinResolver.push(codigo)
   }
 

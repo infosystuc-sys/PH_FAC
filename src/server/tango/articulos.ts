@@ -251,9 +251,14 @@ export async function sinonimosDelProveedor(
  * facturan con nuestro propio código -- y que tampoco tiene saldo. Sin esto,
  * las dos situaciones se mostraban como "este código no se reconoce".
  */
-export async function describirArticulos(codigos: string[]): Promise<Map<string, string>> {
+export async function describirArticulos(
+  codigos: string[],
+): Promise<Map<string, { codArticu: string; descripcion: string }>> {
   const buscados = [...new Set(codigos.map(normalizarCodigo).filter((c) => c !== ''))]
-  const m = new Map<string, string>()
+  // Clave normalizada -> el codigo TAL COMO ESTA en el maestro (con sus
+  // espacios, si los tiene) y su descripcion. Lo que se muestra y se graba
+  // es el del maestro, nunca la clave.
+  const m = new Map<string, { codArticu: string; descripcion: string }>()
   if (buscados.length === 0) return m
 
   const pool = await getPool()
@@ -265,8 +270,13 @@ export async function describirArticulos(codigos: string[]): Promise<Map<string,
   const r = await req.query<Record<string, unknown>>(`
     SELECT LTRIM(RTRIM(COD_ARTICU)) AS codArticu, LTRIM(RTRIM(ISNULL(DESCRIPCIO, ''))) AS descripcion
     FROM STA11
-    WHERE UPPER(LTRIM(RTRIM(COD_ARTICU))) IN (${marcadores.join(', ')})
+    WHERE REPLACE(UPPER(COD_ARTICU), ' ', '') IN (${marcadores.join(', ')})
   `)
-  for (const f of r.recordset) m.set(normalizarCodigo(String(f.codArticu)), String(f.descripcion))
+  for (const f of r.recordset) {
+    m.set(normalizarCodigo(String(f.codArticu)), {
+      codArticu: String(f.codArticu),
+      descripcion: String(f.descripcion),
+    })
+  }
   return m
 }
