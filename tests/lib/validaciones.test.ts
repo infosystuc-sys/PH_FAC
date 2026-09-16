@@ -176,6 +176,15 @@ describe('parsearFechaArg', () => {
     expect(parsearFechaArg('1/6/2026')).toEqual(new Date(2026, 5, 1))
     expect(parsearFechaArg('1.6.2026')).toEqual(new Date(2026, 5, 1))
   })
+  it('acepta el año de dos digitos como 20aa', () => {
+    // Hay proveedores que imprimen "26" por 2026 (2026-09-16, pedido del
+    // usuario). No hay ambiguedad real: por esta app no entra ningun
+    // comprobante del siglo pasado.
+    expect(parsearFechaArg('16/09/26')).toEqual(new Date(2026, 8, 16))
+    expect(parsearFechaArg('1/6/26')).toEqual(new Date(2026, 5, 1))
+    // Tres digitos no es ninguna de las dos formas.
+    expect(parsearFechaArg('16/09/026')).toBeNull()
+  })
 })
 
 describe('normalizarFechaArg', () => {
@@ -184,6 +193,7 @@ describe('normalizarFechaArg', () => {
     expect(normalizarFechaArg('1.6.2026')).toBe('01/06/2026')
     expect(normalizarFechaArg('30-07-2026')).toBe('30/07/2026')
     expect(normalizarFechaArg(' 30/07/2026 ')).toBe('30/07/2026')
+    expect(normalizarFechaArg('16/9/26')).toBe('16/09/2026')
   })
   it('devuelve null si no se puede leer, para no pisar lo que vino', () => {
     expect(normalizarFechaArg('30 de julio')).toBeNull()

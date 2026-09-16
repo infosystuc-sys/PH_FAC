@@ -527,15 +527,20 @@ const RE_CAE = /^\d{14}$/
  *
  * El día y el mes admiten uno o dos dígitos (2026-09-16, pedido del
  * usuario): C C AGRO imprime "16/9/2026" y la validación la rechazaba como
- * ilegible. `normalizarFechaArg` la deja después en la forma canónica.
+ * ilegible. El año admite dos dígitos (mismo día, mismo pedido): hay
+ * proveedores que imprimen "26" por 2026, y se interpreta como 20aa. Un
+ * comprobante de compra del siglo pasado no entra por esta app, así que no
+ * hay ambigüedad real. `normalizarFechaArg` la deja después en la forma
+ * canónica, con el año completo.
  */
 export function parsearFechaArg(f: string): Date | null {
-  const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(f.trim())
+  const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(f.trim())
   if (!m) return null
   const dia = Number(m[1])
   const mes = Number(m[2])
+  const anio = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])
   if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
-  const d = new Date(Number(m[3]), mes - 1, dia)
+  const d = new Date(anio, mes - 1, dia)
   // new Date() no rechaza dia=31 en un mes de 30: reindexa al mes
   // siguiente en vez de fallar. Detectarlo comparando el dia de vuelta.
   if (d.getDate() !== dia) return null
