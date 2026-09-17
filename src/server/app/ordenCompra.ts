@@ -2,7 +2,15 @@ import sql from 'mssql'
 import { auditarEn, obtenerDetalleEn } from './detalle'
 import { buscarOcPorNumero } from '@/server/tango/ordenesCompra'
 import { articulosPorSinonimo } from '@/server/tango/articulos'
-import { emparejarRenglones, resolverCodigoArticulo } from '@/lib/matchOc'
+import {
+  emparejarRenglones,
+  resolverCodigoArticulo,
+  resolverLineasPdf,
+  lineasAVincular,
+  type LineaPdfResuelta,
+} from '@/lib/matchOc'
+import { articulosPorDescripcionEn } from './articulosProveedor'
+import type { Detalle } from './detalle'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import { parsearImporte } from '@/lib/formato'
 
@@ -30,6 +38,50 @@ type Ejecutor = { request(): sql.Request }
  * OC vive en el renglón y no en la cabecera. Volver a imputar la MISMA
  * orden sí reemplaza lo suyo, para que sea idempotente.
  */
+/**
+ * Los renglones del PDF con el codigo con el que se emparejan: el impreso, o
+ * el aprendido por descripcion para este proveedor (ver resolverLineasPdf).
+ * Todas las entradas que miran renglones del PDF pasan por aca, para que un
+ * renglon vinculado por descripcion resuelva igual en las cuatro: imputar,
+ * listar sin orden, ofrecer OC y validar.
+ */
+export async function lineasPdfResueltasEn(
+  e: Ejecutor,
+  detalle: Detalle,
+  codProvee: string | null,
+): Promise<LineaPdfResuelta[]> {
+  const porDescripcion = await articulosPorDescripcionEn(e, codProvee)
+  return resolverLineasPdf(
+    detalle.renglonesPdf.map((r) => ({
+      orden: r.orden,
+      codigo: r.codigo,
+      descripcion: r.descripcion,
+      cantidad: r.cantidad,
+    })),
+    porDescripcion,
+  )
+}
+
+/**
+ * Cuantos renglones del PDF siguen sin articulo, y lo deja escrito en el
+ * comprobante para la pestaña "A vincular" de la bandeja. Se llama al
+ * terminar de leer y cada vez que el operador vincula una descripcion.
+ */
+export async function recalcularAVincularEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  codProvee: string | null,
+): Promise<number> {
+  const detalle = await obtenerDetalleEn(e, comprobanteId)
+  const cantidad = lineasAVincular(await lineasPdfResueltasEn(e, detalle, codProvee)).length
+  await e
+    .request()
+    .input('id', sql.Int, comprobanteId)
+    .input('n', sql.Int, cantidad)
+    .query('UPDATE PHF_COMPROBANTE SET RENGLONES_A_VINCULAR = @n WHERE ID = @id')
+  return cantidad
+}
+
 export async function agregarOcEn(
   e: Ejecutor,
   comprobanteId: number,
@@ -62,18 +114,15 @@ export async function agregarOcEn(
       .map((r) => normalizarCodigo(r.codigoFinal ?? r.codigo ?? '')),
   )
 
+  const lineas = await lineasPdfResueltasEn(e, detalle, codProvee)
   const sinonimos = codProvee
     ? await articulosPorSinonimo(
         codProvee,
-        detalle.renglonesPdf.map((r) => r.codigo ?? ''),
+        lineas.map((r) => r.codigo ?? ''),
       )
     : new Map<string, string>()
 
-  const emparejados = emparejarRenglones(
-    detalle.renglonesPdf.map((r) => ({ orden: r.orden, codigo: r.codigo, cantidad: r.cantidad })),
-    oc.renglones,
-    sinonimos,
-  )
+  const emparejados = emparejarRenglones(lineas, oc.renglones, sinonimos)
 
   // ORDEN es UNIQUE por comprobante y ya puede haber renglones de otra
   // orden: se sigue desde el mayor en vez de arrancar de 1.
@@ -187,7 +236,9 @@ export async function renglonesSinOcEn(
   e: Ejecutor,
   comprobanteId: number,
   codProvee: string | null,
-): Promise<{ orden: number; codigo: string; cantidad: string | null }[]> {
+): Promise<
+  { orden: number; codigo: string; descripcion: string | null; cantidad: string | null; porDescripcion: boolean }[]
+> {
   const detalle = await obtenerDetalleEn(e, comprobanteId)
   if (detalle.renglonesPdf.length === 0) return []
 
@@ -196,14 +247,21 @@ export async function renglonesSinOcEn(
       .filter((r) => r.ocNOrdenCo)
       .map((r) => normalizarCodigo(r.codigoFinal ?? r.codigo ?? '')),
   )
+  const lineas = await lineasPdfResueltasEn(e, detalle, codProvee)
   const sinonimos = codProvee
     ? await articulosPorSinonimo(
         codProvee,
-        detalle.renglonesPdf.map((r) => r.codigo ?? ''),
+        lineas.map((r) => r.codigo ?? ''),
       )
     : new Map<string, string>()
 
-  return detalle.renglonesPdf
+  return lineas
     .filter((r) => resolverCodigoArticulo(r.codigo, imputados, sinonimos) === null)
-    .map((r) => ({ orden: r.orden, codigo: (r.codigo ?? '').trim(), cantidad: r.cantidad }))
+    .map((r) => ({
+      orden: r.orden,
+      codigo: (r.codigo ?? '').trim(),
+      descripcion: r.descripcion,
+      cantidad: r.cantidad,
+      porDescripcion: r.porDescripcion,
+    }))
 }

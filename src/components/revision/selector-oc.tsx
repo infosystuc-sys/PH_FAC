@@ -6,6 +6,7 @@ import {
   imputarOrdenCompra,
   desimputarOrdenCompra,
   asociarCodigoProveedor,
+  vincularDescripcionArticulo,
   type OfertaOc,
 } from '@/server/app/acciones'
 import { useToast } from '@/components/toast/toast-provider'
@@ -109,6 +110,23 @@ export function SelectorOc({
       }
     })
 
+  // Un renglon SIN codigo se vincula por su descripcion (2026-09-17): se
+  // aprende para el proveedor y la lista se rearma, igual que con un
+  // sinonimo.
+  const vincular = (descripcion: string, codArticu: string) =>
+    arrancar(async () => {
+      try {
+        const { quedan } = await vincularDescripcionArticulo(comprobanteId, codProvee!, descripcion, codArticu)
+        toast(
+          `"${descripcion}" vinculada a ${codArticu}` +
+            (quedan > 0 ? ` — quedan ${quedan} renglón(es) por vincular` : ''),
+        )
+        cargar()
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'No se pudo vincular el artículo.')
+      }
+    })
+
   const imputadas = oferta?.imputadas ?? []
   const sinOrden = oferta?.sinOrden ?? []
   const lista = oferta?.ocs ?? []
@@ -171,7 +189,36 @@ export function SelectorOc({
           </p>
           {sinCandidata.map((r) => (
             <div key={r.orden} className={styles.faltanteFila}>
-              <span className={styles.codigo}>{r.codigo || '(sin código)'}</span>
+              <span className={styles.codigo}>
+                {r.codigo || '(sin código)'}
+                {r.porDescripcion && (
+                  <span className={styles.reconocidoNota} title="Resuelto por la descripción que enseñó el operador">
+                    {' '}· por descripción
+                  </span>
+                )}
+              </span>
+              {/* Sin codigo: lo unico que identifica al articulo es la
+                  descripcion, y se vincula desde aca mismo. */}
+              {!r.codigo && (
+                <span className={styles.vincularCol}>
+                  <span className={styles.descripcionFactura}>{r.descripcion ?? '(sin descripción)'}</span>
+                  {!soloLectura && r.descripcion && oferta && (
+                    <select
+                      className={styles.selectArticulo}
+                      defaultValue=""
+                      disabled={pendiente}
+                      onChange={(e) => e.target.value && vincular(r.descripcion!, e.target.value)}
+                    >
+                      <option value="">¿A qué artículo corresponde?</option>
+                      {oferta.articulosDisponibles.map((a) => (
+                        <option key={a.codArticu} value={a.codArticu}>
+                          {a.codArticu} · {a.descripcion}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </span>
+              )}
               {/* Reconocido pero sin saldo: se dice cual es, para que quede
                   claro que el problema no es el codigo sino la orden. */}
               {r.reconocidoComo && (
@@ -188,7 +235,9 @@ export function SelectorOc({
             No se puede registrar hasta que todos los renglones tengan su orden.
             {sinCandidata.some((r) => r.reconocidoComo) &&
               ' Los reconocidos necesitan una orden de compra con saldo en Tango: enseñar el código no lo resuelve.'}
-            {sinCandidata.some((r) => !r.reconocidoComo) &&
+            {sinCandidata.some((r) => !r.codigo) &&
+              ' Los que vienen sin código se vinculan por su descripción, acá mismo: se guarda para este proveedor y la próxima factura empareja sola.'}
+            {sinCandidata.some((r) => r.codigo && !r.reconocidoComo) &&
               ' Si es un artículo que la orden sí trae con otro nombre, asociá el código más abajo.'}
           </p>
         </div>

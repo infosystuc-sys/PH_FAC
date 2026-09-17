@@ -53,10 +53,17 @@ function pedido(e: Ejecutor, filtro: ClaveTab, query: string): sql.Request {
     .input('q', sql.NVarChar(200), q)
     .input('like', sql.NVarChar(210), `%${q}%`)
     .input('likeCuit', sql.NVarChar(210), `%${q.replace(/[-\s.]/g, '')}%`)
-    .input('estado', sql.VarChar(20), filtro === 'todos' ? null : filtro)
+    // 'vincular' no es un estado: es el corte por RENGLONES_A_VINCULAR (ver
+    // estados.ts). Va como flag aparte para que @estado siga siendo NULL.
+    .input('estado', sql.VarChar(20), filtro === 'todos' || filtro === 'vincular' ? null : filtro)
+    .input('soloAVincular', sql.Bit, filtro === 'vincular' ? 1 : 0)
 }
 
-const WHERE_ESTADO = `(@estado IS NULL OR ESTADO = @estado)`
+// Los que estan "a vincular" son los que tienen renglones sin articulo y
+// todavia se pueden trabajar: una vez registrados o existentes ya no hay
+// nada que vincular.
+const WHERE_A_VINCULAR = `(RENGLONES_A_VINCULAR > 0 AND ESTADO NOT IN ('registrado', 'existente'))`
+const WHERE_ESTADO = `(@estado IS NULL OR ESTADO = @estado) AND (@soloAVincular = 0 OR ${WHERE_A_VINCULAR})`
 
 function aFila(row: Record<string, unknown>): FilaBandeja {
   return {
@@ -133,7 +140,8 @@ export async function obtenerKpis(): Promise<Kpis> {
 
 export async function contarPorEstadoEn(e: Ejecutor, query: string): Promise<Conteos> {
   const r = await pedido(e, 'todos', query).query(`
-    SELECT ESTADO, COUNT(*) AS n
+    SELECT ESTADO, COUNT(*) AS n,
+           SUM(CASE WHEN ${WHERE_A_VINCULAR} THEN 1 ELSE 0 END) AS aVincular
     FROM PHF_COMPROBANTE
     WHERE ${WHERE_BUSQUEDA}
     GROUP BY ESTADO
@@ -148,10 +156,12 @@ export async function contarPorEstadoEn(e: Ejecutor, query: string): Promise<Con
     registrado: 0,
     existente: 0,
     error: 0,
+    vincular: 0,
   }
   for (const row of r.recordset) {
     c[String(row.ESTADO) as Estado] = Number(row.n)
     c.todos += Number(row.n)
+    c.vincular += Number(row.aVincular ?? 0)
   }
   return c
 }

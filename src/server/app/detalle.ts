@@ -70,6 +70,8 @@ export type RenglonPdfGuardado = {
   id: number
   orden: number
   codigo: string | null
+  /** La descripción impresa: la clave para vincular un renglón sin código. */
+  descripcion: string | null
   cantidad: string | null
   /** El precio unitario impreso, que puede ser el de lista. Ver descuentoGlobal.ts. */
   precioImpreso: string | null
@@ -190,12 +192,13 @@ export async function guardarExtraccionEn(
       .input('id', sql.Int, comprobanteId)
       .input('orden', sql.Int, ordenPdf)
       .input('codigo', sql.NVarChar(60), r.codigo)
+      .input('descripcion', sql.NVarChar(300), r.descripcion === null ? null : r.descripcion.slice(0, 300))
       .input('cant', sql.Decimal(19, 4), parsearImporteONulo(r.cantidad))
       .input('precio', sql.Decimal(19, 4), parsearImporteONulo(r.precioUnitario))
       .input('subtotal', sql.Decimal(19, 4), parsearImporteONulo(r.subtotal))
       .query(`
-        INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO)
-        VALUES (@id, @orden, @codigo, @cant, @precio, @subtotal)
+        INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO)
+        VALUES (@id, @orden, @codigo, @descripcion, @cant, @precio, @subtotal)
       `)
   }
 
@@ -223,7 +226,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       SELECT ID, ORDEN, CONCEPTO, IMPORTE, GRAVADO
       FROM PHF_CARGO WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
-      SELECT ID, ORDEN, CODIGO, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO
+      SELECT ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO
       FROM PHF_RENGLON_PDF WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
     `)
 
@@ -262,6 +265,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       id: Number(x.ID),
       orden: Number(x.ORDEN),
       codigo: x.CODIGO === null ? null : String(x.CODIGO),
+      descripcion: x.DESCRIPCION === null ? null : String(x.DESCRIPCION),
       cantidad: x.CANTIDAD === null ? null : String(x.CANTIDAD),
       precioImpreso: x.PRECIO_IMPRESO === null ? null : String(x.PRECIO_IMPRESO),
       subtotalImpreso: x.SUBTOTAL_IMPRESO === null ? null : String(x.SUBTOTAL_IMPRESO),

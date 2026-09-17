@@ -12,14 +12,21 @@
  * para grabar hace falta leer lo que la factura cobra por renglón. Ver
  * `descuentoGlobal.ts`.
  *
- * Son cuatro datos y no cinco (no se pide la descripción) por una razón
- * medida: el JSON Schema de structured outputs tiene un techo de tamaño, y
- * con cuatro datos por ítem el array entra con 31 campos de cabecera y no
- * con 32 (medido contra la API el 2026-09-15). Para hacerle lugar, artículos
- * dejó de pedir el 5º slot de IVA -- ver CAMPOS_NO_ANALIZADOS.
+ * La descripción se sumó el 2026-09-17 (pedido del usuario): hay
+ * proveedores que no imprimen código de artículo, y lo único estable de un
+ * renglón a otro es cómo describen la mercadería. Con ella el operador
+ * vincula el renglón a un artículo de Tango una vez y las facturas
+ * siguientes emparejan solas (PHF_ARTICULO_PROVEEDOR).
+ *
+ * Son cinco datos por ítem con 31 campos de cabecera: medido contra la API
+ * ese mismo día, entra. Con 32 campos no entraban ni cuatro (medido el
+ * 2026-09-15): para hacerle lugar, artículos dejó de pedir el 5º slot de
+ * IVA -- ver CAMPOS_NO_ANALIZADOS.
  */
 export type RenglonPdf = {
   codigo: string | null
+  /** La descripción del artículo tal como está impresa. */
+  descripcion: string | null
   cantidad: string | null
   /** El precio unitario tal como está impreso. Puede ser el de lista, bruto. */
   precioUnitario: string | null
@@ -27,4 +34,4 @@ export type RenglonPdf = {
   subtotal: string | null
 }
 
-export const CLAVES_RENGLON_PDF = ['codigo', 'cantidad', 'precioUnitario', 'subtotal'] as const
+export const CLAVES_RENGLON_PDF = ['codigo', 'descripcion', 'cantidad', 'precioUnitario', 'subtotal'] as const

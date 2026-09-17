@@ -204,6 +204,8 @@ artículo que la factura cobra, con cuatro datos tal como están impresos:
 - "codigo": el CÓDIGO del artículo. Es el que imprime el proveedor: a veces
   es el mismo que usamos nosotros y a veces es el suyo propio; copiá el que
   figure, sin traducirlo. Si el renglón no trae código, dejalo vacío.
+- "descripcion": la DESCRIPCIÓN del artículo tal como está impresa, entera.
+  Es lo que identifica al artículo cuando la factura no trae código.
 - "cantidad": la CANTIDAD facturada.
 - "precioUnitario": el PRECIO UNITARIO tal como está impreso, aunque sea el
   de lista antes de un descuento. No lo recalcules.
@@ -211,7 +213,6 @@ artículo que la factura cobra, con cuatro datos tal como están impresos:
   "Subtotal", "Importe", "Total" del renglón). No lo recalcules: si
   cantidad × precio no da el subtotal, copiá igual lo que dice el papel --
   el sistema resuelve el descuento después.
-No se te pide la descripción del artículo.
 No metas en ese array los totales, subtotales generales, descuentos ni las
 líneas de impuestos del pie: solo la mercadería.
 Si el pie trae un DESCUENTO GLOBAL sobre toda la compra -- "Descuento
@@ -343,4 +344,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v11'
+export const VERSION_PROMPT = 'v12'

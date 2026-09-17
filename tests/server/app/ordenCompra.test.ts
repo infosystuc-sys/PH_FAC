@@ -4,11 +4,13 @@ import { conRollback } from '@/server/db/tx'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 import { obtenerDetalleEn } from '@/server/app/detalle'
+import { aprenderArticuloEn } from '@/server/app/articulosProveedor'
 import {
   agregarOcEn,
   quitarOcEn,
   ocsDelComprobanteEn,
   renglonesSinOcEn,
+  recalcularAVincularEn,
 } from '@/server/app/ordenCompra'
 import { buscarOcPendientes, type OrdenCompra } from '@/server/tango/ordenesCompra'
 
@@ -272,6 +274,86 @@ describe('renglonesSinOcEn', () => {
       await agregarOcEn(tx, id, oc.nOrdenCo, p!.codProvee)
 
       expect(await renglonesSinOcEn(tx, id, p!.codProvee)).toEqual([])
+    })
+  })
+})
+
+describe('vincular por descripcion (renglones sin codigo)', () => {
+  // Hay proveedores que no imprimen codigo de articulo (2026-09-17): el
+  // operador vincula la descripcion una vez y las facturas siguientes del
+  // mismo proveedor emparejan solas. Escribe en PHF_ARTICULO_PROVEEDOR,
+  // tabla propia, dentro de conRollback.
+  async function renglonSinCodigo(tx: sql.Transaction, id: number, descripcion: string, cantidad: string) {
+    await tx
+      .request()
+      .input('id', sql.Int, id)
+      .input('desc', sql.NVarChar(300), descripcion)
+      .input('cant', sql.NVarChar(40), cantidad)
+      .query(`
+        INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD)
+        VALUES (@id, 1, NULL, @desc, @cant)
+      `)
+  }
+
+  it('sin nada aprendido, el renglon queda sin orden y el comprobante a vincular', async () => {
+    const p = await unProveedorConOc()
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonSinCodigo(tx, id, 'SMART TV 40" FHD PHILIPS', '15')
+
+      const faltan = await renglonesSinOcEn(tx, id, p!.codProvee)
+      expect(faltan).toHaveLength(1)
+      expect(faltan[0].codigo).toBe('')
+      expect(faltan[0].descripcion).toBe('SMART TV 40" FHD PHILIPS')
+      expect(faltan[0].porDescripcion).toBe(false)
+
+      expect(await recalcularAVincularEn(tx, id, p!.codProvee)).toBe(1)
+      const fila = await tx.request().input('id', sql.Int, id)
+        .query('SELECT RENGLONES_A_VINCULAR AS n FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(Number(fila.recordset[0].n)).toBe(1)
+    })
+  })
+
+  it('vinculada la descripcion, el renglon empareja con la OC y deja de estar a vincular', async () => {
+    const p = await unProveedorConOc()
+    const oc = p!.ocs[0]
+    const articulo = primerRenglon(oc).codArticu
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonSinCodigo(tx, id, 'Smart TV 40" FHD Philips', '1')
+
+      // Lo que hace el operador desde la tarjeta de la OC. Con otra grafia
+      // (mayusculas, espacios) a proposito: la clave es la normalizada.
+      await aprenderArticuloEn(tx, p!.codProvee, '  SMART  TV 40" FHD  PHILIPS ', articulo)
+      expect(await recalcularAVincularEn(tx, id, p!.codProvee)).toBe(0)
+
+      await agregarOcEn(tx, id, oc.nOrdenCo, p!.codProvee)
+      const detalle = await obtenerDetalleEn(tx, id)
+      const conOc = detalle.renglones.filter((r) => r.ocNOrdenCo)
+      expect(conOc).toHaveLength(1)
+      expect(conOc[0].codigo).toBe(articulo)
+      expect(conOc[0].pdfOrden).toBe(1)
+      expect(await renglonesSinOcEn(tx, id, p!.codProvee)).toEqual([])
+    })
+  })
+
+  it('si la factura trae codigo, la descripcion aprendida no lo pisa', async () => {
+    const p = await unProveedorConOc()
+    const oc = p!.ocs[0]
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await tx.request().input('id', sql.Int, id)
+        .query(`INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD)
+                VALUES (@id, 1, 'NO-ESTA-EN-NINGUNA-OC', 'algo', '1')`)
+      await aprenderArticuloEn(tx, p!.codProvee, 'algo', primerRenglon(oc).codArticu)
+
+      const faltan = await renglonesSinOcEn(tx, id, p!.codProvee)
+      expect(faltan).toHaveLength(1)
+      expect(faltan[0].codigo).toBe('NO-ESTA-EN-NINGUNA-OC')
+      expect(faltan[0].porDescripcion).toBe(false)
     })
   })
 })

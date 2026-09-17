@@ -50,6 +50,7 @@ const DEFINICIONES: Definicion[] = [
         ARCHIVO_HASH        CHAR(64)       NOT NULL,
         ESTADO              VARCHAR(20)    NOT NULL,
         TIPO_FACTURA        VARCHAR(20)    NULL,
+        RENGLONES_A_VINCULAR INT           NOT NULL CONSTRAINT DF_PHF_COMP_AVINCULAR DEFAULT 0,
         MOTIVO_OBSERVACION  NVARCHAR(60)   NULL,
         NOTA_OBSERVACION    NVARCHAR(1000) NULL,
         TIPO                VARCHAR(10)    NULL,
@@ -114,6 +115,15 @@ const DEFINICIONES: Definicion[] = [
       // del comprobante antes de reescribirlos, asi que un PHF_CAMPO
       // escrito en la importacion no sobreviviria a su propia extraccion.
       { nombre: 'TIPO_FACTURA', ddl: 'TIPO_FACTURA VARCHAR(20) NULL' },
+      // Cuantos renglones de la factura (PHF_RENGLON_PDF) vienen sin codigo
+      // de articulo y todavia no tienen una descripcion aprendida para este
+      // proveedor (PHF_ARTICULO_PROVEEDOR). Es lo que alimenta la pestaña
+      // "A vincular" de la bandeja (2026-09-17, pedido del usuario). Se
+      // recalcula al terminar de leer y cada vez que el operador vincula una
+      // descripcion; vive desnormalizado porque la bandeja lo filtra y lo
+      // cuenta, y calcularlo por comprobante en cada listado seria una
+      // consulta por fila.
+      { nombre: 'RENGLONES_A_VINCULAR', ddl: 'RENGLONES_A_VINCULAR INT NOT NULL CONSTRAINT DF_PHF_COMP_AVINCULAR DEFAULT 0' },
     ],
   },
   {
@@ -187,6 +197,7 @@ const DEFINICIONES: Definicion[] = [
         CANTIDAD        DECIMAL(19,4)  NULL,
         PRECIO_IMPRESO  DECIMAL(19,4)  NULL,
         SUBTOTAL_IMPRESO DECIMAL(19,4) NULL,
+        DESCRIPCION     NVARCHAR(300)  NULL,
         CONSTRAINT PK_PHF_RENGLON_PDF PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON_PDF UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_PDF_COMP FOREIGN KEY (COMPROBANTE_ID)
@@ -201,6 +212,12 @@ const DEFINICIONES: Definicion[] = [
       // o ya dentro del subtotal: descuentoGlobal.ts decide cual de los dos.
       { nombre: 'PRECIO_IMPRESO', ddl: 'PRECIO_IMPRESO DECIMAL(19,4) NULL' },
       { nombre: 'SUBTOTAL_IMPRESO', ddl: 'SUBTOTAL_IMPRESO DECIMAL(19,4) NULL' },
+      // La descripcion del articulo tal como la imprime la factura. Es la
+      // clave para vincular un renglon SIN codigo con un articulo de Tango
+      // (2026-09-17, pedido del usuario): hay proveedores que no imprimen
+      // codigo, y lo unico estable de un renglon a otro es como describen la
+      // mercaderia.
+      { nombre: 'DESCRIPCION', ddl: 'DESCRIPCION NVARCHAR(300) NULL' },
     ],
   },
   {
@@ -226,6 +243,7 @@ const DEFINICIONES: Definicion[] = [
         OC_TALONARIO        INT            NULL,
         OC_N_RENGL_OC       INT            NULL,
         OC_PENDIENTE        DECIMAL(19,4)  NULL,
+        PDF_ORDEN           INT            NULL,
         CONSTRAINT PK_PHF_RENGLON PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_COMP FOREIGN KEY (COMPROBANTE_ID)
@@ -342,6 +360,35 @@ const DEFINICIONES: Definicion[] = [
         ddl: 'CREATE INDEX IX_PHF_ALIPROV_LOOKUP ON PHF_ALICUOTA_PROVEEDOR (COD_PROVEE, TIPO);',
       },
     ],
+  },
+  {
+    // Que articulo nuestro es cada DESCRIPCION que imprime un proveedor que
+    // no imprime codigo de articulo (2026-09-17, pedido del usuario). Es la
+    // contraparte de CPA15.COD_SINONI para el caso en que no hay codigo: ahi
+    // no entra -- COD_SINONI es varchar(15) -- y ademas es una tabla de Tango
+    // que no corresponde llenar con textos largos. Lo enseña el operador una
+    // vez desde la tarjeta de la orden de compra, y las facturas siguientes
+    // del mismo proveedor emparejan solas.
+    tabla: 'PHF_ARTICULO_PROVEEDOR',
+    ddlTabla: `
+      CREATE TABLE PHF_ARTICULO_PROVEEDOR (
+        ID              INT IDENTITY(1,1) NOT NULL,
+        COD_PROVEE      VARCHAR(20)    NOT NULL,
+        -- La descripcion impresa, normalizada (sin acentos ni mayusculas,
+        -- espacios colapsados): dos facturas del mismo proveedor con distinto
+        -- casing tienen que pegar en la misma fila. Ver normalizarDescripcionArticulo.
+        DESCRIPCION     NVARCHAR(300)  NOT NULL,
+        -- Nuestro codigo, tal como esta en STA11 (con sus espacios, si los tiene).
+        COD_ARTICU      VARCHAR(20)    NOT NULL,
+        FECHA_ALTA      DATETIME2      NOT NULL CONSTRAINT DF_PHF_ARTPROV_ALTA DEFAULT SYSDATETIME(),
+        FECHA_MODIF     DATETIME2      NULL,
+        USUARIO         NVARCHAR(60)   NOT NULL,
+        CONSTRAINT PK_PHF_ARTICULO_PROVEEDOR PRIMARY KEY (ID),
+        -- Una descripcion de un proveedor apunta a UN articulo: la ultima
+        -- eleccion del operador reemplaza a la anterior (MERGE).
+        CONSTRAINT UQ_PHF_ARTPROV UNIQUE (COD_PROVEE, DESCRIPCION)
+      );
+    `,
   },
   {
     tabla: 'PHF_CONFIGURACION',

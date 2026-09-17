@@ -29,6 +29,7 @@ import {
 import { emparejarOcs, resolverCodigoArticulo } from '@/lib/matchOc'
 import { tipoPorContenido, NOMBRES_ADMITIDOS } from '@/lib/tipoArchivo'
 import { normalizarCodigo } from '@/lib/cotejoOc'
+import { aprenderArticuloEn } from './articulosProveedor'
 import {
   listarConceptos,
   asignarConceptoProveedor,
@@ -36,7 +37,13 @@ import {
 } from '@/server/tango/conceptos'
 import { renglonesDelRemitoInterno } from '@/server/tango/remitos'
 import { buscarOcPendientes, type OrdenCompra } from '@/server/tango/ordenesCompra'
-import { agregarOcEn, quitarOcEn, renglonesSinOcEn } from './ordenCompra'
+import {
+  agregarOcEn,
+  quitarOcEn,
+  renglonesSinOcEn,
+  lineasPdfResueltasEn,
+  recalcularAVincularEn,
+} from './ordenCompra'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
 import { aprenderImpuesto, type TipoAprendizaje } from './aprendizajeImpuestos'
@@ -376,6 +383,39 @@ export async function asociarCodigoProveedor(
 }
 
 /**
+ * El operador vincula la DESCRIPCION de un renglon sin codigo con un
+ * articulo nuestro (2026-09-17, pedido del usuario). Se aprende para el
+ * proveedor (PHF_ARTICULO_PROVEEDOR), se recalcula cuantos renglones
+ * quedan por vincular --es lo que saca al comprobante de la pestaña "A
+ * vincular" cuando llega a cero-- y se deja constancia en el historial.
+ * Es la contraparte de `asociarCodigoProveedor` para cuando no hay codigo.
+ */
+export async function vincularDescripcionArticulo(
+  comprobanteId: number,
+  codProvee: string,
+  descripcion: string,
+  codArticu: string,
+): Promise<{ quedan: number }> {
+  const desc = descripcion.trim()
+  const art = codArticu.trim()
+  if (!codProvee.trim() || !desc || !art) throw new Error('Faltan datos para vincular el artículo.')
+
+  const quedan = await conTransaccion(async (tx) => {
+    await aprenderArticuloEn(tx, codProvee, desc, art)
+    await auditarEn(
+      tx,
+      comprobanteId,
+      `Descripción vinculada a un artículo para el proveedor: "${desc}" = ${art}`,
+    )
+    return recalcularAVincularEn(tx, comprobanteId, codProvee)
+  })
+
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  revalidatePath('/comprobantes')
+  return { quedan }
+}
+
+/**
  * "Vincular todos": la version en lote de `asociarCodigoProveedor` -- el
  * mismo UPSERT en CPA15, pero para todos los renglones que ya tienen los
  * dos códigos resueltos de una sola vez, en vez de que el operador
@@ -558,6 +598,10 @@ export type OfertaOc = {
      * reconoce: ese es el que el operador puede enseñar.
      */
     reconocidoComo: { codArticu: string; descripcion: string } | null
+    /** La descripción impresa: es con lo que se vincula un renglón sin código. */
+    descripcion: string | null
+    /** El código salió de una descripción aprendida, no vino impreso. */
+    porDescripcion: boolean
   }[]
 }
 
@@ -587,15 +631,21 @@ export async function listarOcParaComprobante(
     ).values(),
   ].sort((a, b) => a.codArticu.localeCompare(b.codArticu))
 
-  const { detalle, sinOrden } = await conTransaccion(async (tx) => ({
-    detalle: await obtenerDetalleEn(tx, comprobanteId),
-    sinOrden: await renglonesSinOcEn(tx, comprobanteId, codProvee),
-  }))
+  const { detalle, sinOrden, lineas } = await conTransaccion(async (tx) => {
+    const detalle = await obtenerDetalleEn(tx, comprobanteId)
+    return {
+      detalle,
+      sinOrden: await renglonesSinOcEn(tx, comprobanteId, codProvee),
+      // Con el codigo aprendido por descripcion ya aplicado, para que un
+      // renglon vinculado empareje igual que uno con codigo impreso.
+      lineas: await lineasPdfResueltasEn(tx, detalle, codProvee),
+    }
+  })
   const imputadas = [
     ...new Set(detalle.renglones.map((r) => r.ocNOrdenCo).filter((x): x is string => !!x)),
   ]
 
-  const codigos = detalle.renglonesPdf.map((r) => r.codigo)
+  const codigos = lineas.map((r) => r.codigo)
   const sinonimos = await articulosPorSinonimo(
     codProvee,
     codigos.map((c) => c ?? ''),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { emparejarOcs } from '@/lib/matchOc'
+import { emparejarOcs, resolverLineasPdf, lineasAVincular, normalizarDescripcionArticulo } from '@/lib/matchOc'
 
 /**
  * Las dos OC pendientes reales de CARRIER (010246) al implementar esto, y
@@ -108,5 +108,46 @@ describe('emparejarOcs', () => {
     }
     const r = emparejarOcs(['106037'], [oc], new Map())
     expect(r.coinciden[0].articulos).toEqual(['106037'])
+  })
+})
+
+describe('resolverLineasPdf', () => {
+  // Hay proveedores que no imprimen codigo de articulo (RED DEL INTERIOR,
+  // 2026-09-17): lo unico estable es la descripcion, y el operador la
+  // vincula una vez a un articulo nuestro.
+  const aprendidas = { [normalizarDescripcionArticulo('40PFD6920/77 SMART TV 40" FHD PHILIPS')]: '107001' }
+
+  it('un renglon sin codigo toma el articulo aprendido para su descripcion', () => {
+    const r = resolverLineasPdf(
+      [{ orden: 1, codigo: null, descripcion: '40PFD6920/77  Smart TV 40" FHD Philips', cantidad: '15' }],
+      aprendidas,
+    )
+    expect(r[0].codigo).toBe('107001')
+    expect(r[0].porDescripcion).toBe(true)
+  })
+
+  it('si la factura trae codigo, manda el codigo: la descripcion no se mira', () => {
+    const r = resolverLineasPdf(
+      [{ orden: 1, codigo: 'ABC', descripcion: '40PFD6920/77 SMART TV 40" FHD PHILIPS', cantidad: '1' }],
+      aprendidas,
+    )
+    expect(r[0].codigo).toBe('ABC')
+    expect(r[0].porDescripcion).toBe(false)
+  })
+
+  it('sin descripcion aprendida, el renglon queda sin codigo y a vincular', () => {
+    const r = resolverLineasPdf(
+      [
+        { orden: 1, codigo: null, descripcion: 'GESTION DE COMPRA 1%', cantidad: '1' },
+        { orden: 2, codigo: null, descripcion: '40PFD6920/77 SMART TV 40" FHD PHILIPS', cantidad: '15' },
+      ],
+      aprendidas,
+    )
+    expect(r[0].codigo).toBeNull()
+    expect(lineasAVincular(r).map((l) => l.orden)).toEqual([1])
+  })
+
+  it('la clave de la descripcion ignora acentos, mayusculas y espacios de mas', () => {
+    expect(normalizarDescripcionArticulo('  Colchón  190x140  BRISAS ')).toBe('colchon 190x140 brisas')
   })
 })

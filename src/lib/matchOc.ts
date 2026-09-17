@@ -163,3 +163,66 @@ export function emparejarOcs<T extends OcParaMatch>(
 
   return { coinciden, sinResolver, reconocidosSinPendiente }
 }
+
+/**
+ * Cómo se compara la descripción impresa de un artículo: sin acentos, en
+ * minúsculas, con los espacios colapsados. Es la clave de
+ * `PHF_ARTICULO_PROVEEDOR` -- se guarda y se busca con esta misma función,
+ * si divergieran una fila aprendida nunca haría match.
+ */
+export function normalizarDescripcionArticulo(texto: string | null | undefined): string {
+  return (texto ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Un renglón del PDF con lo que hace falta para resolverle el artículo. */
+export type LineaPdfParaResolver = {
+  orden: number
+  codigo: string | null
+  descripcion: string | null
+  cantidad: string | null
+}
+
+/** La misma línea, ya con el código con el que se la va a emparejar. */
+export type LineaPdfResuelta = LineaPdfParaResolver & {
+  /**
+   * `true` cuando el código no vino impreso y salió de lo que el operador
+   * enseñó para esta descripción (PHF_ARTICULO_PROVEEDOR). Se distingue
+   * para mostrarlo: el operador tiene que ver que ese emparejamiento es
+   * por descripción, no por código.
+   */
+  porDescripcion: boolean
+}
+
+/**
+ * Le pone a cada renglón el código con el que se lo empareja.
+ *
+ * Hay proveedores que no imprimen código de artículo (2026-09-17, pedido
+ * del usuario): lo único estable de un renglón a otro es la descripción.
+ * El operador la vincula una vez a un artículo nuestro y de ahí en más se
+ * resuelve sola. La regla es simple y no adivina: si la factura trae
+ * código, manda el código (y su sinónimo de CPA15); si no trae, se busca la
+ * descripción entre lo aprendido; si tampoco está, el renglón queda sin
+ * código y la tarjeta de la OC lo ofrece para vincular.
+ */
+export function resolverLineasPdf(
+  lineas: LineaPdfParaResolver[],
+  porDescripcion: Record<string, string>,
+): LineaPdfResuelta[] {
+  return lineas.map((l) => {
+    if ((l.codigo ?? '').trim() !== '') return { ...l, porDescripcion: false }
+    const aprendido = porDescripcion[normalizarDescripcionArticulo(l.descripcion)]
+    return aprendido
+      ? { ...l, codigo: aprendido, porDescripcion: true }
+      : { ...l, porDescripcion: false }
+  })
+}
+
+/** Los renglones que siguen sin código después de aplicar lo aprendido. */
+export function lineasAVincular(lineas: LineaPdfResuelta[]): LineaPdfResuelta[] {
+  return lineas.filter((l) => (l.codigo ?? '').trim() === '')
+}

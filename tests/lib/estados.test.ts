@@ -31,6 +31,9 @@ describe('modelo de estados', () => {
     expect(ORDEN_TABS.map((t) => t.clave)).toEqual([
       'todos',
       'leido',
+      // 'A vincular' va pegado a Pendientes: es un corte de esos mismos
+      // comprobantes (2026-09-17), no un estado.
+      'vincular',
       'observacion',
       'confirmado',
       'registrado',

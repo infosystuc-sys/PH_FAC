@@ -297,3 +297,20 @@
 .codigoFactura {
   color: var(--texto-3);
 }
+
+/* Un renglon sin codigo, en el aviso rojo: la descripcion impresa arriba y
+   el desplegable para vincularla debajo. Ocupa la columna del medio de
+   .faltanteFila; la cantidad sigue a la derecha. */
+.vincularCol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* La descripcion tal como la imprime la factura: es lo que el operador
+   coteja contra el papel para elegir el articulo, asi que va en Mono. */
+.descripcionFactura {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}

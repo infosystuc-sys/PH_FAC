@@ -17,11 +17,19 @@ export const ESTADOS: Record<Estado, { label: string; fondo: string; texto: stri
   existente:   { label: 'Comprobante existente',  fondo: '#e8e6e1', texto: '#5a5347' },
 }
 
-export type ClaveTab = Estado | 'todos'
+/**
+ * 'vincular' no es un estado: es un corte transversal (2026-09-17, pedido
+ * del usuario). Son las facturas de articulos que tienen renglones sin
+ * codigo de articulo y sin descripcion aprendida -- las que el operador
+ * tiene que vincular a mano antes de poder imputarles la orden de compra.
+ * Ver RENGLONES_A_VINCULAR en migrate.ts.
+ */
+export type ClaveTab = Estado | 'todos' | 'vincular'
 
 export const ORDEN_TABS: { clave: ClaveTab; label: string }[] = [
   { clave: 'todos',       label: 'Todos' },
   { clave: 'leido',       label: 'Pendientes' },
+  { clave: 'vincular',    label: 'A vincular' },
   { clave: 'observacion', label: 'En observación' },
   { clave: 'confirmado',  label: 'Confirmados' },
   { clave: 'registrado',  label: 'Registrados' },

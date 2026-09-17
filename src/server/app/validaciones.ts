@@ -36,6 +36,7 @@ import { cotejarConOc, type ResultadoCotejoOc } from '@/lib/cotejoOc'
 import { parsearImporte, parsearImporteONulo } from '@/lib/formato'
 import { resolverDescuentoDeDetalle, netosPorOrden } from '@/lib/descuentoGlobal'
 import { articulosPorSinonimo } from '@/server/tango/articulos'
+import { lineasPdfResueltasEn } from './ordenCompra'
 import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 
@@ -261,7 +262,10 @@ export async function validarListoParaRegistrarEn(
   const conOc = detalle.renglones.filter((r) => r.ocNOrdenCo)
   let cotejoOc: ResultadoCotejoOc | null = null
   if (valores.tipoFactura === 'articulos' && conOc.length > 0) {
-    const codigos = detalle.renglonesPdf
+    // Con el codigo aprendido por descripcion ya aplicado: un renglon que el
+    // operador vinculo tiene que cotejar igual que uno con codigo impreso.
+    const lineas = await lineasPdfResueltasEn(e, detalle, codProvee)
+    const codigos = lineas
       .map((r) => (r.codigo ?? '').trim())
       .filter((c) => c !== '')
     // `articulosPorSinonimo` y no `sinonimosDelProveedor`: lo que se tiene es
@@ -275,7 +279,7 @@ export async function validarListoParaRegistrarEn(
       : new Map<string, string>()
 
     cotejoOc = cotejarConOc(
-      detalle.renglonesPdf.map((r) => ({ orden: r.orden, codigo: r.codigo, cantidad: r.cantidad })),
+      lineas.map((r) => ({ orden: r.orden, codigo: r.codigo, cantidad: r.cantidad })),
       conOc.map((r) => ({
         nRenglOc: r.ocNRenglOc!,
         codArticu: (r.codigoFinal ?? r.codigo ?? '').trim(),

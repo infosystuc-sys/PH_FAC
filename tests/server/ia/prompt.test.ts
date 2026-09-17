@@ -26,11 +26,12 @@ describe('PROMPTS_EXTRACCION', () => {
     // Desde el 2026-09-15 pide tambien el precio y el subtotal impresos: los
     // importes que valen son los de la factura (decision del usuario), y el
     // descuento global del pie hay que resolverlo contra ellos. La
-    // descripcion sigue sin pedirse: con cuatro datos por item el array entra
-    // en el techo del schema con 31 campos, con cinco no (medido).
+    // descripcion se sumo el 2026-09-17.
     expect(PROMPTS_EXTRACCION.articulos).toContain('"precioUnitario"')
     expect(PROMPTS_EXTRACCION.articulos).toContain('"subtotal"')
-    expect(PROMPTS_EXTRACCION.articulos).toContain('No se te pide la descripción')
+    // Y desde el 2026-09-17 la descripcion: es con lo que se vincula un
+    // renglon sin codigo (31 campos + 5 datos por item entra, medido).
+    expect(PROMPTS_EXTRACCION.articulos).toContain('"descripcion"')
     expect(PROMPTS_EXTRACCION.articulos).toContain('descuentogeneral')
     // El precio impreso puede ser el de lista: se copia, no se recalcula.
     expect(PROMPTS_EXTRACCION.articulos).toContain('No lo recalcules')

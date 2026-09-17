@@ -46,6 +46,7 @@ import {
 } from '@/lib/validaciones'
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverDescuentoDeDetalle, netoCorregido } from '@/lib/descuentoGlobal'
+import { recalcularAVincularEn } from './ordenCompra'
 import { fechaContableDe } from '@/lib/fechaContable'
 import { cierreContable } from '@/server/tango/parametros'
 import { listarAlicuotasIva } from '@/server/tango/impuestos'
@@ -1090,6 +1091,21 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // Solo articulos: si el "neto gravado" impreso es el de antes del
       // descuento general, lo reemplaza por la base real que confirma el IVA.
       await corregirNetoTrasDescuentoEn(tx, id, cod, tipoFactura)
+
+      // Solo articulos: cuantos renglones vienen sin codigo y sin una
+      // descripcion aprendida para este proveedor. Es lo que manda el
+      // comprobante a la pestaña "A vincular". Va despues de resolver el
+      // proveedor, porque lo aprendido es por proveedor.
+      if (tipoFactura === 'articulos') {
+        const aVincular = await recalcularAVincularEn(tx, id, cod)
+        if (aVincular > 0) {
+          await auditarEn(
+            tx,
+            id,
+            `${aVincular} renglón(es) sin código de artículo: hay que vincular la descripción con un artículo de Tango`,
+          )
+        }
+      }
 
       // La fecha de emision, en la forma canonica dd/mm/aaaa. Cada proveedor
       // la imprime como quiere ("16/9/2026", "30.07.2026") y la IA la copia
