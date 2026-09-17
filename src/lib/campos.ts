@@ -98,10 +98,17 @@ export const CAMPOS: DefCampo[] = [
   // El proveedor de Tango va en esta seccion y no en "Imputacion": es la
   // respuesta a "quien nos vendio", igual que la razon social y el CUIT de
   // arriba, solo que resuelta contra CPA01 en vez de leida del PDF. La
-  // celda de al lado -- el concepto asociado a ese proveedor -- la pinta el
-  // formulario: sale de Tango, no se guarda en PHF_CAMPO.
+  // celda de al lado -- el concepto de Tango -- la pinta el formulario.
   { clave: 'codprovee', label: 'Cód. proveedor Tango', grupo: 'proveedor', span: 3,
     tipo: 'texto', mono: true, extraePorIA: false, soloLectura: true },
+  // El concepto elegido para ESTE comprobante, cuando el operador no quiere
+  // el de la ficha del proveedor (2026-09-17, pedido del usuario). Vacio =
+  // vale el de la ficha; con valor = gana este, y la ficha no se toca. Mismo
+  // patron que codivaN: esta en el catalogo para ser clave valida de
+  // PHF_CAMPO, pero lo pinta la celda de al lado de codprovee (ver
+  // OCULTOS_EN_GRILLA), que muestra el resuelto y deja cambiarlo.
+  { clave: 'concepto', label: 'Concepto en Tango', grupo: 'proveedor', span: 3,
+    tipo: 'select', mono: false, extraePorIA: false, soloLectura: false },
 
   // Importes. Rehecho el 2026-08-05: Tango no guarda el neto por base,
   // guarda un neto gravado total y hasta cinco tripletas de
@@ -248,7 +255,7 @@ export function camposIaPara(tipo: TipoFactura): DefCampo[] {
  * cuando el operador todavia no corrigio nada. Ocupan lugar en la grilla
  * igual -- son esa celda -- asi que sus spans si cuentan para el ancho.
  */
-export const OCULTOS_EN_GRILLA = /^(?:codiva[1-5]|codpercep[1-4]|codvarios[12])$/
+export const OCULTOS_EN_GRILLA = /^(?:codiva[1-5]|codpercep[1-4]|codvarios[12]|concepto)$/
 
 const POR_CLAVE = new Map(CAMPOS.map((x) => [x.clave, x]))
 

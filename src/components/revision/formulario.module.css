@@ -148,3 +148,13 @@
   background: var(--error-fondo);
   color: var(--error);
 }
+
+/* Nota al lado del label de una celda derivada, para decir que lo elegido
+   vale solo para este comprobante (el concepto). Ambar como el propio
+   select: es la misma señal en dos lugares. */
+.labelNota {
+  color: var(--alerta);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}

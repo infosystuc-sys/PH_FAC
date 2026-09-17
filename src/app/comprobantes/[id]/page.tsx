@@ -5,7 +5,7 @@ import { validarComprobante, validarListoParaRegistrar } from '@/server/app/vali
 import { listarCondicionesCompra } from '@/server/tango/condicionesCompra'
 import { listarCodigosImpuesto, listarAlicuotasIva } from '@/server/tango/impuestos'
 import { buscarRemitosPendientes } from '@/server/tango/remitos'
-import { conceptoDelComprobante } from '@/server/tango/conceptos'
+import { conceptoDelComprobante, listarConceptos } from '@/server/tango/conceptos'
 import { cargarAprendidos } from '@/server/app/aprendizajeImpuestos'
 import { probarConexion } from '@/server/db/pool'
 import { leerFiltro } from '@/lib/estados'
@@ -62,7 +62,7 @@ export default async function RevisionPage({
   // paralelo en vez de en serie. `validarComprobante` queda afuera del
   // Promise.all porque necesita el `detalle` ya resuelto (se lo pasa para
   // no releer PHF_CAMPO/PHF_RENGLON/PHF_AUDITORIA una segunda vez adentro).
-  const [vecinos, detalle, condicionesCompra, codigosImpuesto, alicuotasIva, conexion] =
+  const [vecinos, detalle, condicionesCompra, codigosImpuesto, alicuotasIva, conexion, conceptos] =
     await Promise.all([
       obtenerVecinos({ filtro, query }, id),
       obtenerDetalle(id),
@@ -70,6 +70,9 @@ export default async function RevisionPage({
       mostrarRevision ? listarCodigosImpuesto() : Promise.resolve([]),
       mostrarRevision ? listarAlicuotasIva() : Promise.resolve([]),
       probarConexion(),
+      // El maestro de conceptos, para que el operador pueda elegir otro para
+      // este comprobante sin tocar la ficha del proveedor.
+      mostrarRevision ? listarConceptos() : Promise.resolve([]),
     ])
 
   const qs = new URLSearchParams()
@@ -105,7 +108,11 @@ export default async function RevisionPage({
   // codprovee, y cuando el operador elige otro proveedor `elegirProveedor`
   // hace revalidatePath y esto se recalcula.
   const concepto = mostrarRevision
-    ? await conceptoDelComprobante(tipoFacturaValor, codProveeCampo)
+    ? await conceptoDelComprobante(
+        tipoFacturaValor,
+        codProveeCampo,
+        detalle.campos.find((c) => c.clave === 'concepto')?.valorFinal ?? null,
+      )
     : null
 
   // Lo que este proveedor ya le enseñó a la app para IVA e IIBB (ver
@@ -174,6 +181,7 @@ export default async function RevisionPage({
           codigosImpuesto={codigosImpuesto}
           alicuotasIva={alicuotasIva}
           concepto={concepto}
+          conceptos={conceptos}
           aprendidosIva={aprendidosIva}
           aprendidosPercepcion={aprendidosPercepcion}
           aprendidosVarios={aprendidosVarios}

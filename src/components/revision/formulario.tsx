@@ -120,11 +120,12 @@ function camposVisibles(
       return span === def.span ? def : { ...def, span }
     })
 
-  if (grupo !== 'importes') return todos
-  return todos.filter((def) => {
-    // Los codigos corregidos a mano los pinta la celda del medio de su
-    // propia fila, no este bucle -- ver OCULTOS_EN_GRILLA en campos.ts.
-    if (OCULTOS_EN_GRILLA.test(def.clave)) return false
+  // Los codigos corregidos a mano (y el concepto elegido) los pinta la
+  // celda de al lado de su campo, no este bucle -- ver OCULTOS_EN_GRILLA en
+  // campos.ts.
+  const visibles = todos.filter((def) => !OCULTOS_EN_GRILLA.test(def.clave))
+  if (grupo !== 'importes') return visibles
+  return visibles.filter((def) => {
     const m = RE_SLOT_ALICUOTA.exec(def.clave)
     return !m || Number(m[1]) <= slots
   })
@@ -139,6 +140,7 @@ export function Formulario({
   codigosImpuesto,
   alicuotasIva,
   concepto,
+  conceptos,
   aprendidosIva,
   aprendidosPercepcion,
   aprendidosVarios,
@@ -164,6 +166,9 @@ export function Formulario({
   // servidor porque depende de codprovee, que cambia con router.refresh
   // cuando el operador elige otro proveedor.
   concepto: { codConcepto: string; descripcion: string } | null
+  // El maestro de conceptos (CPA45), para que el operador pueda elegir otro
+  // para este comprobante sin tocar la ficha del proveedor.
+  conceptos: { codConcepto: string; descripcion: string }[]
   // Lo que este proveedor ya le enseñó a la app para IVA e IIBB, para que
   // las celdas "En Tango" propongan en vivo el mismo código que va a
   // resolver el registro real. Ver aprendizajeImpuestos.ts.
@@ -322,8 +327,12 @@ export function Formulario({
                     <CeldaConcepto
                       key="concepto"
                       concepto={concepto}
+                      conceptos={conceptos}
+                      eleccion={valores.concepto ?? ''}
                       hayProveedor={(valores.codprovee ?? '').trim() !== ''}
                       tipoFactura={valores.tipoFactura ?? ''}
+                      bloqueado={soloLectura}
+                      onCambio={(v) => cambiar('concepto', v)}
                     />,
                   ]
                 }

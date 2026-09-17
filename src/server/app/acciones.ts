@@ -151,6 +151,25 @@ export async function guardarCampo(id: number, clave: string, valor: string): Pr
     revalidatePath(`/comprobantes/${id}`)
   }
 
+  // El concepto elegido para este comprobante gana sobre la ficha del
+  // proveedor sin tocarla (2026-09-17). Queda en el historial porque es una
+  // decision que no se ve en Tango --la ficha sigue igual-- y el panel y la
+  // vista previa del asiento lo resuelven en el servidor, asi que hay que
+  // revalidar para que muestren el nuevo.
+  if (clave === 'concepto') {
+    const elegido = valor.trim()
+    await conTransaccion((tx) =>
+      auditarEn(
+        tx,
+        id,
+        elegido
+          ? `Concepto elegido solo para este comprobante: ${elegido} (la ficha del proveedor no cambia)`
+          : 'Concepto: vuelve a valer el de la ficha del proveedor',
+      ),
+    )
+    revalidatePath(`/comprobantes/${id}`)
+  }
+
   // El tipo de factura vive en dos lados a propósito: el campo es lo que
   // ve y edita el operador, la columna es lo que lee la cola para elegir
   // el prompt. Si el operador reclasifica el comprobante y después lo

@@ -308,10 +308,25 @@ export async function validarListoParaRegistrarEn(
   // renglon: ahi no hay concepto y el item dice "No aplica".
   let concepto: ResultadoValidacion = { estado: 'ok', mensaje: 'No aplica.' }
   if (valores.tipoFactura === 'conceptos' || valores.tipoFactura === 'tarjeta') {
-    const encontrado = await conceptoDelComprobante(valores.tipoFactura, codProvee || null)
+    const elegido = (valores.concepto ?? '').trim()
+    const encontrado = await conceptoDelComprobante(valores.tipoFactura, codProvee || null, elegido)
+    // Si el operador eligio un concepto para este comprobante, se dice cual
+    // tiene la ficha del proveedor: la eleccion no la cambia, y conviene que
+    // se vea que son dos cosas distintas.
+    const delProveedor =
+      elegido && valores.tipoFactura === 'conceptos' && codProvee
+        ? await conceptoDelComprobante('conceptos', codProvee, null)
+        : null
+    const aclaracion = elegido
+      ? delProveedor && delProveedor.codConcepto !== encontrado?.codConcepto
+        ? ` Elegido para este comprobante; la ficha del proveedor tiene ${delProveedor.codConcepto} — ${delProveedor.descripcion} y no se modifica.`
+        : ' Elegido para este comprobante.'
+      : ''
     concepto = encontrado
-      ? { estado: 'ok', mensaje: `Concepto: ${encontrado.codConcepto} — ${encontrado.descripcion}.` }
-      : {
+      ? { estado: 'ok', mensaje: `Concepto: ${encontrado.codConcepto} — ${encontrado.descripcion}.${aclaracion}` }
+      : elegido
+        ? { estado: 'error', mensaje: `El concepto ${elegido} elegido para este comprobante no existe en Tango.` }
+        : {
           estado: 'error',
           mensaje:
             valores.tipoFactura === 'tarjeta'

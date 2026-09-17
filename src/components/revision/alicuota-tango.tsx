@@ -317,26 +317,44 @@ export function CeldaVariosTango({
     />
   )
 }
-
 /**
- * El concepto de Tango contra el que se imputa el comprobante. No es un
- * campo: no sale del PDF ni de una eleccion del operador. En una factura de
- * conceptos sale de la ficha del proveedor, y en una liquidacion de tarjeta
- * es el fijo de comisiones -- ver conceptoDelComprobante.
+ * El concepto de Tango contra el que se imputa el comprobante.
  *
- * En una factura de articulos no hay concepto: se imputa renglon por
- * renglon contra el remito, asi que no hay ficha que consultar. Antes esa
- * celda mostraba en rojo "El proveedor no tiene concepto en Tango", que era
- * falso dos veces: no falta nada y no hace falta buscarlo.
+ * En una factura de conceptos arranca con el de la ficha del proveedor y
+ * desde el 2026-09-17 (pedido del usuario) es una lista: el operador puede
+ * elegir OTRO para este comprobante, y esa eleccion se guarda en el campo
+ * `concepto` y gana sobre la ficha sin modificarla -- ver
+ * conceptoDelComprobante. Es el mismo patron que las celdas de IVA y
+ * percepcion: lo resuelto se muestra, la correccion vive aparte. Se pinta
+ * en ambar cuando difiere de la ficha, para que se vea que ese comprobante
+ * va a otro concepto que el habitual del proveedor. Cambiar la ficha del
+ * proveedor sigue siendo otra accion, la del panel "Listo para registrar".
+ *
+ * En una liquidacion de tarjeta es el fijo de comisiones y no se elige. En
+ * una factura de articulos no hay concepto: se imputa renglon por renglon,
+ * asi que no hay ficha que consultar. Antes esa celda mostraba en rojo "El
+ * proveedor no tiene concepto en Tango", que era falso dos veces: no falta
+ * nada y no hace falta buscarlo.
  */
 export function CeldaConcepto({
   concepto,
+  conceptos,
+  eleccion,
   hayProveedor,
   tipoFactura,
+  bloqueado,
+  onCambio,
 }: {
+  /** El resuelto por el servidor: el elegido si lo hay, si no el de la ficha. */
   concepto: { codConcepto: string; descripcion: string } | null
+  /** El maestro (CPA45), para elegir otro. */
+  conceptos: { codConcepto: string; descripcion: string }[]
+  /** Lo guardado en el campo `concepto`: vacio = vale la ficha. */
+  eleccion: string
   hayProveedor: boolean
   tipoFactura: string
+  bloqueado: boolean
+  onCambio: (v: string) => void
 }) {
   // Los articulos no llevan concepto: es informativo, no un faltante.
   if (tipoFactura === 'articulos') {
@@ -346,6 +364,64 @@ export function CeldaConcepto({
         <div className={`${styles.derivado} ${clasePorTono('vacio')}`}>
           No aplica para facturas de artículos
         </div>
+      </div>
+    )
+  }
+
+  if (tipoFactura === 'conceptos') {
+    const elegido = eleccion.trim()
+    // Lo que se muestra seleccionado: la eleccion, o lo que resolvio el
+    // servidor (la ficha). Si no hay ninguno, queda en el placeholder.
+    const valor = elegido || concepto?.codConcepto || ''
+    // Ambar = el operador eligio otro que el de la ficha. Con eleccion y
+    // sin concepto resuelto, el codigo no existe en el maestro: rojo.
+    const tono: Tono = elegido
+      ? concepto
+        ? 'alerta'
+        : 'error'
+      : concepto
+        ? 'ok'
+        : hayProveedor
+          ? 'error'
+          : 'vacio'
+    const opciones = conceptos.map((c) => ({
+      valor: c.codConcepto,
+      label: etiqueta(c.codConcepto, c.descripcion),
+    }))
+    return (
+      <div className={styles.campo} style={{ gridColumn: 'span 3' }}>
+        <span className={styles.label}>
+          Concepto en Tango
+          {elegido && (
+            <span className={styles.labelNota} title="Distinto del de la ficha del proveedor. La ficha no se modifica.">
+              {' '}· solo este comprobante
+            </span>
+          )}
+        </span>
+        <select
+          className={`${styles.derivado} ${clasePorTono(tono)}`}
+          value={valor}
+          disabled={bloqueado}
+          onChange={(e) => onCambio(e.target.value)}
+          title={
+            elegido
+              ? 'Elegido para este comprobante; la ficha del proveedor no cambia'
+              : concepto
+                ? 'El de la ficha del proveedor'
+                : hayProveedor
+                  ? 'El proveedor no tiene concepto en Tango: elegí uno'
+                  : undefined
+          }
+        >
+          <option value="">
+            {hayProveedor ? 'El proveedor no tiene concepto en Tango' : '—'}
+          </option>
+          {opciones.map((o) => (
+            <option key={o.valor} value={o.valor}>
+              {o.label}
+            </option>
+          ))}
+        </select>
       </div>
     )
   }

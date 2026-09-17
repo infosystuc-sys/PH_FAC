@@ -58,10 +58,10 @@ describe('catalogo de campos', () => {
     // rotulo impreso en vez del codigo; hasta entonces su celda del medio no
     // existia en el catalogo y habia que sumarla aparte aca.
 
-    // Al lado del codigo de proveedor va el concepto que Tango le tiene
-    // asociado. Sale del ERP, no se guarda en PHF_CAMPO, y lo pinta el
-    // formulario -- pero ocupa media fila igual.
-    porGrupo.set('proveedor', (porGrupo.get('proveedor') ?? 0) + 3)
+    // La celda del concepto, al lado del codigo de proveedor, la pinta el
+    // formulario -- pero desde el 2026-09-17 tiene su campo en el catalogo
+    // (`concepto`, la eleccion para este comprobante), asi que su span ya
+    // esta contado arriba. Hasta ese dia se sumaba a mano aca.
 
     for (const [grupo, ancho] of porGrupo) {
       expect(ancho % 6, `en ${tipo} el grupo ${grupo} suma ${ancho}`).toBe(0)

@@ -124,10 +124,17 @@ export const COD_CONCEPTO_TARJETA = '406'
  * porque el INSERT a CPA47 iria contra un codigo inexistente.
  */
 export async function buscarConceptoTarjeta(): Promise<ConceptoProveedor | null> {
+  return buscarConceptoPorCodigo(COD_CONCEPTO_TARJETA)
+}
+
+/** Un concepto del maestro (CPA45) por su codigo, o null si no existe. */
+export async function buscarConceptoPorCodigo(codConcepto: string): Promise<ConceptoProveedor | null> {
+  const cod = codConcepto.trim()
+  if (!cod) return null
   const pool = await getPool()
   const r = await pool
     .request()
-    .input('cod', sql.VarChar(3), COD_CONCEPTO_TARJETA)
+    .input('cod', sql.VarChar(3), cod)
     .query(`
       SELECT LTRIM(RTRIM(COD_CONCEP)) AS codConcepto,
              LTRIM(RTRIM(ISNULL(DESC_CONCE,''))) AS descripcion
@@ -147,12 +154,26 @@ export async function buscarConceptoTarjeta(): Promise<ConceptoProveedor | null>
  *
  * Existe para que la pantalla de revision, la validacion y el registro
  * resuelvan el concepto por el mismo camino y no puedan discrepar.
+ *
+ * `elegido` es el concepto que el operador eligio para ESTE comprobante
+ * (campo `concepto` de la revision), desde el 2026-09-17 a pedido del
+ * usuario: gana sobre la ficha del proveedor sin modificarla. Es la misma
+ * precedencia que en las alicuotas -- correccion del comprobante > lo del
+ * proveedor -- y por el mismo motivo: un proveedor puede facturar una vez
+ * algo distinto de lo habitual, y cambiarle la ficha por esa vez dejaria
+ * mal las que vienen. Solo aplica en conceptos: en tarjeta el concepto es
+ * fijo, y en articulos no hay.
  */
 export async function conceptoDelComprobante(
   tipoFactura: string | null | undefined,
   codProvee: string | null,
+  elegido?: string | null,
 ): Promise<ConceptoProveedor | null> {
   if (tipoFactura === 'tarjeta') return buscarConceptoTarjeta()
-  if (tipoFactura === 'conceptos') return codProvee ? buscarConceptoProveedor(codProvee) : null
+  if (tipoFactura === 'conceptos') {
+    const propio = (elegido ?? '').trim()
+    if (propio) return buscarConceptoPorCodigo(propio)
+    return codProvee ? buscarConceptoProveedor(codProvee) : null
+  }
   return null
 }

@@ -269,7 +269,7 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
   let gruposArticulo: { cuenta: CuentaContable; importe: number }[] = []
 
   if (tipoFactura === 'conceptos' || tipoFactura === 'tarjeta') {
-    const concepto = await conceptoDelComprobante(tipoFactura, codProvee)
+    const concepto = await conceptoDelComprobante(tipoFactura, codProvee, valores.concepto)
     cuentaSubtotal = concepto ? await cuentaDelConcepto(concepto.codConcepto) : null
   } else if (tipoFactura === 'articulos') {
     gruposArticulo = await agruparRenglonesPorCuenta(detalle.renglones, sb)

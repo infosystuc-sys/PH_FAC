@@ -249,7 +249,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // comisiones (406), porque lo que se imputa es la comision sin importar
   // que tarjeta o banco la cobre. Las de articulos no llevan concepto: se
   // imputan por renglon.
-  const concepto = await conceptoDelComprobante(valores.tipoFactura, codProvee)
+  const concepto = await conceptoDelComprobante(valores.tipoFactura, codProvee, valores.concepto)
   if (!concepto && (valores.tipoFactura === 'conceptos' || valores.tipoFactura === 'tarjeta')) {
     throw new Error(
       valores.tipoFactura === 'tarjeta'

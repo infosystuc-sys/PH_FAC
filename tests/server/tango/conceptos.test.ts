@@ -6,8 +6,7 @@ import {
   buscarConceptoTarjeta,
   conceptoDelComprobante,
   listarConceptos,
-  COD_CONCEPTO_TARJETA,
-} from '@/server/tango/conceptos'
+  COD_CONCEPTO_TARJETA, } from '@/server/tango/conceptos'
 
 afterAll(async () => {
   await cerrarPool()
@@ -164,5 +163,42 @@ describe('conceptoDelComprobante', () => {
 
   it('en articulos no hay concepto: se imputa por renglon', async () => {
     expect(await conceptoDelComprobante('articulos', '010151')).toBeNull()
+  })
+})
+
+describe('conceptoDelComprobante con un concepto elegido para el comprobante', () => {
+  // Pedido del usuario, 2026-09-17: cambiar el concepto de UNA factura sin
+  // tocar el que tiene guardado el proveedor. Solo lee: no escribe en
+  // CPA_CONCEPTOS_PROVEEDOR ni en ningun lado.
+  it('el elegido gana sobre la ficha del proveedor, y la ficha no cambia', async () => {
+    const ficha = await buscarConceptoProveedor('010151')
+    expect(ficha).not.toBeNull()
+    const otro = (await listarConceptos()).find((c) => c.codConcepto !== ficha!.codConcepto)
+    expect(otro).toBeDefined()
+
+    const resuelto = await conceptoDelComprobante('conceptos', '010151', otro!.codConcepto)
+    expect(resuelto?.codConcepto).toBe(otro!.codConcepto)
+    expect(resuelto?.descripcion).toBe(otro!.descripcion)
+
+    // La ficha sigue diciendo lo mismo.
+    expect((await buscarConceptoProveedor('010151'))?.codConcepto).toBe(ficha!.codConcepto)
+  })
+
+  it('vacio o ausente, vale el de la ficha', async () => {
+    const ficha = await buscarConceptoProveedor('010151')
+    expect((await conceptoDelComprobante('conceptos', '010151', ''))?.codConcepto).toBe(ficha!.codConcepto)
+    expect((await conceptoDelComprobante('conceptos', '010151', null))?.codConcepto).toBe(ficha!.codConcepto)
+    expect((await conceptoDelComprobante('conceptos', '010151'))?.codConcepto).toBe(ficha!.codConcepto)
+  })
+
+  it('un codigo que no existe en CPA45 resuelve a null, no a la ficha', async () => {
+    // Si el operador eligio algo que ya no esta en el maestro, la validacion
+    // tiene que decirlo, no caerse en silencio al de la ficha.
+    expect(await conceptoDelComprobante('conceptos', '010151', 'ZZZ')).toBeNull()
+  })
+
+  it('en tarjeta el elegido no aplica: el concepto es fijo', async () => {
+    const r = await conceptoDelComprobante('tarjeta', '010151', '712')
+    expect(r?.codConcepto).toBe(COD_CONCEPTO_TARJETA)
   })
 })

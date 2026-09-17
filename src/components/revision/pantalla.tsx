@@ -73,6 +73,7 @@ export function Pantalla({
   codigosImpuesto,
   alicuotasIva,
   concepto,
+  conceptos,
   aprendidosIva,
   aprendidosPercepcion,
   aprendidosVarios,
@@ -103,6 +104,8 @@ export function Pantalla({
   codigosImpuesto: CodigoImpuesto[]
   alicuotasIva: AlicuotaTango[]
   concepto: { codConcepto: string; descripcion: string } | null
+  /** El maestro de conceptos, para elegir otro solo para este comprobante. */
+  conceptos: { codConcepto: string; descripcion: string }[]
   /**
    * Lo que este proveedor ya le enseñó a la app para IVA e IIBB (ver
    * aprendizajeImpuestos.ts), para que las celdas "En Tango" propongan en
@@ -212,6 +215,7 @@ export function Pantalla({
           codigosImpuesto={codigosImpuesto}
           alicuotasIva={alicuotasIva}
           concepto={concepto}
+          conceptos={conceptos}
           aprendidosIva={aprendidosIva}
           aprendidosPercepcion={aprendidosPercepcion}
           aprendidosVarios={aprendidosVarios}
