@@ -90,6 +90,7 @@ describe('emparejarOcs', () => {
 
   it('no repite un codigo sin resolver que la factura trae dos veces', () => {
     const r = emparejarOcs(['NO-EXISTE', 'no-existe'], OCS, new Map())
+    // Se informa tal como esta impreso la primera vez, no la clave.
     expect(r.sinResolver).toEqual(['NO-EXISTE'])
   })
 

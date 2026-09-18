@@ -42,6 +42,7 @@ export function SelectorOc({
   soloLectura?: boolean
 }) {
   const [oferta, setOferta] = useState<OfertaOc | null>(null)
+  const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [abierto, setAbierto] = useState(false)
   const [pendiente, arrancar] = useTransition()
   const toast = useToast()
@@ -51,9 +52,14 @@ export function SelectorOc({
       setOferta(null)
       return
     }
+    setErrorCarga(null)
     listarOcParaComprobante(comprobanteId, codProvee)
       .then(setOferta)
-      .catch(() =>
+      .catch((e: unknown) => {
+        // Antes se tragaba el error y dejaba la tarjeta vacia, como si el
+        // proveedor no tuviera ordenes: el operador no tenia forma de saber
+        // que algo fallo (NEWSAN, 2026-09-18). Se muestra.
+        setErrorCarga(e instanceof Error ? e.message : 'No se pudieron buscar las órdenes de compra.')
         setOferta({
           ocs: [],
           filtrada: false,
@@ -62,8 +68,8 @@ export function SelectorOc({
           imputadas: [],
           sinOrden: [],
           codigosFactura: {},
-        }),
-      )
+        })
+      })
   }, [comprobanteId, codProvee])
 
   useEffect(cargar, [cargar])
@@ -263,6 +269,9 @@ export function SelectorOc({
       )}
 
       {!codProvee && <p className={styles.vacio}>Primero hay que resolver el proveedor.</p>}
+      {errorCarga && (
+        <p className={styles.errorCarga}>No se pudieron buscar las órdenes de compra: {errorCarga}</p>
+      )}
 
       {mostrandoLista && codProvee && (
         <>

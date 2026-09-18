@@ -201,9 +201,13 @@ percepciones del pie: son los únicos datos que se imputan.`,
 con detalle de renglones.
 Transcribí ese detalle en el array "renglones_pdf": una entrada por cada
 artículo que la factura cobra, con cuatro datos tal como están impresos:
-- "codigo": el CÓDIGO del artículo. Es el que imprime el proveedor: a veces
-  es el mismo que usamos nosotros y a veces es el suyo propio; copiá el que
-  figure, sin traducirlo. Si el renglón no trae código, dejalo vacío.
+- "codigo": el CÓDIGO del artículo, y SOLO el código. Es el que imprime el
+  proveedor: a veces es el mismo que usamos nosotros y a veces es el suyo
+  propio; copiá el que figure, sin traducirlo. Si en la misma celda hay
+  además una alícuota de IVA entre paréntesis, un asterisco o una nota
+  ("AS-12UW4RLRCD02 N ( 21.00) *"), el código es solo la primera parte
+  ("AS-12UW4RLRCD02 N"): no incluyas lo demás. Si el renglón no trae
+  código, dejalo vacío.
 - "descripcion": la DESCRIPCIÓN del artículo tal como está impresa, entera.
   Es lo que identifica al artículo cuando la factura no trae código.
 - "cantidad": la CANTIDAD facturada.
@@ -344,4 +348,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v12'
+export const VERSION_PROMPT = 'v13'

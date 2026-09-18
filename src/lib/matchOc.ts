@@ -122,7 +122,12 @@ export function emparejarOcs<T extends OcParaMatch>(
   ocs: T[],
   sinonimos: Map<string, string>,
 ): Emparejamiento<T> {
-  const codigos = codigosPdf.map((c) => normalizarCodigo(c ?? '')).filter((c) => c !== '')
+  // Se conserva el codigo impreso al lado de su clave: lo que se informa al
+  // operador es lo impreso ("NO-EXISTE"), no la clave ("NOEXISTE"), que
+  // desde que ignora la puntuacion ya no se parece a lo que ve en el papel.
+  const codigos = codigosPdf
+    .map((c) => ({ impreso: (c ?? '').trim(), clave: normalizarCodigo(c ?? '') }))
+    .filter((c) => c.clave !== '')
   if (codigos.length === 0) return { coinciden: [], sinResolver: [], reconocidosSinPendiente: [] }
 
   // Todos los artículos que las OC de este proveedor tienen pendientes. Un
@@ -134,22 +139,21 @@ export function emparejarOcs<T extends OcParaMatch>(
   const resueltos = new Set<string>()
   const sinResolver: string[] = []
   const reconocidosSinPendiente: { codigo: string; codArticu: string }[] = []
-  for (const codigo of codigos) {
-    const nuestro = resolverCodigoArticulo(codigo, nuestros, sinonimos)
+  const vistos = new Set<string>()
+  for (const { impreso, clave } of codigos) {
+    const nuestro = resolverCodigoArticulo(clave, nuestros, sinonimos)
     if (nuestro) {
       resueltos.add(nuestro)
       continue
     }
+    // Un mismo codigo repetido en la factura se informa una sola vez.
+    if (vistos.has(clave)) continue
+    vistos.add(clave)
     // Se distingue "no hay sinonimo" de "hay sinonimo pero el articulo no
     // tiene saldo": la primera se arregla enseñando, la segunda no.
-    const traducido = normalizarCodigo(sinonimos.get(codigo) ?? '')
-    if (traducido) {
-      if (!reconocidosSinPendiente.some((r) => r.codigo === codigo)) {
-        reconocidosSinPendiente.push({ codigo, codArticu: traducido })
-      }
-    } else if (!sinResolver.includes(codigo)) {
-      sinResolver.push(codigo)
-    }
+    const traducido = normalizarCodigo(sinonimos.get(clave) ?? '')
+    if (traducido) reconocidosSinPendiente.push({ codigo: impreso, codArticu: traducido })
+    else sinResolver.push(impreso)
   }
 
   const coinciden: OcEmparejada<T>[] = []

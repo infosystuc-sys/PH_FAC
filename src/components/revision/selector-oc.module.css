@@ -314,3 +314,15 @@
   font-family: var(--mono);
   overflow-wrap: anywhere;
 }
+
+/* Un error al buscar las ordenes: antes se tragaba y la tarjeta quedaba
+   vacia como si no hubiera ninguna. */
+.errorCarga {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--error-fondo);
+  font-size: 11.5px;
+  color: var(--error);
+  overflow-wrap: anywhere;
+}

@@ -53,7 +53,9 @@ describe('cotejarConOc', () => {
     const r = cotejarConOc(
       [{ orden: 1, codigo: 'ALM-065', cantidad: '40' }],
       OC,
-      new Map([['ALM-065', '103938']]),
+      // El mapa viene con la clave ya normalizada (asi lo arma
+      // articulosPorSinonimo): sin puntuacion.
+      new Map([['ALM065', '103938']]),
     )
     expect(r.problemas).toEqual([])
   })
@@ -129,7 +131,7 @@ describe('validarCotejoOc', () => {
 
 describe('normalizarCodigo', () => {
   it('ignora mayusculas y los espacios de las puntas', () => {
-    expect(normalizarCodigo('  abc-1 ')).toBe('ABC-1')
+    expect(normalizarCodigo('  abc1 ')).toBe('ABC1')
   })
 
   it('ignora tambien los espacios de ADENTRO', () => {
@@ -138,7 +140,7 @@ describe('normalizarCodigo', () => {
     // los 174 sinonimos de CPA15 y 1.642 codigos de STA11 tienen espacios
     // adentro (TOPPER: "21870  001 40"), y el modelo los transcribe como
     // puede. Medido ese dia: quitar los espacios no colisiona ningun par.
-    expect(normalizarCodigo('RO1274DW MT/1-12')).toBe('RO1274DWMT/1-12')
+    expect(normalizarCodigo('RO1274DW MT 1 12')).toBe('RO1274DWMT112')
     expect(normalizarCodigo('21870  001 40')).toBe(normalizarCodigo('21870 001 40'))
   })
 
@@ -146,8 +148,25 @@ describe('normalizarCodigo', () => {
     const oc: LineaOc[] = [
       { nRenglOc: 1, codArticu: '106543', descripcion: 'LAVARROPAS CANDY', pendiente: 24 },
     ]
-    const sinonimos = new Map([['RO1274DWMT/1-12', '106543']])
+    const sinonimos = new Map([[normalizarCodigo('RO1274DWMT/1-12'), '106543']])
     const r = cotejarConOc([{ orden: 1, codigo: 'RO1274DW MT/1-12', cantidad: '24' }], oc, sinonimos)
     expect(r.problemas).toEqual([])
+  })
+})
+
+describe('normalizarCodigo ignora la puntuacion', () => {
+  it('guion, punto y barra no cuentan: NEWSAN factura con guion y Tango lo tiene sin', () => {
+    // 2026-09-18. Medido sobre toda la base: espacio, punto, guion y barra
+    // son los unicos no alfanumericos en los codigos, y quitarlos no
+    // colisiona ningun par.
+    expect(normalizarCodigo('AS-12UW4RLRCD02 N')).toBe('AS12UW4RLRCD02N')
+    expect(normalizarCodigo('27383.001/27')).toBe('2738300127')
+  })
+
+  it('pero NO limpia lo que la IA pego de mas: eso lo arregla el prompt', () => {
+    // La alicuota de IVA de la misma celda queda adentro de la clave y no
+    // matchea: es correcto que no matchee, un codigo con basura no es el
+    // codigo. El prompt v13 le pide a la IA que no la incluya.
+    expect(normalizarCodigo('AS-12UW4RLRCD02 N ( 21.00) *')).not.toBe('AS12UW4RLRCD02N')
   })
 })

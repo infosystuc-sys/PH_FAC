@@ -64,11 +64,21 @@ const TOLERANCIA = 0.00005
  * no colisiona ningún par de sinónimos del mismo proveedor ni ningún par de
  * códigos del maestro.
  *
+ * Desde el 2026-09-18 se ignora además toda la puntuación: NEWSAN factura
+ * "AS-12UW4RLRCD02 N" y el sinónimo en Tango es "AS12UW4RLRCD02N". Solo
+ * quedan letras y números. Medido ese día sobre toda la base: los códigos
+ * de STA11 y los sinónimos de CPA15 usan exactamente cuatro caracteres que
+ * no son alfanuméricos -- espacio, punto, guion y barra -- y al quitarlos
+ * no colisiona ningún par (0 en 9.442 artículos, 0 en 198 sinónimos). La
+ * versión SQL de esta misma clave (`describirArticulos`) reemplaza esos
+ * cuatro; si algún día aparece otro carácter en un código, hay que sumarlo
+ * ahí también.
+ *
  * El resultado es una CLAVE de comparación, no un código: lo que se graba
  * en Tango es siempre el código tal como está en la OC o en el maestro.
  */
 export function normalizarCodigo(codigo: string): string {
-  return codigo.replace(/\s+/g, '').toUpperCase()
+  return codigo.toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 
 /**

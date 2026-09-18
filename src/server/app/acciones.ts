@@ -694,12 +694,13 @@ export async function listarOcParaComprobante(
   const reconocidos = new Map<string, { codArticu: string; descripcion: string }>()
   for (const r of emparejamiento.reconocidosSinPendiente) {
     const enMaestro = descripciones.get(r.codArticu)
-    reconocidos.set(r.codigo, enMaestro ?? { codArticu: r.codArticu, descripcion: '' })
+    // Clave normalizada: sinOrden trae el codigo impreso y busca con la clave.
+    reconocidos.set(normalizarCodigo(r.codigo), enMaestro ?? { codArticu: r.codArticu, descripcion: '' })
   }
   const sinResolver: string[] = []
   for (const codigo of emparejamiento.sinResolver) {
     const propio = descripciones.get(normalizarCodigo(codigo))
-    if (propio) reconocidos.set(codigo, propio)
+    if (propio) reconocidos.set(normalizarCodigo(codigo), propio)
     else sinResolver.push(codigo)
   }
 

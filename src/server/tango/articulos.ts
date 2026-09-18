@@ -264,13 +264,20 @@ export async function describirArticulos(
   const pool = await getPool()
   const req = pool.request()
   const marcadores = buscados.map((c, i) => {
-    req.input(`c${i}`, sql.VarChar(20), c)
+    // VarChar(60), no el largo de la columna: un codigo impreso mas largo
+    // que COD_ARTICU (la IA le pego la alicuota de IVA de la misma celda,
+    // paso con NEWSAN el 2026-09-18) hacia explotar al driver por el largo
+    // del parametro, y con el a toda la tarjeta de la OC. Uno mas largo
+    // simplemente no matchea con nada, que es la respuesta correcta.
+    req.input(`c${i}`, sql.VarChar(60), c)
     return `@c${i}`
   })
   const r = await req.query<Record<string, unknown>>(`
     SELECT LTRIM(RTRIM(COD_ARTICU)) AS codArticu, LTRIM(RTRIM(ISNULL(DESCRIPCIO, ''))) AS descripcion
     FROM STA11
-    WHERE REPLACE(UPPER(COD_ARTICU), ' ', '') IN (${marcadores.join(', ')})
+    -- La misma clave que normalizarCodigo: sin espacio, punto, guion ni
+    -- barra, que son los unicos no alfanumericos que hay en los codigos.
+    WHERE REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COD_ARTICU), ' ', ''), '.', ''), '-', ''), '/', '') IN (${marcadores.join(', ')})
   `)
   for (const f of r.recordset) {
     m.set(normalizarCodigo(String(f.codArticu)), {
