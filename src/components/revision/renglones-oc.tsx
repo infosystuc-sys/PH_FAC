@@ -61,9 +61,17 @@ export function RenglonesOc({
     const precioOc = parsearImporteONulo(r.precioUnitario)
     const importeOc = precioOc === null ? null : Math.round(cantidad * precioOc * 100) / 100
     const neto = r.pdfOrden === null ? null : (netos.get(r.pdfOrden) ?? null)
+    // El aviso de "sin precio ni subtotal" solo cuando de verdad faltan en
+    // el PDF. Si la resolucion entera fallo por otra cosa (no cierra contra
+    // la base), el renglon queda en guiones y lo explica el pie: decir que
+    // faltan datos que si se leyeron mandaba a reprocesar en vano (DREAN,
+    // 2026-09-19).
+    const enPdf = r.pdfOrden === null ? null : (renglonesPdf.find((x) => x.orden === r.pdfOrden) ?? null)
+    const faltanDatos =
+      enPdf === null || enPdf.precioImpreso === null || enPdf.subtotalImpreso === null
     const difierePrecio =
       neto !== null && precioOc !== null && Math.abs(neto.precioNeto - precioOc) > 0.005
-    return { r, cantidad, precioOc, importeOc, neto, difierePrecio }
+    return { r, cantidad, precioOc, importeOc, neto, difierePrecio, faltanDatos }
   })
 
   const totalFactura = filas.reduce((acc, f) => acc + (f.neto?.importeNeto ?? 0), 0)
@@ -96,7 +104,7 @@ export function RenglonesOc({
         <span className={styles.derecha}>Importe</span>
       </div>
 
-      {filas.map(({ r, cantidad, precioOc, importeOc, neto, difierePrecio }) => (
+      {filas.map(({ r, cantidad, precioOc, importeOc, neto, difierePrecio, faltanDatos }) => (
         <div key={r.orden} className={styles.fila}>
           <span className={styles.descripcionCol}>
             <span className={styles.descripcion}>{r.descripcion ?? '—'}</span>
@@ -111,7 +119,7 @@ export function RenglonesOc({
               {r.ocNOrdenCo?.trim()}
               {r.ocNRenglOc !== null && ` · renglón ${r.ocNRenglOc}`}
             </span>
-            {neto === null && (
+            {faltanDatos && (
               <span className={styles.aviso}>
                 Sin precio ni subtotal leídos para este renglón: reprocesá el comprobante.
               </span>

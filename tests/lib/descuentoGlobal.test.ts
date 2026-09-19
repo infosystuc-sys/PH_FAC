@@ -44,6 +44,49 @@ describe('resolverDescuentoGlobal', () => {
     expect(describirDescuento(r)).toContain('corregilo a $ 998.239,61')
   })
 
+  it('DREAN: el IVA decide el caso, no cierra al centavo', () => {
+    // 2026-09-19. Un renglon, sin descuento: subtotal 16.905.063,60. El IVA
+    // impreso es 3.550.063,33 -> base 16.905.063,48: 12 centavos menos, por
+    // como redondea el proveedor. Con la tolerancia de centavos la app
+    // bloqueaba "no cierra". El IVA esta para decidir entre netos y brutos
+    // (que difieren en el descuento, no en centavos); la base real es la
+    // suma exacta de los subtotales.
+    const r = resolverDescuentoGlobal(
+      [{ orden: 1, cantidad: '120', precioUnitario: '209,916.53', subtotal: '16,905,063.60' }],
+      null,
+      // La cabecera de DREAN dice ,49: once centavos menos que el renglon,
+      // y el IVA y el total estan calculados sobre ese ,49.
+      '16,905,063.49',
+      3550063.33 / 0.21,
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.caso).toBe('subtotales-netos')
+    expect(r.netoGravado).toBe(16905063.6)
+    expect(r.renglones[0].precioNeto).toBe(140875.53)
+    // Centavos de redondeo del proveedor no son un neto desactualizado: la
+    // cabecera se deja como esta.
+    expect(r.netoDesactualizado).toBe(false)
+    expect(netoCorregido(r)).toBeNull()
+  })
+
+  it('pero un descuento real no se confunde con redondeo del IVA', () => {
+    // Subtotales 10.000, descuento 500, IVA sobre 9.500. La tolerancia del
+    // IVA (0,1% de 9.500 = 9,50) esta lejos de los 500 del
+    // descuento: elige brutos sin ambiguedad.
+    const r = resolverDescuentoGlobal(
+      [{ orden: 1, cantidad: '1', precioUnitario: '10.000,00', subtotal: '10.000,00' }],
+      '500,00',
+      '10.000,00',
+      1995 / 0.21,
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.caso).toBe('subtotales-brutos')
+    expect(r.netoGravado).toBe(9500)
+    expect(r.netoDesactualizado).toBe(true)
+  })
+
   it('sin IVA que lo confirme, se cae al neto de la revision y no corrige nada', () => {
     // Sin evidencia independiente, lo unico que queda es el rotulo. Con el
     // neto impreso igual a la suma de los subtotales, lee "netos" -- y no

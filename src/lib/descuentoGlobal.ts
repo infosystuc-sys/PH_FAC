@@ -103,14 +103,30 @@ export type ResultadoDescuento =
     }
 
 /**
- * Tolerancia al comparar contra la base: un centavo por renglón, que es lo
- * que puede acumular el redondeo del propio proveedor al imprimir cada
- * subtotal con dos decimales, más lo que el IVA pierde al dividirlo por
- * la alícuota (0,21 × 0,005 de redondeo del IVA son ~2 centavos de base).
- * Contra una base de seis cifras es una tolerancia de milésimas de por
- * ciento.
+ * Tolerancia al comparar contra la base, según de dónde salió la base.
+ *
+ * Contra el neto de la revisión es un centavo por renglón: lo que puede
+ * acumular el redondeo del propio proveedor al imprimir cada subtotal con
+ * dos decimales.
+ *
+ * Contra la base que implica el IVA es más laxa, y a propósito. El IVA
+ * está para DECIDIR EL CASO -- subtotales netos o brutos, que difieren en
+ * el importe del descuento, miles o millones -- no para cerrar al centavo:
+ * cada proveedor redondea el IVA a su manera (por renglón, truncando, sobre
+ * el precio sin redondear) y esos centavos de IVA, divididos por la
+ * alícuota, son décimas de peso de base. DREAN, 2026-09-19: subtotales
+ * 16.905.063,60, IVA impreso 3.550.063,33 → base 16.905.063,48; 12 centavos
+ * en 17 millones, y la app bloqueaba. Se admite lo mayor entre un peso y
+ * el 0,1% de la base: ningún descuento general es tan chico como para
+ * confundirse con eso, y que el neto cierre contra el IVA al centavo lo
+ * cuida aparte `validarNetoContraIva`.
  */
-function tolerancia(cantidadRenglones: number): number {
+function tolerancia(
+  cantidadRenglones: number,
+  evidencia: 'iva' | 'neto-revision',
+  base: number,
+): number {
+  if (evidencia === 'iva') return Math.max(1, base * 0.001)
   return 0.01 * Math.max(1, cantidadRenglones) + 0.05
 }
 
@@ -146,7 +162,7 @@ export function resolverDescuentoGlobal(
 
   const suma = a2(leidos.reduce((acc, r) => acc + (r.subtotal as number), 0))
   const descuento = parsearImporteONulo(descuentoGeneral) ?? 0
-  const tol = tolerancia(leidos.length)
+  const tol = tolerancia(leidos.length, evidencia, base)
 
   // Con descuento se prueba PRIMERO la lectura "brutos": es la que cambia
   // la base, y si el IVA la confirma no hay ambigüedad posible. Recién si
@@ -209,7 +225,14 @@ export function resolverDescuentoGlobal(
     descuentoGeneral: descuento,
     netoGravado: netoReal,
     netoRevision: netoRev,
-    netoDesactualizado: netoRev === null || Math.abs(netoRev - netoReal) > 0.005,
+    // Un peso de tolerancia: separa un neto de cabecera que el proveedor
+    // redondeo por su cuenta (DREAN, 2026-09-19: renglon 16.905.063,60 y
+    // cabecera 16.905.063,49, con el IVA y el total calculados sobre el ,49)
+    // de un neto de ANTES del descuento (ZOZZOLI: 107.843,06 de diferencia).
+    // En el primer caso la cabecera se deja como esta: es sobre la que el
+    // proveedor liquido el IVA y el total, que es lo que se paga; los
+    // renglones van a CPA46 con sus importes exactos igual.
+    netoDesactualizado: netoRev === null || Math.abs(netoRev - netoReal) > 1,
     evidencia,
   }
 }
