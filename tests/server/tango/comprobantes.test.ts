@@ -530,6 +530,72 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
       await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/pendiente/i)
     })
   }, 90000)
+  it('graba el cargo en CPA46 sin vincularlo a la OC, con el deposito de la factura', async () => {
+    // 2026-09-22, pedido del usuario: los conceptos que el proveedor factura
+    // y no forman parte de la OC (gestion de compra, logistica) entran igual
+    // en la factura y en el asiento.
+    await conRollback(async (tx) => {
+      const oc = await unRenglonDeOcPendiente(tx)
+      expect(oc).toBeDefined()
+      const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0088')
+      await guardarCampoEn(tx, id, 'nro', '00054325')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+      await guardarCampoEn(tx, id, 'codprovee', String(oc.COD_PROVEE))
+      await guardarCampoEn(tx, id, 'condcompra', String(condicion.recordset[0].COD_CONDIC))
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
+      await guardarCampoEn(tx, id, 'neto', '1.100,00')
+      await guardarCampoEn(tx, id, 'total', '1.100,00')
+
+      // Renglon de mercaderia, contra la OC.
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: String(oc.COD_ARTICU), descripcion: 'x', cantidad: '1',
+        precioUnitario: '1000', importe: '1000',
+      })
+      await tx.request()
+        .input('id', sql.Int, renglonId)
+        .input('oc', sql.VarChar(14), String(oc.N_ORDEN_CO))
+        .input('tal', sql.Int, Number(oc.TALONARIO))
+        .input('r', sql.Int, Number(oc.N_RENGL_OC))
+        .query(`UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, PDF_ORDEN=1 WHERE ID=@id`)
+      await insertarRenglonPdfPrueba(tx, id, 1, String(oc.COD_ARTICU), '1', '1000', '1000')
+
+      // Y el CARGO: mismo articulo a proposito --es el caso dificil-- pero
+      // sin orden de compra. Se crea como renglon con las columnas de OC en
+      // NULL, que es lo que hace sincronizarCargosEn.
+      const cargoId = await insertarRenglonPrueba(tx, id, {
+        codigo: String(oc.COD_ARTICU), descripcion: 'GESTION DE COMPRA 1%', cantidad: '1',
+        precioUnitario: '100', importe: '100',
+      })
+      await tx.request().input('id', sql.Int, cargoId)
+        .query(`UPDATE PHF_RENGLON SET PDF_ORDEN=2 WHERE ID=@id`)
+      await insertarRenglonPdfPrueba(tx, id, 2, '', '1', '100', '100')
+
+      const registro = await registrarComprobanteEn(tx, id)
+
+      const cpa46 = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT N_RENGL_C, LTRIM(RTRIM(COD_DEPOSI)) AS depo, PRECIO_NET, IMP_NETO_P
+                FROM CPA46 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n ORDER BY N_RENGL_C`)
+      expect(cpa46.recordset).toHaveLength(2)
+      // El cargo lleva el precio de la FACTURA.
+      expect(Number(cpa46.recordset[1].PRECIO_NET)).toBe(100)
+      expect(Number(cpa46.recordset[1].IMP_NETO_P)).toBe(100)
+      // Y el MISMO deposito que el articulo de la factura -- decision del
+      // usuario: un cargo entra al deposito de la mercaderia que acompaña.
+      expect(cpa46.recordset[1].depo).toBe(cpa46.recordset[0].depo)
+      expect(cpa46.recordset[1].depo).not.toBe('')
+
+      // Un solo vinculo con la orden: el cargo no consume pendiente.
+      const link = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT COUNT(*) AS n FROM CPA_OC_FACTURA WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n`)
+      expect(Number(link.recordset[0].n)).toBe(1)
+    })
+  }, 90000)
 })
 
 describe('registrarComprobanteEn con tipoFactura=conceptos', () => {

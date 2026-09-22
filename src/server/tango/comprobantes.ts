@@ -620,6 +620,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // descuentan son los de CPA36 en vez de los de STA20.
   const renglonesConOc = detalle.renglones.filter((r) => r.ocNOrdenCo && r.ocNRenglOc)
   const ocsAfectadas = new Set<string>()
+  // El deposito al que entra la mercaderia de ESTA factura. Lo usan tambien
+  // los cargos, mas abajo: van al mismo que los articulos del comprobante
+  // (decision del usuario, 2026-09-22).
+  let codDeposiFactura = ''
 
   // Lo que cobra la factura por renglon, resuelto una vez para todos: ver el
   // comentario del precio, mas abajo. Si no cierra contra el neto gravado se
@@ -683,6 +687,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     // Tango, que es peor que no ofrecerla.
     const codArticu = renglon.codigoFinal?.trim() || String(sta.COD_ARTICU).trim()
     const codDeposi = String(sta.COD_DEPOSI ?? '').trim()
+    if (!codDeposiFactura) codDeposiFactura = codDeposi
 
     // El precio es el que COBRA LA FACTURA, no el pactado en la OC --
     // decision del usuario, 2026-09-15: "los importes que valen son los de
@@ -849,19 +854,25 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // pero NO generan vinculo en CPA_OC_FACTURA ni descuentan CPA36: no hay
   // orden que consumir.
   //
-  // El deposito es el mas usado en las ordenes de compra: medido sobre
-  // CPA36, el "01" concentra 7.680 de 7.711 renglones. No sale de la OC
-  // --un cargo no tiene orden-- ni se deja vacio: CPA46.COD_DEPOSI es parte
-  // de la clave con la que Stock ubica el renglon.
+  // El deposito es el MISMO que el de los articulos de esta factura
+  // (decision del usuario, 2026-09-22): un cargo no tiene orden de donde
+  // sacarlo, pero entra al mismo deposito que la mercaderia que acompaña.
+  // Una factura de SOLO cargos no tiene renglon de OC del cual tomarlo: ahi
+  // se cae al mas usado en las ordenes --medido sobre CPA36, el "01"
+  // concentra 7.680 de 7.711 renglones--, porque CPA46.COD_DEPOSI es parte
+  // de la clave con la que Stock ubica el renglon y no puede quedar vacio.
   const renglonesCargo = detalle.renglones.filter((r) => !r.ocNOrdenCo && !r.ocNRenglOc)
   if (renglonesCargo.length > 0) {
     if (!descuento.ok) throw new Error(describirDescuento(descuento))
 
-    const depoR = await tx.request().query<{ cod: string | null }>(`
-      SELECT TOP 1 LTRIM(RTRIM(COD_DEPOSI)) AS cod
-      FROM CPA36 WHERE LTRIM(RTRIM(ISNULL(COD_DEPOSI, ''))) <> ''
-      GROUP BY LTRIM(RTRIM(COD_DEPOSI)) ORDER BY COUNT(*) DESC`)
-    const codDeposiCargo = String(depoR.recordset[0]?.cod ?? '').trim()
+    let codDeposiCargo = codDeposiFactura
+    if (!codDeposiCargo) {
+      const depoR = await tx.request().query<{ cod: string | null }>(`
+        SELECT TOP 1 LTRIM(RTRIM(COD_DEPOSI)) AS cod
+        FROM CPA36 WHERE LTRIM(RTRIM(ISNULL(COD_DEPOSI, ''))) <> ''
+        GROUP BY LTRIM(RTRIM(COD_DEPOSI)) ORDER BY COUNT(*) DESC`)
+      codDeposiCargo = String(depoR.recordset[0]?.cod ?? '').trim()
+    }
 
     let nRenglC = renglonesConOc.length
     for (const renglon of renglonesCargo) {
