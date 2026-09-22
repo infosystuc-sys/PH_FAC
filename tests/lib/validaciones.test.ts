@@ -185,6 +185,19 @@ describe('parsearFechaArg', () => {
     // Tres digitos no es ninguna de las dos formas.
     expect(parsearFechaArg('16/09/026')).toBeNull()
   })
+  it('tolera espacios alrededor de los separadores', () => {
+    // RED DEL INTERIOR imprime "16 /09 /26" (2026-09-22). Es la misma fecha
+    // con otro espaciado, no otro formato.
+    expect(parsearFechaArg('16 /09 /26')).toEqual(new Date(2026, 8, 16))
+    expect(parsearFechaArg('16 / 09 / 2026')).toEqual(new Date(2026, 8, 16))
+    expect(parsearFechaArg('1 / 6 / 26')).toEqual(new Date(2026, 5, 1))
+  })
+  it('pero sigue exigiendo el separador', () => {
+    // Sin separador no se sabe donde termina el dia: "16092026" podria ser
+    // cualquier cosa, y adivinar ahi manda una fecha inventada a Tango.
+    expect(parsearFechaArg('16092026')).toBeNull()
+    expect(parsearFechaArg('16 09 2026')).toBeNull()
+  })
 })
 
 describe('normalizarFechaArg', () => {
@@ -194,6 +207,7 @@ describe('normalizarFechaArg', () => {
     expect(normalizarFechaArg('30-07-2026')).toBe('30/07/2026')
     expect(normalizarFechaArg(' 30/07/2026 ')).toBe('30/07/2026')
     expect(normalizarFechaArg('16/9/26')).toBe('16/09/2026')
+    expect(normalizarFechaArg('16 /09 /26')).toBe('16/09/2026')
   })
   it('devuelve null si no se puede leer, para no pisar lo que vino', () => {
     expect(normalizarFechaArg('30 de julio')).toBeNull()

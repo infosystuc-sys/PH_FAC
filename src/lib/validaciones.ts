@@ -532,9 +532,14 @@ const RE_CAE = /^\d{14}$/
  * comprobante de compra del siglo pasado no entra por esta app, así que no
  * hay ambigüedad real. `normalizarFechaArg` la deja después en la forma
  * canónica, con el año completo.
+ *
+ * Y se toleran espacios alrededor de los separadores (2026-09-22): RED DEL
+ * INTERIOR imprime "16 /09 /26" y la fecha se rechazaba como ilegible. Es
+ * la misma fecha con otro espaciado, no otro formato -- lo que sigue sin
+ * aceptarse es que el separador falte o sea otra cosa.
  */
 export function parsearFechaArg(f: string): Date | null {
-  const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(f.trim())
+  const m = /^(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2}|\d{4})$/.exec(f.trim())
   if (!m) return null
   const dia = Number(m[1])
   const mes = Number(m[2])

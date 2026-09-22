@@ -275,6 +275,14 @@ export async function elegirProveedorEn(
     .input('razon', sql.NVarChar(200), razonSocial)
     .query(`UPDATE PHF_COMPROBANTE SET COD_PROVEE = @cod, RAZON_SOCIAL = @razon WHERE ID = @id`)
   await auditarEn(e, id, `Proveedor elegido a mano: ${codProvee} — ${razonSocial}`)
+
+  // Lo aprendido por descripcion es POR PROVEEDOR: cambiarlo cambia que
+  // renglones resuelven solos y cuales quedan por vincular. Sin esto el
+  // contador quedaba con el del proveedor anterior --o con ninguno, si al
+  // leer el CUIT no resolvio-- y el comprobante seguia en la pestaña "A
+  // vincular" con las descripciones ya enseñadas. Lo reporto el usuario con
+  // RED DEL INTERIOR (2026-09-22).
+  await recalcularAVincularEn(e, id, codProvee)
 }
 
 export async function elegirProveedor(
@@ -286,6 +294,8 @@ export async function elegirProveedor(
   const pool = await getPool()
   await elegirProveedorEn(pool, id, codProvee, razonSocial, corregido)
   revalidatePath(`/comprobantes/${id}`)
+  // La bandeja muestra la pestaña "A vincular", que depende del contador.
+  revalidatePath('/comprobantes')
 }
 
 export async function reprocesarComprobante(id: number): Promise<void> {
