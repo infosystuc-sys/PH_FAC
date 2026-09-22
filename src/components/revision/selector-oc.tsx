@@ -45,6 +45,12 @@ export function SelectorOc({
   const [oferta, setOferta] = useState<OfertaOc | null>(null)
   const [errorCarga, setErrorCarga] = useState<string | null>(null)
   const [abierto, setAbierto] = useState(false)
+  // Renglones (por ORDEN del PDF) que el operador tildo "es un cargo" ANTES
+  // de elegir el articulo del desplegable: se lee al elegir, para que el
+  // vinculo se cree ya con SIN_OC=1 en el mismo paso. Sin esto, tildar la
+  // opcion antes de elegir articulo no tenia nada que actualizar --no existe
+  // fila en PHF_ARTICULO_PROVEEDOR todavia-- y quedaba en un no-op silencioso.
+  const [comoCargo, setComoCargo] = useState<Set<number>>(new Set())
   const [pendiente, arrancar] = useTransition()
   const toast = useToast()
 
@@ -264,7 +270,10 @@ export function SelectorOc({
                       className={styles.selectArticulo}
                       defaultValue=""
                       disabled={pendiente}
-                      onChange={(e) => e.target.value && vincular(r.descripcion!, e.target.value)}
+                      onChange={(e) => {
+                        if (!e.target.value) return
+                        vincular(r.descripcion!, e.target.value, comoCargo.has(r.orden))
+                      }}
                     >
                       <option value="">¿A qué artículo corresponde?</option>
                       {oferta.articulosDisponibles.map((a) => (
@@ -283,9 +292,16 @@ export function SelectorOc({
                     <label className={styles.cargoOpcion}>
                       <input
                         type="checkbox"
-                        checked={false}
+                        checked={comoCargo.has(r.orden)}
                         disabled={pendiente}
-                        onChange={() => marcarCargo(r.descripcion!, true)}
+                        onChange={(e) =>
+                          setComoCargo((prev) => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(r.orden)
+                            else next.delete(r.orden)
+                            return next
+                          })
+                        }
                       />
                       Es un cargo del proveedor: registrar sin orden de compra
                     </label>
@@ -299,6 +315,16 @@ export function SelectorOc({
                   → {r.reconocidoComo.codArticu}
                   {r.reconocidoComo.descripcion && ` · ${r.reconocidoComo.descripcion}`}
                   <span className={styles.reconocidoNota}> · reconocido, sin pendiente de facturar</span>
+                  {!soloLectura && r.descripcion && (
+                    <button
+                      type="button"
+                      className={styles.quitar}
+                      disabled={pendiente}
+                      onClick={() => vincular(r.descripcion!, r.reconocidoComo!.codArticu, true)}
+                    >
+                      Es un cargo del proveedor
+                    </button>
+                  )}
                 </span>
               )}
               <span className={styles.cant}>{r.cantidad ?? '—'}</span>
@@ -328,7 +354,31 @@ export function SelectorOc({
           </p>
           {porImputar.map((r) => (
             <div key={r.orden} className={styles.faltanteFila}>
-              <span className={styles.codigo}>{r.codigo || '(sin código)'}</span>
+              <span className={styles.codigo}>
+                {r.codigo || '(sin código)'}
+                {r.porDescripcion && (
+                  <span className={styles.reconocidoNota} title="Resuelto por la descripción que enseñó el operador">
+                    {' '}· por descripción
+                  </span>
+                )}
+              </span>
+              {/* El codigo coincide con OTRA orden pendiente del proveedor,
+                  pero puede no ser la orden correcta -- puede ser un cargo
+                  (gestion de compra, logistica) que por casualidad comparte
+                  articulo con algo que si se pidio. La app no tiene como
+                  distinguirlo sola: lo dice el operador. */}
+              {!soloLectura && r.codigo && r.descripcion ? (
+                <button
+                  type="button"
+                  className={styles.quitar}
+                  disabled={pendiente}
+                  onClick={() => vincular(r.descripcion!, r.codigo, true)}
+                >
+                  Es un cargo del proveedor
+                </button>
+              ) : (
+                <span />
+              )}
               <span className={styles.cant}>{r.cantidad ?? '—'}</span>
             </div>
           ))}
