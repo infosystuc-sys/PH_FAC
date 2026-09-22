@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import {
   listarOcParaComprobante,
   imputarOrdenCompra,
@@ -8,8 +8,10 @@ import {
   asociarCodigoProveedor,
   vincularDescripcionArticulo,
   marcarRenglonSinOc,
+  buscarArticulosTango,
   type OfertaOc,
 } from '@/server/app/acciones'
+import type { ArticuloTango } from '@/server/tango/articulos'
 import { useToast } from '@/components/toast/toast-provider'
 import { formatMoneda, formatCantidad } from '@/lib/formato'
 import { normalizarCodigo } from '@/lib/cotejoOc'
@@ -32,6 +34,122 @@ import styles from './selector-oc.module.css'
  * que faltan se listan acá, que es donde el operador los resuelve --
  * imputando otra orden o enseñando el sinónimo.
  */
+/**
+ * Busca un artículo en TODO el maestro de Tango, no solo entre los de las
+ * órdenes pendientes.
+ *
+ * Existe porque el desplegable de la tarjeta ofrece `articulosDisponibles`,
+ * que sale de las OC del proveedor -- y un CARGO (gestión de compra, flete,
+ * logística) no está en ninguna orden, por definición. Sin esto el operador
+ * no tenía de dónde sacar el artículo correcto y terminaba eligiendo
+ * cualquiera de la lista con tal de destrabar: en RED DEL INTERIOR quedó
+ * "GESTION DE COMPRA 1%" apuntando a un LAVARROPAS y "GESTION ROSARIO
+ * LOGISTICA S.A." a un AIRE ACONDICIONADO (2026-09-22). Eso habría entrado
+ * a CPA46 como movimiento de esos artículos.
+ *
+ * Mismo patrón que `SelectorArticulo`: debounce de 250 ms y una bandera
+ * `vigente` por corrida, para que una respuesta lenta de una búsqueda vieja
+ * no pise los resultados de la nueva.
+ */
+function BuscadorArticulo({
+  codProvee,
+  bloqueado,
+  etiqueta,
+  onElegir,
+}: {
+  codProvee: string | null
+  bloqueado: boolean
+  etiqueta: string
+  onElegir: (codArticu: string) => void
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const [query, setQuery] = useState('')
+  const [resultados, setResultados] = useState<ArticuloTango[]>([])
+  const [buscando, setBuscando] = useState(false)
+  const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  useEffect(() => {
+    clearTimeout(debounce.current)
+    if (!abierto || query.trim().length < 2) {
+      setResultados([])
+      setBuscando(false)
+      return
+    }
+    let vigente = true
+    setBuscando(true)
+    debounce.current = setTimeout(() => {
+      buscarArticulosTango(query, codProvee)
+        .then((r) => {
+          if (!vigente) return
+          setResultados(r)
+          setBuscando(false)
+        })
+        .catch(() => vigente && setBuscando(false))
+    }, 250)
+    return () => {
+      vigente = false
+      clearTimeout(debounce.current)
+    }
+  }, [query, abierto, codProvee])
+
+  if (!abierto) {
+    return (
+      <button
+        type="button"
+        className={styles.buscarArticulo}
+        disabled={bloqueado}
+        onClick={() => setAbierto(true)}
+      >
+        {etiqueta}
+      </button>
+    )
+  }
+
+  return (
+    <div className={styles.buscador}>
+      <input
+        className={styles.buscadorInput}
+        type="text"
+        autoFocus
+        placeholder="Buscar en Tango: código, descripción…"
+        value={query}
+        disabled={bloqueado}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {buscando && <p className={styles.buscadorNota}>Buscando…</p>}
+      {!buscando && query.trim().length >= 2 && resultados.length === 0 && (
+        <p className={styles.buscadorNota}>Ningún artículo coincide.</p>
+      )}
+      {resultados.map((a) => (
+        <button
+          key={a.codArticu}
+          type="button"
+          className={styles.buscadorFila}
+          disabled={bloqueado}
+          onClick={() => {
+            setAbierto(false)
+            setQuery('')
+            onElegir(a.codArticu)
+          }}
+        >
+          <span className={styles.codigo}>{a.codArticu}</span>
+          <span className={styles.desc}>{a.descripcion}</span>
+        </button>
+      ))}
+      <button
+        type="button"
+        className={styles.buscarArticulo}
+        onClick={() => {
+          setAbierto(false)
+          setQuery('')
+        }}
+      >
+        Cancelar
+      </button>
+    </div>
+  )
+}
+
 export function SelectorOc({
   comprobanteId,
   codProvee,
@@ -223,14 +341,22 @@ export function SelectorOc({
               <span className={styles.descripcionFactura}>{c.descripcion ?? '—'}</span>
               <span className={styles.cant}>{c.cantidad ?? '—'}</span>
               {!soloLectura && c.descripcion && (
-                <button
-                  type="button"
-                  className={styles.quitar}
-                  disabled={pendiente}
-                  onClick={() => marcarCargo(c.descripcion!, false)}
-                >
-                  Va contra una OC
-                </button>
+                <span className={styles.cargoAcciones}>
+                  <BuscadorArticulo
+                    codProvee={codProvee}
+                    bloqueado={pendiente}
+                    etiqueta="Cambiar artículo"
+                    onElegir={(cod) => vincular(c.descripcion!, cod, true)}
+                  />
+                  <button
+                    type="button"
+                    className={styles.quitar}
+                    disabled={pendiente}
+                    onClick={() => marcarCargo(c.descripcion!, false)}
+                  >
+                    Va contra una OC
+                  </button>
+                </span>
               )}
             </div>
           ))}
@@ -305,6 +431,17 @@ export function SelectorOc({
                       />
                       Es un cargo del proveedor: registrar sin orden de compra
                     </label>
+                  )}
+                  {/* El desplegable de arriba solo tiene articulos de las OC
+                      pendientes. Un cargo no esta en ninguna: se busca en el
+                      maestro completo. */}
+                  {!soloLectura && r.descripcion && (
+                    <BuscadorArticulo
+                      codProvee={codProvee}
+                      bloqueado={pendiente}
+                      etiqueta="Buscar en todo Tango…"
+                      onElegir={(cod) => vincular(r.descripcion!, cod, comoCargo.has(r.orden))}
+                    />
                   )}
                 </span>
               )}
