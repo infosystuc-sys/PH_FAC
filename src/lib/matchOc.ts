@@ -191,6 +191,9 @@ export type LineaPdfParaResolver = {
   cantidad: string | null
 }
 
+/** Lo que el operador enseñó para una descripción de este proveedor. */
+export type ArticuloAprendido = { codArticu: string; sinOc: boolean }
+
 /** La misma línea, ya con el código con el que se la va a emparejar. */
 export type LineaPdfResuelta = LineaPdfParaResolver & {
   /**
@@ -200,6 +203,12 @@ export type LineaPdfResuelta = LineaPdfParaResolver & {
    * por descripción, no por código.
    */
   porDescripcion: boolean
+  /**
+   * `true` cuando el operador marcó esta descripción como CARGO del
+   * proveedor: se registra igual --en CPA46 y en el asiento-- pero no va
+   * contra ninguna orden de compra. Ver `SIN_OC` en migrate.ts.
+   */
+  sinOc: boolean
 }
 
 /**
@@ -212,21 +221,39 @@ export type LineaPdfResuelta = LineaPdfParaResolver & {
  * código, manda el código (y su sinónimo de CPA15); si no trae, se busca la
  * descripción entre lo aprendido; si tampoco está, el renglón queda sin
  * código y la tarjeta de la OC lo ofrece para vincular.
+ *
+ * `sinOc` sale siempre de lo aprendido por descripción, tenga la línea
+ * código impreso o no: que un renglón sea un cargo del proveedor no depende
+ * de si la factura imprimió un código al lado.
  */
 export function resolverLineasPdf(
   lineas: LineaPdfParaResolver[],
-  porDescripcion: Record<string, string>,
+  porDescripcion: Record<string, ArticuloAprendido>,
 ): LineaPdfResuelta[] {
   return lineas.map((l) => {
-    if ((l.codigo ?? '').trim() !== '') return { ...l, porDescripcion: false }
     const aprendido = porDescripcion[normalizarDescripcionArticulo(l.descripcion)]
+    const sinOc = aprendido?.sinOc ?? false
+    if ((l.codigo ?? '').trim() !== '') return { ...l, porDescripcion: false, sinOc }
     return aprendido
-      ? { ...l, codigo: aprendido, porDescripcion: true }
-      : { ...l, porDescripcion: false }
+      ? { ...l, codigo: aprendido.codArticu, porDescripcion: true, sinOc }
+      : { ...l, porDescripcion: false, sinOc }
   })
 }
 
 /** Los renglones que siguen sin código después de aplicar lo aprendido. */
 export function lineasAVincular(lineas: LineaPdfResuelta[]): LineaPdfResuelta[] {
   return lineas.filter((l) => (l.codigo ?? '').trim() === '')
+}
+
+/**
+ * Los renglones que van contra una orden de compra: todos menos los cargos.
+ * Es lo que se coteja contra la OC y lo que puede consumir su pendiente.
+ */
+export function lineasContraOc(lineas: LineaPdfResuelta[]): LineaPdfResuelta[] {
+  return lineas.filter((l) => !l.sinOc)
+}
+
+/** Los cargos: se registran igual, pero sin orden de compra. */
+export function lineasCargo(lineas: LineaPdfResuelta[]): LineaPdfResuelta[] {
+  return lineas.filter((l) => l.sinOc && (l.codigo ?? '').trim() !== '')
 }

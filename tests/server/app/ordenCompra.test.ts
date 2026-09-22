@@ -4,13 +4,14 @@ import { conRollback } from '@/server/db/tx'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 import { obtenerDetalleEn } from '@/server/app/detalle'
-import { aprenderArticuloEn } from '@/server/app/articulosProveedor'
+import { aprenderArticuloEn, marcarSinOcEn } from '@/server/app/articulosProveedor'
 import {
   agregarOcEn,
   quitarOcEn,
   ocsDelComprobanteEn,
   renglonesSinOcEn,
   recalcularAVincularEn,
+  sincronizarCargosEn,
 } from '@/server/app/ordenCompra'
 import { buscarOcPendientes, type OrdenCompra } from '@/server/tango/ordenesCompra'
 
@@ -354,6 +355,73 @@ describe('vincular por descripcion (renglones sin codigo)', () => {
       expect(faltan).toHaveLength(1)
       expect(faltan[0].codigo).toBe('NO-ESTA-EN-NINGUNA-OC')
       expect(faltan[0].porDescripcion).toBe(false)
+    })
+  })
+})
+
+describe('cargos del proveedor: renglones sin orden de compra', () => {
+  // 2026-09-22, pedido del usuario. Escribe solo en tablas propias y dentro
+  // de conRollback.
+  async function renglonSinCodigo(tx: sql.Transaction, id: number, orden: number, descripcion: string) {
+    await tx
+      .request()
+      .input('id', sql.Int, id).input('orden', sql.Int, orden)
+      .input('desc', sql.NVarChar(300), descripcion)
+      .query(`
+        INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO)
+        VALUES (@id, @orden, NULL, @desc, 1, 38429.75, 38429.75)`)
+  }
+
+  it('un cargo se registra como renglon sin OC y no bloquea el cotejo', async () => {
+    const p = await unProveedorConOc()
+    const oc = p!.ocs[0]
+    const articulo = primerRenglon(oc).codArticu
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonesPdf(tx, id, [{ codigo: articulo, cantidad: '1' }])
+      await renglonSinCodigo(tx, id, 2, 'GESTION DE COMPRA 1%')
+
+      // El operador lo vincula a un articulo Y lo marca como cargo. Se usa
+      // el mismo articulo de la OC a proposito: es el caso dificil, porque
+      // "esta en una OC" no alcanza para distinguirlo de un renglon normal.
+      await aprenderArticuloEn(tx, p!.codProvee, 'GESTION DE COMPRA 1%', articulo, true)
+
+      await agregarOcEn(tx, id, oc.nOrdenCo, p!.codProvee)
+      await sincronizarCargosEn(tx, id, p!.codProvee)
+
+      const detalle = await obtenerDetalleEn(tx, id)
+      const conOc = detalle.renglones.filter((r) => r.ocNOrdenCo)
+      const cargos = detalle.renglones.filter((r) => !r.ocNOrdenCo)
+      expect(conOc).toHaveLength(1)
+      expect(conOc[0].pdfOrden).toBe(1)
+      // El cargo es un renglon como cualquiera --llega a CPA46 y al asiento--
+      // pero sin orden.
+      expect(cargos).toHaveLength(1)
+      expect(cargos[0].codigo).toBe(articulo)
+      expect(cargos[0].pdfOrden).toBe(2)
+      expect(cargos[0].ocNOrdenCo).toBeNull()
+
+      // Y no figura como faltante: no va contra ninguna orden.
+      expect(await renglonesSinOcEn(tx, id, p!.codProvee)).toEqual([])
+    })
+  })
+
+  it('desmarcarlo saca el renglon de cargo', async () => {
+    const p = await unProveedorConOc()
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonSinCodigo(tx, id, 1, 'GESTION ROSARIO LOGISTICA S.A.')
+      await aprenderArticuloEn(tx, p!.codProvee, 'GESTION ROSARIO LOGISTICA S.A.', '106999', true)
+      await sincronizarCargosEn(tx, id, p!.codProvee)
+      expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(1)
+
+      await marcarSinOcEn(tx, p!.codProvee, 'GESTION ROSARIO LOGISTICA S.A.', false)
+      await sincronizarCargosEn(tx, id, p!.codProvee)
+      expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(0)
+      // Y vuelve a exigir orden de compra.
+      expect(await renglonesSinOcEn(tx, id, p!.codProvee)).toHaveLength(1)
     })
   })
 })

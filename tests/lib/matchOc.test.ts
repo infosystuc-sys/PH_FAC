@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { emparejarOcs, resolverLineasPdf, lineasAVincular, normalizarDescripcionArticulo } from '@/lib/matchOc'
+import { emparejarOcs, resolverLineasPdf, lineasAVincular, normalizarDescripcionArticulo, lineasContraOc, lineasCargo } from '@/lib/matchOc'
 
 /**
  * Las dos OC pendientes reales de CARRIER (010246) al implementar esto, y
@@ -116,7 +116,12 @@ describe('resolverLineasPdf', () => {
   // Hay proveedores que no imprimen codigo de articulo (RED DEL INTERIOR,
   // 2026-09-17): lo unico estable es la descripcion, y el operador la
   // vincula una vez a un articulo nuestro.
-  const aprendidas = { [normalizarDescripcionArticulo('40PFD6920/77 SMART TV 40" FHD PHILIPS')]: '107001' }
+  const aprendidas = {
+    [normalizarDescripcionArticulo('40PFD6920/77 SMART TV 40" FHD PHILIPS')]: {
+      codArticu: '107001',
+      sinOc: false,
+    },
+  }
 
   it('un renglon sin codigo toma el articulo aprendido para su descripcion', () => {
     const r = resolverLineasPdf(
@@ -150,5 +155,62 @@ describe('resolverLineasPdf', () => {
 
   it('la clave de la descripcion ignora acentos, mayusculas y espacios de mas', () => {
     expect(normalizarDescripcionArticulo('  Colchón  190x140  BRISAS ')).toBe('colchon 190x140 brisas')
+  })
+})
+
+describe('cargos del proveedor (sin orden de compra)', () => {
+  // RED DEL INTERIOR factura "GESTION DE COMPRA 1%" y "GESTION ROSARIO
+  // LOGISTICA S.A." (2026-09-22): no forman parte de ninguna OC y tienen que
+  // registrarse igual. No se puede deducir -- esos articulos existen en OTRAS
+  // ordenes pendientes del mismo proveedor --, asi que lo marca el operador.
+  const aprendidas = {
+    [normalizarDescripcionArticulo('GESTION DE COMPRA 1%')]: { codArticu: '106715', sinOc: true },
+    [normalizarDescripcionArticulo('SMART TV 40" FHD PHILIPS')]: { codArticu: '106911', sinOc: false },
+  }
+
+  const lineas = () =>
+    resolverLineasPdf(
+      [
+        { orden: 1, codigo: null, descripcion: 'SMART TV 40" FHD PHILIPS', cantidad: '15' },
+        { orden: 2, codigo: null, descripcion: 'GESTION DE COMPRA 1%', cantidad: '1' },
+      ],
+      aprendidas,
+    )
+
+  it('el cargo resuelve su articulo y queda marcado', () => {
+    const r = lineas()
+    expect(r[1].codigo).toBe('106715')
+    expect(r[1].sinOc).toBe(true)
+    expect(r[0].sinOc).toBe(false)
+  })
+
+  it('los cargos no van contra la OC, pero si se registran', () => {
+    const r = lineas()
+    expect(lineasContraOc(r).map((l) => l.orden)).toEqual([1])
+    expect(lineasCargo(r).map((l) => l.orden)).toEqual([2])
+  })
+
+  it('un cargo resuelto no es un renglon a vincular', () => {
+    expect(lineasAVincular(lineas())).toEqual([])
+  })
+
+  it('sinOc vale aunque la factura traiga codigo impreso', () => {
+    // Que un renglon sea un cargo no depende de si el proveedor imprimio un
+    // codigo al lado: la clave de lo aprendido es la descripcion.
+    const r = resolverLineasPdf(
+      [{ orden: 1, codigo: 'ABC', descripcion: 'GESTION DE COMPRA 1%', cantidad: '1' }],
+      aprendidas,
+    )
+    expect(r[0].codigo).toBe('ABC')
+    expect(r[0].sinOc).toBe(true)
+  })
+
+  it('un cargo sin articulo vinculado no se registra como cargo', () => {
+    // lineasCargo exige codigo: sin articulo no hay nada que grabar en CPA46.
+    const r = resolverLineasPdf(
+      [{ orden: 1, codigo: null, descripcion: 'OTRO CARGO', cantidad: '1' }],
+      { [normalizarDescripcionArticulo('OTRO CARGO')]: { codArticu: '', sinOc: true } },
+    )
+    expect(lineasCargo(r)).toEqual([])
   })
 })

@@ -7,6 +7,7 @@ import {
   desimputarOrdenCompra,
   asociarCodigoProveedor,
   vincularDescripcionArticulo,
+  marcarRenglonSinOc,
   type OfertaOc,
 } from '@/server/app/acciones'
 import { useToast } from '@/components/toast/toast-provider'
@@ -68,6 +69,7 @@ export function SelectorOc({
           imputadas: [],
           sinOrden: [],
           codigosFactura: {},
+          cargos: [],
         })
       })
   }, [comprobanteId, codProvee])
@@ -119,10 +121,10 @@ export function SelectorOc({
   // Un renglon SIN codigo se vincula por su descripcion (2026-09-17): se
   // aprende para el proveedor y la lista se rearma, igual que con un
   // sinonimo.
-  const vincular = (descripcion: string, codArticu: string) =>
+  const vincular = (descripcion: string, codArticu: string, sinOc = false) =>
     arrancar(async () => {
       try {
-        const { quedan } = await vincularDescripcionArticulo(comprobanteId, codProvee!, descripcion, codArticu)
+        const { quedan } = await vincularDescripcionArticulo(comprobanteId, codProvee!, descripcion, codArticu, sinOc)
         toast(
           `"${descripcion}" vinculada a ${codArticu}` +
             (quedan > 0 ? ` — quedan ${quedan} renglón(es) por vincular` : ''),
@@ -133,6 +135,23 @@ export function SelectorOc({
       }
     })
 
+  // Marcar o desmarcar un renglon ya vinculado como cargo del proveedor.
+  const marcarCargo = (descripcion: string, sinOc: boolean) =>
+    arrancar(async () => {
+      try {
+        await marcarRenglonSinOc(comprobanteId, codProvee!, descripcion, sinOc)
+        toast(
+          sinOc
+            ? `"${descripcion}" se registra sin orden de compra`
+            : `"${descripcion}" vuelve a ir contra una orden de compra`,
+        )
+        cargar()
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'No se pudo marcar el renglón.')
+      }
+    })
+
+  const cargos = oferta?.cargos ?? []
   const imputadas = oferta?.imputadas ?? []
   const sinOrden = oferta?.sinOrden ?? []
   const lista = oferta?.ocs ?? []
@@ -184,6 +203,38 @@ export function SelectorOc({
         </p>
       )}
 
+      {/* Los cargos del proveedor: se registran igual, sin orden de compra. */}
+      {cargos.length > 0 && (
+        <div className={styles.cargos}>
+          <p className={styles.cargosTitulo}>
+            {cargos.length === 1
+              ? 'Este renglón se registra sin orden de compra:'
+              : 'Estos renglones se registran sin orden de compra:'}
+          </p>
+          {cargos.map((c) => (
+            <div key={c.orden} className={styles.cargoFila}>
+              <span className={styles.codigo}>{c.codigo}</span>
+              <span className={styles.descripcionFactura}>{c.descripcion ?? '—'}</span>
+              <span className={styles.cant}>{c.cantidad ?? '—'}</span>
+              {!soloLectura && c.descripcion && (
+                <button
+                  type="button"
+                  className={styles.quitar}
+                  disabled={pendiente}
+                  onClick={() => marcarCargo(c.descripcion!, false)}
+                >
+                  Va contra una OC
+                </button>
+              )}
+            </div>
+          ))}
+          <p className={styles.cargosNota}>
+            Entran en la factura y en el asiento con el precio del comprobante, sin consumir
+            pendiente de ninguna orden. Se recuerda para las próximas facturas de este proveedor.
+          </p>
+        </div>
+      )}
+
       {/* Ninguna orden del proveedor trae este articulo: eso si hay que
           arreglarlo antes de registrar. */}
       {sinCandidata.length > 0 && (
@@ -222,6 +273,22 @@ export function SelectorOc({
                         </option>
                       ))}
                     </select>
+                  )}
+                  {/* Un cargo del proveedor --gestión de compra, logística--
+                      se vincula igual a un artículo, pero no va contra
+                      ninguna orden. Es una decisión del operador: el artículo
+                      puede existir en otra OC pendiente y la app no tiene
+                      cómo distinguirlo sola. */}
+                  {!soloLectura && r.descripcion && (
+                    <label className={styles.cargoOpcion}>
+                      <input
+                        type="checkbox"
+                        checked={false}
+                        disabled={pendiente}
+                        onChange={() => marcarCargo(r.descripcion!, true)}
+                      />
+                      Es un cargo del proveedor: registrar sin orden de compra
+                    </label>
                   )}
                 </span>
               )}

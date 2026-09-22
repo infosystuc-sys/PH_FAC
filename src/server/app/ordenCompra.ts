@@ -7,6 +7,8 @@ import {
   resolverCodigoArticulo,
   resolverLineasPdf,
   lineasAVincular,
+  lineasContraOc,
+  lineasCargo,
   type LineaPdfResuelta,
 } from '@/lib/matchOc'
 import { articulosPorDescripcionEn } from './articulosProveedor'
@@ -122,7 +124,9 @@ export async function agregarOcEn(
       )
     : new Map<string, string>()
 
-  const emparejados = emparejarRenglones(lineas, oc.renglones, sinonimos)
+  // Los cargos quedan afuera del emparejamiento: no consumen pendiente de
+  // ninguna orden. Sus renglones los crea sincronizarCargosEn.
+  const emparejados = emparejarRenglones(lineasContraOc(lineas), oc.renglones, sinonimos)
 
   // ORDEN es UNIQUE por comprobante y ya puede haber renglones de otra
   // orden: se sigue desde el mayor en vez de arrancar de 1.
@@ -255,7 +259,9 @@ export async function renglonesSinOcEn(
       )
     : new Map<string, string>()
 
-  return lineas
+  // Los cargos del proveedor no van contra ninguna orden: no son un
+  // faltante, son otra cosa (ver SIN_OC en migrate.ts).
+  return lineasContraOc(lineas)
     .filter((r) => resolverCodigoArticulo(r.codigo, imputados, sinonimos) === null)
     .map((r) => ({
       orden: r.orden,
@@ -264,4 +270,71 @@ export async function renglonesSinOcEn(
       cantidad: r.cantidad,
       porDescripcion: r.porDescripcion,
     }))
+}
+
+/**
+ * Crea (o rehace) los renglones de los CARGOS del proveedor: los que el
+ * operador marcó como "va sin orden de compra" -- 2026-09-22, pedido del
+ * usuario. RED DEL INTERIOR factura "GESTION DE COMPRA 1%" y "GESTION
+ * ROSARIO LOGISTICA S.A.": no forman parte de ninguna OC y tienen que
+ * entrar igual en la factura y en el asiento.
+ *
+ * Son renglones de `PHF_RENGLON` como cualquier otro --por eso llegan a
+ * CPA46 y a la vista previa del asiento-- pero con las cuatro columnas de
+ * OC en NULL: no se vinculan en `CPA_OC_FACTURA` ni descuentan `CPA36`.
+ *
+ * El precio sale de la FACTURA, no de ninguna orden: es lo único que hay.
+ * Se rehacen enteros en cada llamada (borrar + insertar los vigentes) para
+ * que desmarcar un cargo, o cambiarle el artículo, no deje un renglón
+ * viejo pegado.
+ */
+export async function sincronizarCargosEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  codProvee: string | null,
+): Promise<number> {
+  const detalle = await obtenerDetalleEn(e, comprobanteId)
+  const cargos = lineasCargo(await lineasPdfResueltasEn(e, detalle, codProvee))
+
+  // Los renglones de cargo se identifican por no tener orden: los de OC los
+  // maneja agregarOcEn y no se tocan acá.
+  await e
+    .request()
+    .input('id', sql.Int, comprobanteId)
+    .query('DELETE FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id AND OC_N_ORDEN_CO IS NULL')
+
+  if (cargos.length === 0) return 0
+
+  const maximo = await e
+    .request()
+    .input('id', sql.Int, comprobanteId)
+    .query<{ maxOrden: number | null }>(
+      'SELECT MAX(ORDEN) AS maxOrden FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id',
+    )
+  let orden = Number(maximo.recordset[0]?.maxOrden ?? 0)
+
+  const porOrden = new Map(detalle.renglonesPdf.map((r) => [r.orden, r]))
+  for (const cargo of cargos) {
+    const pdf = porOrden.get(cargo.orden)
+    const cantidad = parsearImporte(cargo.cantidad)
+    const precio = parsearImporte(pdf?.precioImpreso)
+    orden += 1
+    await e
+      .request()
+      .input('id', sql.Int, comprobanteId)
+      .input('orden', sql.Int, orden)
+      .input('codigo', sql.NVarChar(60), cargo.codigo)
+      .input('desc', sql.NVarChar(500), cargo.descripcion)
+      .input('cant', sql.Decimal(19, 4), cantidad)
+      .input('pu', sql.Decimal(19, 4), precio)
+      .input('imp', sql.Decimal(19, 4), parsearImporte(pdf?.subtotalImpreso))
+      .input('pdfOrden', sql.Int, cargo.orden)
+      .query(`
+        INSERT INTO PHF_RENGLON
+          (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
+           PRECIO_UNITARIO_IA, IMPORTE_IA, PDF_ORDEN)
+        VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @pdfOrden)
+      `)
+  }
+  return cargos.length
 }

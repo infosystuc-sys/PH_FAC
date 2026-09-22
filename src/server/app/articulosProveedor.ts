@@ -24,6 +24,7 @@ export async function aprenderArticuloEn(
   codProvee: string,
   descripcion: string,
   codArticu: string,
+  sinOc = false,
 ): Promise<void> {
   const prov = codProvee.trim()
   const desc = normalizarDescripcionArticulo(descripcion)
@@ -35,6 +36,7 @@ export async function aprenderArticuloEn(
     .input('prov', sql.VarChar(20), prov)
     .input('desc', sql.NVarChar(300), desc.slice(0, 300))
     .input('art', sql.VarChar(20), art)
+    .input('sinOc', sql.Bit, sinOc)
     .input('usuario', sql.NVarChar(60), usuarioActual())
     .query(`
       MERGE PHF_ARTICULO_PROVEEDOR WITH (HOLDLOCK) AS destino
@@ -42,10 +44,10 @@ export async function aprenderArticuloEn(
         ON destino.COD_PROVEE = origen.COD_PROVEE
        AND destino.DESCRIPCION = origen.DESCRIPCION
       WHEN MATCHED THEN
-        UPDATE SET COD_ARTICU = @art, FECHA_MODIF = SYSDATETIME(), USUARIO = @usuario
+        UPDATE SET COD_ARTICU = @art, SIN_OC = @sinOc, FECHA_MODIF = SYSDATETIME(), USUARIO = @usuario
       WHEN NOT MATCHED THEN
-        INSERT (COD_PROVEE, DESCRIPCION, COD_ARTICU, USUARIO)
-        VALUES (@prov, @desc, @art, @usuario);
+        INSERT (COD_PROVEE, DESCRIPCION, COD_ARTICU, SIN_OC, USUARIO)
+        VALUES (@prov, @desc, @art, @sinOc, @usuario);
     `)
 }
 
@@ -53,35 +55,70 @@ export async function aprenderArticulo(
   codProvee: string,
   descripcion: string,
   codArticu: string,
+  sinOc = false,
 ): Promise<void> {
-  await aprenderArticuloEn(await getPool(), codProvee, descripcion, codArticu)
+  await aprenderArticuloEn(await getPool(), codProvee, descripcion, codArticu, sinOc)
+}
+
+/**
+ * Marca (o desmarca) una descripcion ya aprendida como cargo del proveedor:
+ * se registra sin orden de compra. No toca el articulo.
+ */
+export async function marcarSinOcEn(
+  e: Ejecutor,
+  codProvee: string,
+  descripcion: string,
+  sinOc: boolean,
+): Promise<void> {
+  const prov = codProvee.trim()
+  const desc = normalizarDescripcionArticulo(descripcion)
+  if (!prov || !desc) return
+  await e
+    .request()
+    .input('prov', sql.VarChar(20), prov)
+    .input('desc', sql.NVarChar(300), desc.slice(0, 300))
+    .input('sinOc', sql.Bit, sinOc)
+    .input('usuario', sql.NVarChar(60), usuarioActual())
+    .query(`
+      UPDATE PHF_ARTICULO_PROVEEDOR
+      SET SIN_OC = @sinOc, FECHA_MODIF = SYSDATETIME(), USUARIO = @usuario
+      WHERE COD_PROVEE = @prov AND DESCRIPCION = @desc
+    `)
 }
 
 /**
  * Todo lo que este proveedor ya enseñó: descripción normalizada → nuestro
- * código. Un objeto plano y no un `Map` por el mismo motivo que
- * `cargarAprendidosEn`: cruza la frontera server/client.
+ * código y si ese renglón va sin orden de compra. Un objeto plano y no un
+ * `Map` por el mismo motivo que `cargarAprendidosEn`: cruza la frontera
+ * server/client.
  */
+export type ArticuloAprendido = { codArticu: string; sinOc: boolean }
+
 export async function articulosPorDescripcionEn(
   e: Ejecutor,
   codProvee: string | null | undefined,
-): Promise<Record<string, string>> {
+): Promise<Record<string, ArticuloAprendido>> {
   const prov = (codProvee ?? '').trim()
-  const mapa: Record<string, string> = {}
+  const mapa: Record<string, ArticuloAprendido> = {}
   if (!prov) return mapa
 
   const r = await e
     .request()
     .input('prov', sql.VarChar(20), prov)
     .query<Record<string, unknown>>(`
-      SELECT DESCRIPCION, COD_ARTICU FROM PHF_ARTICULO_PROVEEDOR WHERE COD_PROVEE = @prov
+      SELECT DESCRIPCION, COD_ARTICU, SIN_OC FROM PHF_ARTICULO_PROVEEDOR WHERE COD_PROVEE = @prov
     `)
-  for (const f of r.recordset) mapa[String(f.DESCRIPCION)] = String(f.COD_ARTICU).trim()
+  for (const f of r.recordset) {
+    mapa[String(f.DESCRIPCION)] = {
+      codArticu: String(f.COD_ARTICU).trim(),
+      sinOc: Boolean(f.SIN_OC),
+    }
+  }
   return mapa
 }
 
 export async function articulosPorDescripcion(
   codProvee: string | null | undefined,
-): Promise<Record<string, string>> {
+): Promise<Record<string, ArticuloAprendido>> {
   return articulosPorDescripcionEn(await getPool(), codProvee)
 }

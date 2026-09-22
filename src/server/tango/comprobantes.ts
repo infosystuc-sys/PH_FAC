@@ -838,6 +838,95 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     }
   }
 
+  // 7b. Los CARGOS del proveedor: renglones que la factura cobra y que no
+  // van contra ninguna orden de compra -- 2026-09-22, pedido del usuario.
+  // RED DEL INTERIOR factura "GESTION DE COMPRA 1%" y "GESTION ROSARIO
+  // LOGISTICA S.A.": el operador las vincula a un articulo de Tango, la app
+  // lo recuerda (SIN_OC en PHF_ARTICULO_PROVEEDOR) y se registran igual.
+  //
+  // Van a CPA46/CTA07 como cualquier renglon --por eso entran en la factura
+  // y en el asiento, que agrupa los renglones por su cuenta de compras--
+  // pero NO generan vinculo en CPA_OC_FACTURA ni descuentan CPA36: no hay
+  // orden que consumir.
+  //
+  // El deposito es el mas usado en las ordenes de compra: medido sobre
+  // CPA36, el "01" concentra 7.680 de 7.711 renglones. No sale de la OC
+  // --un cargo no tiene orden-- ni se deja vacio: CPA46.COD_DEPOSI es parte
+  // de la clave con la que Stock ubica el renglon.
+  const renglonesCargo = detalle.renglones.filter((r) => !r.ocNOrdenCo && !r.ocNRenglOc)
+  if (renglonesCargo.length > 0) {
+    if (!descuento.ok) throw new Error(describirDescuento(descuento))
+
+    const depoR = await tx.request().query<{ cod: string | null }>(`
+      SELECT TOP 1 LTRIM(RTRIM(COD_DEPOSI)) AS cod
+      FROM CPA36 WHERE LTRIM(RTRIM(ISNULL(COD_DEPOSI, ''))) <> ''
+      GROUP BY LTRIM(RTRIM(COD_DEPOSI)) ORDER BY COUNT(*) DESC`)
+    const codDeposiCargo = String(depoR.recordset[0]?.cod ?? '').trim()
+
+    let nRenglC = renglonesConOc.length
+    for (const renglon of renglonesCargo) {
+      const codArticu = (renglon.codigoFinal ?? renglon.codigo ?? '').trim()
+      if (!codArticu) {
+        throw new Error(
+          `Un renglón sin orden de compra no tiene artículo: vinculalo antes de registrar.`,
+        )
+      }
+      const cantidad = parsearImporte(renglon.cantidad)
+      const neto =
+        renglon.pdfOrden === null ? null : (netosPorOrden(descuento).get(renglon.pdfOrden) ?? null)
+      if (!neto) {
+        throw new Error(
+          `El renglón del artículo ${codArticu} no tiene precio ni subtotal leídos de la factura: ` +
+            `reprocesá el comprobante antes de registrarlo.`,
+        )
+      }
+      nRenglC += 1
+
+      await tx.request()
+        .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
+        .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
+        .input('codDeposi', sql.VarChar(10), codDeposiCargo)
+        .input('cantidad', sql.Decimal(18, 4), cantidad)
+        .input('precioNet', sql.Decimal(18, 4), neto.precioNeto)
+        .input('impNetoP', sql.Decimal(18, 2), neto.importeNeto)
+        .input('fechaMov', sql.DateTime, fechaEmision)
+        .query(`
+          INSERT INTO CPA46 (
+            TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_ARTICU, COD_DEPOSI, CANTIDAD,
+            PRECIO_NET, PRECIO_PAN, IMP_NETO_P, FECHA_MOV, EQUIVALENC, FALTA_REM,
+            PORCE_DCTO, FILLER, COD_CLASIF, IMPORTE_EXENTO, IMPORTE_GRAVADO,
+            CANTIDAD_2, FALTA_REM_2, UNIDAD_MEDIDA_SELECCIONADA, IMPORTE_FLETE,
+            IMPORTE_IMPUESTOS_COSTOS, ID_STA11
+          ) VALUES (
+            @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
+            @precioNet, @precioNet, @impNetoP, @fechaMov, 1, 0,
+            0, '', '', 0, @impNetoP,
+            0, 0, 'P', 0,
+            0, NULL
+          )`)
+
+      await tx.request()
+        .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
+        .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
+        .input('codDeposi', sql.VarChar(10), codDeposiCargo)
+        .input('cantidad', sql.Decimal(18, 4), cantidad)
+        .input('precioNet', sql.Decimal(18, 4), neto.precioNeto)
+        .input('impNetoP', sql.Decimal(18, 2), neto.importeNeto)
+        .input('fechaMov', sql.DateTime, fechaEmision)
+        .input('nroSucurs', sql.SmallInt, 1001)
+        .query(`
+          INSERT INTO CTA07 (
+            TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_ARTICU, COD_DEPOSI, CANTIDAD,
+            PRECIO_NET, PRECIO_PAN, IMP_NETO_P, FECHA_MOV, EQUIVALENC, NRO_SUCURS,
+            PORC_DTO, FILLER, COD_CLASIF, CANTIDAD_2, UNIDAD_MEDIDA_SELECCIONADA
+          ) VALUES (
+            @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
+            @precioNet, @precioNet, @impNetoP, @fechaMov, 1, @nroSucurs,
+            0, '', '', 0, 'P'
+          )`)
+    }
+  }
+
   // 8. Asiento contable: se arma en las tablas de staging que Tango lee
   // para "pasar a contabilidad" (ASIENTO_COMPROBANTE_CP/ASIENTO_CP), y
   // queda marcado CONTABILIZADO='S' con fecha de la factura -- decision

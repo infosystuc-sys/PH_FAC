@@ -326,3 +326,46 @@
   color: var(--error);
   overflow-wrap: anywhere;
 }
+
+/* Los cargos del proveedor: se registran sin orden de compra. Verde y no
+   rojo -- no es un problema a resolver, es una decision ya tomada. */
+.cargos {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: var(--exito-fondo);
+}
+
+.cargosTitulo {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  color: var(--exito);
+}
+
+.cargoFila {
+  display: grid;
+  grid-template-columns: auto 1fr 60px auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 1px 0;
+  font-size: 11.5px;
+  color: var(--texto-2);
+}
+
+.cargosNota {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--texto-3);
+}
+
+/* La opcion de marcar un renglon como cargo, debajo del desplegable. */
+.cargoOpcion {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--texto-3);
+  cursor: pointer;
+}

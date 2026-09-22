@@ -380,6 +380,16 @@ const DEFINICIONES: Definicion[] = [
         DESCRIPCION     NVARCHAR(300)  NOT NULL,
         -- Nuestro codigo, tal como esta en STA11 (con sus espacios, si los tiene).
         COD_ARTICU      VARCHAR(20)    NOT NULL,
+        -- 1 = este renglon es un CARGO del proveedor y no va contra una orden
+        -- de compra: se registra igual, en CPA46 y en el asiento, pero sin
+        -- vinculo en CPA_OC_FACTURA ni descuento de CPA36. Lo marca el
+        -- operador y se recuerda por proveedor+descripcion (2026-09-22,
+        -- pedido del usuario: RED DEL INTERIOR factura "GESTION DE COMPRA 1%"
+        -- y "GESTION ROSARIO LOGISTICA S.A."). No se puede deducir solo: esos
+        -- dos articulos existen en OTRAS ordenes pendientes del mismo
+        -- proveedor, asi que "no esta en ninguna OC" no los distingue de
+        -- "falta imputar la orden correcta".
+        SIN_OC          BIT            NOT NULL CONSTRAINT DF_PHF_ARTPROV_SINOC DEFAULT 0,
         FECHA_ALTA      DATETIME2      NOT NULL CONSTRAINT DF_PHF_ARTPROV_ALTA DEFAULT SYSDATETIME(),
         FECHA_MODIF     DATETIME2      NULL,
         USUARIO         NVARCHAR(60)   NOT NULL,
@@ -389,6 +399,9 @@ const DEFINICIONES: Definicion[] = [
         CONSTRAINT UQ_PHF_ARTPROV UNIQUE (COD_PROVEE, DESCRIPCION)
       );
     `,
+    columnas: [
+      { nombre: 'SIN_OC', ddl: 'SIN_OC BIT NOT NULL CONSTRAINT DF_PHF_ARTPROV_SINOC DEFAULT 0' },
+    ],
   },
   {
     tabla: 'PHF_CONFIGURACION',

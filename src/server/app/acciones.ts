@@ -26,10 +26,10 @@ import {
   describirArticulos,
   type ArticuloTango,
 } from '@/server/tango/articulos'
-import { emparejarOcs, resolverCodigoArticulo } from '@/lib/matchOc'
+import { emparejarOcs, resolverCodigoArticulo, lineasCargo } from '@/lib/matchOc'
 import { tipoPorContenido, NOMBRES_ADMITIDOS } from '@/lib/tipoArchivo'
 import { normalizarCodigo } from '@/lib/cotejoOc'
-import { aprenderArticuloEn } from './articulosProveedor'
+import { aprenderArticuloEn, marcarSinOcEn } from './articulosProveedor'
 import {
   listarConceptos,
   asignarConceptoProveedor,
@@ -43,6 +43,7 @@ import {
   renglonesSinOcEn,
   lineasPdfResueltasEn,
   recalcularAVincularEn,
+  sincronizarCargosEn,
 } from './ordenCompra'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
@@ -424,24 +425,61 @@ export async function vincularDescripcionArticulo(
   codProvee: string,
   descripcion: string,
   codArticu: string,
+  sinOc = false,
 ): Promise<{ quedan: number }> {
   const desc = descripcion.trim()
   const art = codArticu.trim()
   if (!codProvee.trim() || !desc || !art) throw new Error('Faltan datos para vincular el artículo.')
 
   const quedan = await conTransaccion(async (tx) => {
-    await aprenderArticuloEn(tx, codProvee, desc, art)
+    await aprenderArticuloEn(tx, codProvee, desc, art, sinOc)
     await auditarEn(
       tx,
       comprobanteId,
-      `Descripción vinculada a un artículo para el proveedor: "${desc}" = ${art}`,
+      `Descripción vinculada a un artículo para el proveedor: "${desc}" = ${art}` +
+        (sinOc ? ' — cargo del proveedor, se registra sin orden de compra' : ''),
     )
+    await sincronizarCargosEn(tx, comprobanteId, codProvee)
     return recalcularAVincularEn(tx, comprobanteId, codProvee)
   })
 
   revalidatePath(`/comprobantes/${comprobanteId}`)
   revalidatePath('/comprobantes')
   return { quedan }
+}
+
+/**
+ * El operador marca un renglon como CARGO del proveedor: se registra en la
+ * factura y en el asiento, pero sin orden de compra (2026-09-22, pedido del
+ * usuario). Se recuerda por proveedor+descripcion, asi que la proxima
+ * factura del mismo proveedor ya lo trata igual.
+ *
+ * Requiere que la descripcion ya este vinculada a un articulo: un cargo sin
+ * articulo no se puede grabar en CPA46.
+ */
+export async function marcarRenglonSinOc(
+  comprobanteId: number,
+  codProvee: string,
+  descripcion: string,
+  sinOc: boolean,
+): Promise<void> {
+  const desc = descripcion.trim()
+  if (!codProvee.trim() || !desc) throw new Error('Faltan datos para marcar el renglón.')
+
+  await conTransaccion(async (tx) => {
+    await marcarSinOcEn(tx, codProvee, desc, sinOc)
+    await auditarEn(
+      tx,
+      comprobanteId,
+      sinOc
+        ? `"${desc}" marcado como cargo del proveedor: se registra sin orden de compra`
+        : `"${desc}" vuelve a ir contra una orden de compra`,
+    )
+    await sincronizarCargosEn(tx, comprobanteId, codProvee)
+  })
+
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  revalidatePath('/comprobantes')
 }
 
 /**
@@ -631,7 +669,15 @@ export type OfertaOc = {
     descripcion: string | null
     /** El código salió de una descripción aprendida, no vino impreso. */
     porDescripcion: boolean
+    /** Es un cargo del proveedor: se registra sin orden de compra. */
+    sinOc: boolean
   }[]
+  /**
+   * Los cargos del proveedor de esta factura: se registran igual, sin orden
+   * de compra. Se listan aparte para que el operador los vea y pueda
+   * desmarcarlos.
+   */
+  cargos: { orden: number; descripcion: string | null; codigo: string; cantidad: string | null }[]
 }
 
 /**
@@ -723,6 +769,7 @@ export async function listarOcParaComprobante(
     ...r,
     hayCandidata: resolverCodigoArticulo(r.codigo, enAlgunaOc, sinonimos) !== null,
     reconocidoComo: reconocidos.get(normalizarCodigo(r.codigo)) ?? null,
+    sinOc: false,
   }))
 
   // Nuestro codigo -> el impreso, para los que coincidieron via sinonimo.
@@ -739,6 +786,12 @@ export async function listarOcParaComprobante(
     imputadas,
     sinOrden: sinOrdenAnotado,
     codigosFactura,
+    cargos: lineasCargo(lineas).map((l) => ({
+      orden: l.orden,
+      descripcion: l.descripcion,
+      codigo: (l.codigo ?? '').trim(),
+      cantidad: l.cantidad,
+    })),
   }
 
   if (coinciden.length === 0) {
