@@ -188,6 +188,44 @@ describe('listarComprobantes', () => {
     })
   })
 
+  it('busca por ID: una query de solo digitos encuentra ese comprobante', async () => {
+    // El ID es el numero que el operador ve en la URL y en los mensajes de la
+    // app ("eliminá el 20208"), asi que tiene que poder pegarlo en el buscador.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, {
+        estado: 'error',
+        razonSocial: `${marcaUnica()} FERRETERIA DEL PUERTO SA`,
+      })
+      const r = await listarComprobantesEn(tx, { filtro: 'todos', query: String(id) })
+      expect(r.filas.map((f) => f.id)).toContain(id)
+    })
+  })
+
+  it('busca por nombre de archivo a un comprobante cuya lectura fallo', async () => {
+    // Cuando la extraccion se revierte, RAZON_SOCIAL, NUMERO y CUIT quedan en
+    // NULL: el nombre del archivo es lo unico que le queda al operador para
+    // encontrarlo. Esta fila reproduce exactamente ese estado.
+    await conRollback(async (tx) => {
+      const marca = marcaUnica()
+      const archivoNombre = `FA-A-0070-${marca}.PDF`
+      const id = await insertarComprobantePrueba(tx, { estado: 'error', archivoNombre })
+      const r = await listarComprobantesEn(tx, { filtro: 'todos', query: marca })
+      expect(r.total).toBe(1)
+      expect(r.filas[0].id).toBe(id)
+      expect(r.filas[0].razonSocial).toBeNull()
+      expect(r.filas[0].archivoNombre).toBe(archivoNombre)
+    })
+  })
+
+  it('una query de mas digitos que un Int no hace fallar la consulta', async () => {
+    // Un numero de comprobante largo pegado en el buscador no puede desbordar
+    // el @id y tumbar la busqueda entera: se ignora como ID y sigue el LIKE.
+    await conRollback(async (tx) => {
+      const r = await listarComprobantesEn(tx, { filtro: 'todos', query: '99999999999999' })
+      expect(r.total).toBe(0)
+    })
+  })
+
   it('busca por CUIT con guiones y encuentra uno guardado sin guiones', async () => {
     await conRollback(async (tx) => {
       const { leido } = await sembrar(tx)

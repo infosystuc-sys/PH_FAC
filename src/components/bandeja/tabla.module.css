@@ -183,3 +183,12 @@
   font-size: 13.5px;
   color: var(--texto-5);
 }
+
+/* El nombre del archivo, cuando no hay razon social todavia. Mas tenue y en
+   Mono: no es el dato que el operador busca, es el que le permite saber cual
+   fila es cual mientras la lectura no termino o fallo. */
+.archivo {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--texto-4);
+}

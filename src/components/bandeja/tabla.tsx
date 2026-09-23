@@ -128,13 +128,22 @@ export function Tabla({ filas, filtro, query }: { filas: FilaBandeja[]; filtro: 
             <span className={styles.tipo}>{f.tipo ?? '—'}</span>
             <span className={styles.mono}>{f.numero ?? '—'}</span>
             <span className={styles.monoTenue}>{formatFecha(f.fechaEmision)}</span>
-            <span className={styles.proveedor}>{f.razonSocial ?? '—'}</span>
+            {/* Sin razon social --la lectura fallo, o todavia esta
+                procesando-- se muestra el archivo: es lo unico que le dice
+                al operador cual de las filas es cual. */}
+            <span className={styles.proveedor}>
+              {f.razonSocial ?? (
+                <span className={styles.archivo} title={f.archivoNombre}>
+                  {f.archivoNombre || '—'}
+                </span>
+              )}
+            </span>
             <span className={styles.monoTenue}>{formatCuit(f.cuit)}</span>
             <span className={styles.total}>{formatMoneda(f.total)}</span>
             <span className={styles.centro}><ChipConfianza valor={f.confianzaPromedio} /></span>
             <AccionesFila
               id={f.id}
-              comprobante={[f.tipo, f.numero].filter(Boolean).join(' ') || `Comprobante ${f.id}`}
+              comprobante={[f.tipo, f.numero].filter(Boolean).join(' ') || f.archivoNombre || `Comprobante ${f.id}`}
               proveedor={f.razonSocial ?? '—'}
               estado={f.estado}
               className={styles.accion}

@@ -15,6 +15,9 @@ export type FilaBandeja = {
   cuit: string | null
   total: number | null
   confianzaPromedio: number | null
+  /** El archivo que se importo. Es lo unico que identifica a un comprobante
+   *  cuya lectura fallo, porque el resto de las columnas quedan en NULL. */
+  archivoNombre: string
 }
 
 export type Kpis = {
@@ -43,7 +46,13 @@ const WHERE_BUSQUEDA = `
   (@q = ''
    OR RAZON_SOCIAL LIKE @like
    OR NUMERO LIKE @like
-   OR REPLACE(REPLACE(REPLACE(ISNULL(CUIT,''), '-', ''), ' ', ''), '.', '') LIKE @likeCuit)
+   OR REPLACE(REPLACE(REPLACE(ISNULL(CUIT,''), '-', ''), ' ', ''), '.', '') LIKE @likeCuit
+   -- El nombre del archivo y el ID son lo unico que identifica a un
+   -- comprobante cuya lectura fallo: ese no tiene razon social, ni numero,
+   -- ni CUIT -- la extraccion se revierte entera y las tres quedan en NULL.
+   -- Sin esto no habia forma de encontrarlo desde el buscador (2026-09-23).
+   OR ARCHIVO_NOMBRE LIKE @like
+   OR (@idBuscado IS NOT NULL AND ID = @idBuscado))
 `
 
 function pedido(e: Ejecutor, filtro: ClaveTab, query: string): sql.Request {
@@ -53,6 +62,13 @@ function pedido(e: Ejecutor, filtro: ClaveTab, query: string): sql.Request {
     .input('q', sql.NVarChar(200), q)
     .input('like', sql.NVarChar(210), `%${q}%`)
     .input('likeCuit', sql.NVarChar(210), `%${q.replace(/[-\s.]/g, '')}%`)
+    // Una busqueda que es solo digitos puede ser el ID: el numero que el
+    // operador ve en la URL y en los mensajes de la app. Se acota a 9 digitos
+    // para no desbordar el Int y hacer fallar la consulta entera por una
+    // busqueda larga -- un numero de comprobante de 12 digitos, por ejemplo.
+    // Se llama @idBuscado y no @id porque obtenerVecinosEn ya usa @id para el
+    // comprobante que se esta viendo, que es otra cosa.
+    .input('idBuscado', sql.Int, /^\d{1,9}$/.test(q) ? Number(q) : null)
     // 'vincular' no es un estado: es el corte por RENGLONES_A_VINCULAR (ver
     // estados.ts). Va como flag aparte para que @estado siga siendo NULL.
     .input('estado', sql.VarChar(20), filtro === 'todos' || filtro === 'vincular' ? null : filtro)
@@ -80,6 +96,7 @@ function aFila(row: Record<string, unknown>): FilaBandeja {
       row.CONFIANZA_PROMEDIO === null || row.CONFIANZA_PROMEDIO === undefined
         ? null
         : Number(row.CONFIANZA_PROMEDIO),
+    archivoNombre: String(row.ARCHIVO_NOMBRE ?? ''),
   }
 }
 
@@ -92,7 +109,7 @@ export async function listarComprobantesEn(
     .input('off', sql.Int, offset)
     .query<Record<string, unknown>>(`
       SELECT ID, ESTADO, TIPO, PUNTO_VENTA, NUMERO, FECHA_EMISION,
-             RAZON_SOCIAL, CUIT, TOTAL, CONFIANZA_PROMEDIO
+             RAZON_SOCIAL, CUIT, TOTAL, CONFIANZA_PROMEDIO, ARCHIVO_NOMBRE
       FROM PHF_COMPROBANTE
       WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA}
       ORDER BY FECHA_ALTA DESC, ID DESC
@@ -307,7 +324,11 @@ export async function insertarComprobantePrueba(
 ): Promise<number> {
   const r = await tx
     .request()
-    .input('nombre', sql.NVarChar(260), `prueba-${Date.now()}-${Math.random()}.pdf`)
+    .input(
+      'nombre',
+      sql.NVarChar(260),
+      datos.archivoNombre || `prueba-${Date.now()}-${Math.random()}.pdf`,
+    )
     .input('ruta', sql.NVarChar(500), 'prueba')
     .input('hash', sql.Char(64), '0'.repeat(64))
     .input('estado', sql.VarChar(20), datos.estado)
