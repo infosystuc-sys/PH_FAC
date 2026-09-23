@@ -22,6 +22,7 @@ import { escribirCuotasEn } from './cuotas'
 import { fechaContableDe } from '@/lib/fechaContable'
 import { resolverDescuentoDeDetalle, netosPorOrden, describirDescuento } from '@/lib/descuentoGlobal'
 import { cierreContable } from './parametros'
+import { actualizarPrecioUltimaCompraEn } from './preciosCompra'
 
 export type ComprobanteCpa04 = {
   nComp: string
@@ -826,6 +827,18 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
             PENDIENTE_RECIBIR_FACTURADA = @pendRecibir
         WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
 
+    // El precio de ultima compra del articulo (STA12): lo que Tango
+    // actualiza al registrar una factura, y que esta app no hacia --
+    // pedido del usuario, 2026-09-21. Ver preciosCompra.ts.
+    await actualizarPrecioUltimaCompraEn(tx, {
+      codArticu,
+      precioNeto,
+      codProvee,
+      fechaContable,
+      cotizacion,
+      monCte: moneda === 'ARS',
+    })
+
     ocsAfectadas.add(nOrdenCo)
   }
 
@@ -935,6 +948,17 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
             @precioNet, @precioNet, @impNetoP, @fechaMov, 1, @nroSucurs,
             0, '', '', 0, 'P'
           )`)
+
+      // Un cargo tambien mueve el precio de ultima compra del articulo al
+      // que se lo imputa: para Tango es una compra mas de ese articulo.
+      await actualizarPrecioUltimaCompraEn(tx, {
+        codArticu,
+        precioNeto: neto.precioNeto,
+        codProvee,
+        fechaContable,
+        cotizacion,
+        monCte: moneda === 'ARS',
+      })
     }
   }
 

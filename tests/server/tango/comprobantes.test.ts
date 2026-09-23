@@ -596,6 +596,88 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
       expect(Number(link.recordset[0].n)).toBe(1)
     })
   }, 90000)
+
+  it('actualiza el precio de ultima compra del articulo en STA12', async () => {
+    // Tango lo hace al registrar una factura y esta app no lo hacia: al
+    // 2026-09-22 habia 32 articulos desactualizados. Pedido del usuario.
+    await conRollback(async (tx) => {
+      const oc = await unRenglonDeOcPendiente(tx)
+      expect(oc).toBeDefined()
+      const articulo = String(oc.COD_ARTICU).trim()
+      const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
+
+      const antes = await tx.request().input('a', sql.VarChar(20), articulo)
+        .query(`SELECT ID_STA12, PRECIO_U_L, FECHA_ULC FROM STA12 WHERE COD_ARTICU = @a`)
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0088')
+      await guardarCampoEn(tx, id, 'nro', '00054326')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+      await guardarCampoEn(tx, id, 'codprovee', String(oc.COD_PROVEE))
+      await guardarCampoEn(tx, id, 'condcompra', String(condicion.recordset[0].COD_CONDIC))
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
+      await guardarCampoEn(tx, id, 'neto', '1.000,00')
+      await guardarCampoEn(tx, id, 'total', '1.000,00')
+
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: articulo, descripcion: 'x', cantidad: '1',
+        precioUnitario: '1000', importe: '1000',
+      })
+      await tx.request()
+        .input('id', sql.Int, renglonId)
+        .input('oc', sql.VarChar(14), String(oc.N_ORDEN_CO))
+        .input('tal', sql.Int, Number(oc.TALONARIO))
+        .input('r', sql.Int, Number(oc.N_RENGL_OC))
+        .query(`UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, PDF_ORDEN=1 WHERE ID=@id`)
+      await insertarRenglonPdfPrueba(tx, id, 1, articulo, '1', '1000', '1000')
+
+      const registro = await registrarComprobanteEn(tx, id)
+
+      const despues = await tx.request().input('a', sql.VarChar(20), articulo)
+        .query(`
+          SELECT ID_STA12, PRECIO_U_L, PRECIO_U_E, PRECIO_REP, COD_PROV_U, ID_CPA01, ID_STA11,
+                 MON_CTE, MON_CTE_UC, FECHA_ULC, FECHA_REPOS, PRECIO_S_L, PRECIO_S_E
+          FROM STA12 WHERE COD_ARTICU = @a`)
+      expect(despues.recordset).toHaveLength(1)
+      const f = despues.recordset[0]
+
+      // El precio es el que cobra la FACTURA, el mismo que fue a CPA46.
+      expect(Number(f.PRECIO_U_L)).toBe(1000)
+      // En pesos la cotizacion es 1, asi que el precio en moneda extranjera
+      // queda igual: lo que importa es que se calcula dividiendo, no que
+      // se copie.
+      expect(Number(f.PRECIO_U_E)).toBe(1000)
+      // El parametro "reposicion = ultima compra" esta activo (confirmado
+      // por el usuario): los dos precios van juntos.
+      expect(Number(f.PRECIO_REP)).toBe(1000)
+      expect(String(f.COD_PROV_U).trim()).toBe(String(oc.COD_PROVEE).trim())
+      expect(f.MON_CTE).toBe(true)
+      expect(f.MON_CTE_UC).toBe(true)
+
+      // La fecha es la CONTABLE del comprobante, no la de emision: la
+      // factura es del 01/06/2026 y el cierre de Tango la corre.
+      const cpa04 = await tx.request()
+        .input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT FECHA_CONT FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      const contable = new Date(cpa04.recordset[0].FECHA_CONT)
+      expect(new Date(f.FECHA_ULC).getTime()).toBe(contable.getTime())
+      expect(new Date(f.FECHA_REPOS).getTime()).toBe(contable.getTime())
+
+      // El costo de stock no se toca: lo maneja otro proceso de Tango.
+      expect(Number(f.PRECIO_S_L)).toBe(0)
+      expect(Number(f.PRECIO_S_E)).toBe(0)
+
+      // Si la fila ya existia, se actualiza -- no se crea una segunda, que
+      // el indice unico IX_0 sobre COD_ARTICU no admitiria.
+      if (antes.recordset.length > 0) {
+        expect(Number(f.ID_STA12)).toBe(Number(antes.recordset[0].ID_STA12))
+      } else {
+        // Recien creada: tiene que quedar enlazada al maestro.
+        expect(f.ID_STA11).not.toBeNull()
+      }
+    })
+  }, 90000)
 })
 
 describe('registrarComprobanteEn con tipoFactura=conceptos', () => {
