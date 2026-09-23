@@ -256,7 +256,15 @@ export async function desnormalizarBandejaEn(
     .input('nro', sql.VarChar(20), v('nro')?.slice(0, 20) ?? null)
     .input('cuit', sql.VarChar(15), v('cuit')?.slice(0, 15) ?? null)
     .input('total', sql.Decimal(19, 4), parsearImporteONulo(v('total')))
-    .input('fecha', sql.NVarChar(20), v('fecha'))
+    // Canonica y truncada. Era el unico de los cinco sin .slice(), y una
+    // factura que imprime "18 de Septiembre de 2026" --24 caracteres, mas que
+    // el NVarChar(20)-- hacia que el driver rechazara el parametro y se
+    // revirtiera la transaccion ENTERA: el comprobante no se importaba y el
+    // operador solo veia "error de lectura" (WINNERS, 2026-09-23). Se
+    // normaliza primero para que TRY_CONVERT tenga el formato que espera; si
+    // no se puede interpretar se guarda recortada, y FECHA_EMISION queda
+    // NULL -- que es lo que validarFecha le señala al operador.
+    .input('fecha', sql.NVarChar(20), normalizarFechaArg(v('fecha')) ?? v('fecha')?.slice(0, 20) ?? null)
     .query(`
       UPDATE PHF_COMPROBANTE
       SET TIPO = @tipo,

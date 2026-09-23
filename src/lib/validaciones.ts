@@ -538,18 +538,69 @@ const RE_CAE = /^\d{14}$/
  * la misma fecha con otro espaciado, no otro formato -- lo que sigue sin
  * aceptarse es que el separador falte o sea otra cosa.
  */
-export function parsearFechaArg(f: string): Date | null {
-  const m = /^(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2}|\d{4})$/.exec(f.trim())
-  if (!m) return null
-  const dia = Number(m[1])
-  const mes = Number(m[2])
-  const anio = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])
+/**
+ * Los meses escritos con letras, para las facturas que imprimen la fecha
+ * como "18 de Septiembre de 2026" en vez de "18/09/2026" -- WINNERS
+ * PRODUCTOS DEPORTIVOS (Wilson/Salomon), 2026-09-23. Se comparan sin
+ * acentos ni mayúsculas.
+ *
+ * "setiembre" va junto a "septiembre": las dos son correctas en español y
+ * se ven las dos en comprobantes reales.
+ */
+const MESES: Record<string, number> = {
+  enero: 1,
+  febrero: 2,
+  marzo: 3,
+  abril: 4,
+  mayo: 5,
+  junio: 6,
+  julio: 7,
+  agosto: 8,
+  septiembre: 9,
+  setiembre: 9,
+  octubre: 10,
+  noviembre: 11,
+  diciembre: 12,
+}
+
+/** El número de mes de un nombre escrito con letras, o `null`. */
+function mesPorNombre(texto: string): number | null {
+  const limpio = texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+  return MESES[limpio] ?? null
+}
+
+/**
+ * Arma la fecha desde sus tres partes ya separadas, con las dos reglas que
+ * comparten todos los formatos: el año de dos dígitos es 20aa, y un día que
+ * no existe en ese mes se rechaza en vez de reindexarse.
+ */
+function armarFecha(dia: number, mes: number, anioTexto: string): Date | null {
+  const anio = anioTexto.length === 2 ? 2000 + Number(anioTexto) : Number(anioTexto)
   if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
   const d = new Date(anio, mes - 1, dia)
   // new Date() no rechaza dia=31 en un mes de 30: reindexa al mes
   // siguiente en vez de fallar. Detectarlo comparando el dia de vuelta.
   if (d.getDate() !== dia) return null
   return Number.isNaN(d.getTime()) ? null : d
+}
+
+export function parsearFechaArg(f: string): Date | null {
+  const t = f.trim()
+
+  const numerica = /^(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2}|\d{4})$/.exec(t)
+  if (numerica) return armarFecha(Number(numerica[1]), Number(numerica[2]), numerica[3])
+
+  // "18 de Septiembre de 2026", y también sin los "de": "18 Septiembre 2026".
+  const conLetras = /^(\d{1,2})\s+(?:de\s+)?([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s+(?:de\s+)?(\d{2}|\d{4})$/.exec(t)
+  if (conLetras) {
+    const mes = mesPorNombre(conLetras[2])
+    return mes === null ? null : armarFecha(Number(conLetras[1]), mes, conLetras[3])
+  }
+
+  return null
 }
 
 /**

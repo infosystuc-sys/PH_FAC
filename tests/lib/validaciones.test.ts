@@ -167,7 +167,11 @@ describe('parsearFechaArg', () => {
   })
   it('rechaza vacio o formato irreconocible', () => {
     expect(parsearFechaArg('')).toBeNull()
-    expect(parsearFechaArg('30 de julio de 2026')).toBeNull()
+    expect(parsearFechaArg('el martes pasado')).toBeNull()
+    expect(parsearFechaArg('30-2026')).toBeNull()
+    // "30 de julio de 2026" figuraba aca hasta el 2026-09-23: era
+    // irreconocible cuando solo se aceptaba el formato numerico. Ahora es un
+    // formato soportado y se prueba mas abajo.
   })
   it('acepta dia y mes de un solo digito', () => {
     // C C AGRO imprime "16/9/2026" (2026-09-16). Antes se rechazaba como
@@ -185,6 +189,31 @@ describe('parsearFechaArg', () => {
     // Tres digitos no es ninguna de las dos formas.
     expect(parsearFechaArg('16/09/026')).toBeNull()
   })
+  it('acepta el mes escrito con letras', () => {
+    // WINNERS PRODUCTOS DEPORTIVOS (Wilson/Salomon) imprime "18 de
+    // Septiembre de 2026" (2026-09-23). Ese texto tiene 24 caracteres: no
+    // solo no parseaba, ademas reventaba el parametro NVarChar(20) de la
+    // bandeja y revertia la transaccion entera, asi que el comprobante NO
+    // SE IMPORTABA.
+    expect(parsearFechaArg('18 de Septiembre de 2026')).toEqual(new Date(2026, 8, 18))
+    expect(parsearFechaArg('18 de septiembre de 2026')).toEqual(new Date(2026, 8, 18))
+    // "setiembre" tambien es correcto en español y se ve en comprobantes.
+    expect(parsearFechaArg('1 de setiembre de 26')).toEqual(new Date(2026, 8, 1))
+    // Con acento y sin los "de".
+    expect(parsearFechaArg('5 de Diciembre de 2026')).toEqual(new Date(2026, 11, 5))
+    expect(parsearFechaArg('18 Septiembre 2026')).toEqual(new Date(2026, 8, 18))
+  })
+
+  it('un mes que no existe no se inventa', () => {
+    expect(parsearFechaArg('18 de Brumario de 2026')).toBeNull()
+    expect(parsearFechaArg('18 de 2026')).toBeNull()
+  })
+
+  it('las reglas del dia valen igual con el mes en letras', () => {
+    // 31 de febrero no existe: no se reindexa a marzo.
+    expect(parsearFechaArg('31 de febrero de 2026')).toBeNull()
+  })
+
   it('tolera espacios alrededor de los separadores', () => {
     // RED DEL INTERIOR imprime "16 /09 /26" (2026-09-22). Es la misma fecha
     // con otro espaciado, no otro formato.
@@ -208,6 +237,7 @@ describe('normalizarFechaArg', () => {
     expect(normalizarFechaArg(' 30/07/2026 ')).toBe('30/07/2026')
     expect(normalizarFechaArg('16/9/26')).toBe('16/09/2026')
     expect(normalizarFechaArg('16 /09 /26')).toBe('16/09/2026')
+    expect(normalizarFechaArg('18 de Septiembre de 2026')).toBe('18/09/2026')
   })
   it('devuelve null si no se puede leer, para no pisar lo que vino', () => {
     expect(normalizarFechaArg('30 de julio')).toBeNull()
