@@ -21,6 +21,7 @@ import { escribirAsientoEn } from './asiento'
 import { escribirCuotasEn } from './cuotas'
 import { fechaContableDe } from '@/lib/fechaContable'
 import { resolverDescuentoDeDetalle, netosPorOrden, describirDescuento } from '@/lib/descuentoGlobal'
+import { repartirNetoEntreHermanos } from '@/lib/talles'
 import { cierreContable } from './parametros'
 import { actualizarPrecioUltimaCompraEn } from './preciosCompra'
 
@@ -642,6 +643,20 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     throw new Error(describirDescuento(descuento))
   }
 
+  // Varios renglones pueden salir de la MISMA linea del PDF: es lo que pasa
+  // con las facturas desglosadas por talle, donde una linea impresa son
+  // cuatro articulos de Tango (2026-09-24, reportado por el usuario con
+  // TOPPER). El subtotal impreso es uno solo para los cuatro, asi que se
+  // reparte; sin esto cada talle se llevaba el importe entero de la linea.
+  const netoDeCadaRenglon = repartirNetoEntreHermanos(
+    renglonesConOc.map((r) => ({
+      id: r.id,
+      pdfOrden: r.pdfOrden,
+      cantidad: parsearImporte(r.cantidad),
+    })),
+    netosPorOrden(descuento),
+  )
+
   for (const renglon of renglonesConOc) {
     const nOrdenCo = renglon.ocNOrdenCo!
     const nRenglOc = renglon.ocNRenglOc!
@@ -710,7 +725,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     // Un renglon sin resolucion --sin vinculo al PDF, o con el PDF sin precio
     // o subtotal-- corta: no se inventa un precio ni se cae al de la OC.
     // Decision del usuario: bloquear y reprocesar.
-    const neto = renglon.pdfOrden === null ? null : (netosPorOrden(descuento).get(renglon.pdfOrden) ?? null)
+    const neto = netoDeCadaRenglon.get(renglon.id) ?? null
     if (!neto) {
       throw new Error(
         `El renglón del artículo ${codArticu} no tiene precio ni subtotal leídos de la factura: ` +

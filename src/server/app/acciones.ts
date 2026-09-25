@@ -26,7 +26,7 @@ import {
   describirArticulos,
   type ArticuloTango,
 } from '@/server/tango/articulos'
-import { emparejarOcs, resolverCodigoArticulo, lineasCargo } from '@/lib/matchOc'
+import { emparejarOcs, resolverCodigoArticulo, lineasCargo, abrirPorTalle } from '@/lib/matchOc'
 import { tipoPorContenido, NOMBRES_ADMITIDOS } from '@/lib/tipoArchivo'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import { aprenderArticuloEn, marcarSinOcEn } from './articulosProveedor'
@@ -504,7 +504,7 @@ export async function asociarCodigosProveedorEnLote(
   // Varios renglones de la factura (distintos talles, por ejemplo) suelen
   // apuntar al mismo artículo con el mismo código de proveedor -- se
   // dedupe para no pegarle a la misma fila de CPA15 más de una vez.
-  const unicos = [...new Map(pares.map((p) => [`${p.codArticu} ${p.codSinoni}`, p])).values()]
+  const unicos = [...new Map(pares.map((p) => [`${p.codArticu}\u0000${p.codSinoni}`, p])).values()]
   if (unicos.length === 0) return 0
 
   await Promise.all(unicos.map((p) => asociarArticuloProveedor(codProvee, p.codArticu, p.codSinoni)))
@@ -720,7 +720,15 @@ export async function listarOcParaComprobante(
     ...new Set(detalle.renglones.map((r) => r.ocNOrdenCo).filter((x): x is string => !!x)),
   ]
 
-  const codigos = lineas.map((r) => r.codigo)
+  // Abierto por talle contra los articulos de TODAS las ordenes con
+  // pendiente: si la factura desglosa (TOPPER), el codigo pelado que imprime
+  // no esta en ninguna orden y sin abrir no se ofreceria la que corresponde.
+  const abiertas = abrirPorTalle(
+    lineas,
+    todas.flatMap((oc) => oc.renglones.map((r) => r.codArticu)),
+  )
+
+  const codigos = abiertas.map((r) => r.codigo)
   const sinonimos = await articulosPorSinonimo(
     codProvee,
     codigos.map((c) => c ?? ''),

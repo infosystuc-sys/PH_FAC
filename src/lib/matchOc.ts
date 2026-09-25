@@ -11,6 +11,13 @@
  * es lógica pura y se prueba sin base.
  */
 import { normalizarCodigo } from './cotejoOc'
+import { parsearImporte } from './formato'
+import {
+  parsearDesgloseTalles,
+  totalDesglosado,
+  describirTalle,
+  articulosPorTalle,
+} from './talles'
 
 export type OcParaMatch = {
   nOrdenCo: string
@@ -55,8 +62,8 @@ export type LineaFactura = {
   cantidad: string | null
 }
 
-export type RenglonEmparejado<T> = {
-  linea: LineaFactura
+export type RenglonEmparejado<T, L extends LineaFactura = LineaFactura> = {
+  linea: L
   /** El renglón de la OC que le corresponde, o `null` si esta OC no lo tiene. */
   enOc: T | null
 }
@@ -71,11 +78,11 @@ export type RenglonEmparejado<T> = {
  * quedó a la vista con una factura de CARRIER que cobra un solo artículo
  * contra una OC de nueve.
  */
-export function emparejarRenglones<T extends { codArticu: string }>(
-  pdf: LineaFactura[],
+export function emparejarRenglones<T extends { codArticu: string }, L extends LineaFactura>(
+  pdf: L[],
   renglonesOc: T[],
   sinonimos: Map<string, string>,
-): RenglonEmparejado<T>[] {
+): RenglonEmparejado<T, L>[] {
   const porCodigo = new Map(renglonesOc.map((r) => [normalizarCodigo(r.codArticu), r]))
   const nuestros = new Set(porCodigo.keys())
 
@@ -240,6 +247,95 @@ export function resolverLineasPdf(
   })
 }
 
+/**
+ * Una línea del PDF ya abierta por talle. Cuando la factura no desglosa,
+ * es la misma línea con `talle` en `null`.
+ */
+export type LineaPdfAbierta = LineaPdfResuelta & {
+  /** El talle de este renglón, o `null` si la línea no venía desglosada. */
+  talle: string | null
+  /**
+   * Las cantidades de TODOS los talles que salieron de esta línea del PDF,
+   * en orden. Es lo que hace falta para repartir el subtotal impreso, que
+   * es uno solo para la línea entera. Vacío si no se abrió.
+   */
+  cantidadesHermanas: number[]
+  /** La posición de este talle dentro de `cantidadesHermanas`. */
+  indiceTalle: number
+}
+
+/**
+ * Abre los renglones que la factura desglosa por talle: uno por talle, con
+ * el código del artículo de Tango que le corresponde.
+ *
+ * `candidatos` son los códigos donde buscar el artículo de cada talle --los
+ * renglones de la OC que se imputa, o los de todas las órdenes con
+ * pendiente del proveedor--. Ver `articulosPorTalle`: el código NO se
+ * compone concatenando, se busca entre los que Tango ya tiene.
+ *
+ * Una línea se deja CERRADA --tal como vino-- en tres casos, y en los tres
+ * a propósito: si no trae desglose; si los talles no suman la cantidad
+ * impresa; y si algún talle se queda sin artículo. Abrir a medias o con
+ * cantidades que no cuadran es peor que no abrir: el operador ve el
+ * problema igual --el cotejo contra la OC lo bloquea-- pero sobre los
+ * números del papel, que es contra lo que puede revisar.
+ */
+export function abrirPorTalle(
+  lineas: LineaPdfResuelta[],
+  candidatos: string[],
+): LineaPdfAbierta[] {
+  const salida: LineaPdfAbierta[] = []
+  for (const linea of lineas) {
+    const cerrada: LineaPdfAbierta = {
+      ...linea,
+      talle: null,
+      cantidadesHermanas: [],
+      indiceTalle: 0,
+    }
+
+    // Un cargo del proveedor no va contra ninguna orden: no hay contra qué
+    // resolverle los talles, y tampoco tiene sentido abrirlo.
+    if (linea.sinOc) {
+      salida.push(cerrada)
+      continue
+    }
+
+    const talles = parsearDesgloseTalles(linea.descripcion)
+    if (talles.length === 0) {
+      salida.push(cerrada)
+      continue
+    }
+
+    // La cantidad impresa manda: si los talles no la suman, el desglose se
+    // leyó mal y no se abre nada.
+    const impresa = parsearImporte(linea.cantidad)
+    if (impresa > 0 && Math.abs(totalDesglosado(talles) - impresa) > 0.00005) {
+      salida.push(cerrada)
+      continue
+    }
+
+    const porTalle = articulosPorTalle(linea.codigo, talles, candidatos)
+    if (!porTalle) {
+      salida.push(cerrada)
+      continue
+    }
+
+    const cantidades = talles.map((t) => t.cantidad)
+    talles.forEach((t, i) => {
+      salida.push({
+        ...linea,
+        codigo: porTalle.get(t.talle) ?? linea.codigo,
+        descripcion: describirTalle(linea.descripcion, t.talle),
+        cantidad: String(t.cantidad),
+        talle: t.talle,
+        cantidadesHermanas: cantidades,
+        indiceTalle: i,
+      })
+    })
+  }
+  return salida
+}
+
 /** Los renglones que siguen sin código después de aplicar lo aprendido. */
 export function lineasAVincular(lineas: LineaPdfResuelta[]): LineaPdfResuelta[] {
   return lineas.filter((l) => (l.codigo ?? '').trim() === '')
@@ -249,11 +345,11 @@ export function lineasAVincular(lineas: LineaPdfResuelta[]): LineaPdfResuelta[] 
  * Los renglones que van contra una orden de compra: todos menos los cargos.
  * Es lo que se coteja contra la OC y lo que puede consumir su pendiente.
  */
-export function lineasContraOc(lineas: LineaPdfResuelta[]): LineaPdfResuelta[] {
+export function lineasContraOc<T extends LineaPdfResuelta>(lineas: T[]): T[] {
   return lineas.filter((l) => !l.sinOc)
 }
 
 /** Los cargos: se registran igual, pero sin orden de compra. */
-export function lineasCargo(lineas: LineaPdfResuelta[]): LineaPdfResuelta[] {
+export function lineasCargo<T extends LineaPdfResuelta>(lineas: T[]): T[] {
   return lineas.filter((l) => l.sinOc && (l.codigo ?? '').trim() !== '')
 }

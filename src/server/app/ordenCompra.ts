@@ -6,6 +6,7 @@ import {
   emparejarRenglones,
   resolverCodigoArticulo,
   resolverLineasPdf,
+  abrirPorTalle,
   lineasAVincular,
   lineasContraOc,
   lineasCargo,
@@ -124,9 +125,19 @@ export async function agregarOcEn(
       )
     : new Map<string, string>()
 
+  // Las facturas que desglosan por talle traen UNA línea impresa por
+  // artículo y color, y en Tango cada talle es un artículo con su propio
+  // renglón de OC: se abre acá, contra los códigos de ESTA orden, antes de
+  // emparejar (2026-09-24, reportado por el usuario con TOPPER). Una línea
+  // sin desglose pasa tal cual.
+  const abiertas = abrirPorTalle(
+    lineas,
+    oc.renglones.map((r) => r.codArticu),
+  )
+
   // Los cargos quedan afuera del emparejamiento: no consumen pendiente de
   // ninguna orden. Sus renglones los crea sincronizarCargosEn.
-  const emparejados = emparejarRenglones(lineasContraOc(lineas), oc.renglones, sinonimos)
+  const emparejados = emparejarRenglones(lineasContraOc(abiertas), oc.renglones, sinonimos)
 
   // ORDEN es UNIQUE por comprobante y ya puede haber renglones de otra
   // orden: se sigue desde el mayor en vez de arrancar de 1.
@@ -163,7 +174,15 @@ export async function agregarOcEn(
       // El codigo es el NUESTRO, el de Tango: es con el que se graba en
       // CPA46. La descripcion tambien sale de la OC.
       .input('codigo', sql.NVarChar(60), enOc.codArticu)
-      .input('desc', sql.NVarChar(500), enOc.descripcion)
+      // La descripcion sale de la OC, salvo en los renglones abiertos por
+      // talle: ahi los cuatro traen la MISMA descripcion de la OC ("SHORT
+      // TOPPER CORE RUN - HOMBRE") y el operador no podria distinguirlos en
+      // la revision. Se les agrega el talle al final.
+      .input(
+        'desc',
+        sql.NVarChar(500),
+        linea.talle ? `${enOc.descripcion} - ${linea.talle}` : enOc.descripcion,
+      )
       .input('cant', sql.Decimal(19, 4), cantidad)
       .input('pu', sql.Decimal(19, 4), enOc.precio)
       .input('imp', sql.Decimal(19, 4), Math.round(cantidad * enOc.precio * 100) / 100)
@@ -259,9 +278,15 @@ export async function renglonesSinOcEn(
       )
     : new Map<string, string>()
 
+  // Abierto por talle contra lo ya imputado: una linea desglosada cuyos
+  // talles estan todos imputados no es un faltante, aunque su codigo pelado
+  // no figure en ninguna orden. Es justo el caso que el operador veia en
+  // rojo con TOPPER.
+  const abiertas = abrirPorTalle(lineas, [...imputados])
+
   // Los cargos del proveedor no van contra ninguna orden: no son un
   // faltante, son otra cosa (ver SIN_OC en migrate.ts).
-  return lineasContraOc(lineas)
+  return lineasContraOc(abiertas)
     .filter((r) => resolverCodigoArticulo(r.codigo, imputados, sinonimos) === null)
     .map((r) => ({
       orden: r.orden,

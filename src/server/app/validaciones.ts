@@ -37,7 +37,7 @@ import { parsearImporte, parsearImporteONulo } from '@/lib/formato'
 import { resolverDescuentoDeDetalle, netosPorOrden } from '@/lib/descuentoGlobal'
 import { articulosPorSinonimo } from '@/server/tango/articulos'
 import { lineasPdfResueltasEn } from './ordenCompra'
-import { lineasContraOc } from '@/lib/matchOc'
+import { lineasContraOc, abrirPorTalle } from '@/lib/matchOc'
 import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 
@@ -267,7 +267,16 @@ export async function validarListoParaRegistrarEn(
     // operador vinculo tiene que cotejar igual que uno con codigo impreso.
     // Los cargos del proveedor no se cotejan contra la orden: no van contra
     // ninguna (2026-09-22, pedido del usuario). Ver SIN_OC en migrate.ts.
-    const lineas = lineasContraOc(await lineasPdfResueltasEn(e, detalle, codProvee))
+    // Abierto por talle contra los articulos ya imputados: si la factura
+    // desglosa (TOPPER), lo que se coteja son los renglones por talle, que
+    // es lo que se va a registrar. Sin esto las tres lineas impresas se
+    // marcarian como "no esta en la orden de compra".
+    const lineas = lineasContraOc(
+      abrirPorTalle(
+        await lineasPdfResueltasEn(e, detalle, codProvee),
+        conOc.map((r) => (r.codigoFinal ?? r.codigo ?? '').trim()),
+      ),
+    )
     const codigos = lineas
       .map((r) => (r.codigo ?? '').trim())
       .filter((c) => c !== '')

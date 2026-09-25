@@ -210,6 +210,15 @@ artículo que la factura cobra, con cuatro datos tal como están impresos:
   código, dejalo vacío.
 - "descripcion": la DESCRIPCIÓN del artículo tal como está impresa, entera.
   Es lo que identifica al artículo cuando la factura no trae código.
+  ATENCIÓN CON LOS TALLES. En indumentaria y calzado es común que el
+  renglón esté partido en dos líneas: arriba el código y la descripción, y
+  abajo el desglose de cuántas unidades van de cada talle, del estilo
+  "L : 6  M : 4  S : 2  XL : 4" o "270: 4  310: 6  320: 6", con la cantidad
+  total, el precio y la bonificación a la derecha. Las dos líneas son UN
+  SOLO renglón: copiá ese desglose al final de la descripción, tal como
+  está impreso, con sus dos puntos. Cada talle es un artículo distinto para
+  nosotros y sin el desglose no se puede saber cuántos van de cada uno. La
+  cantidad de la línea sigue siendo el TOTAL impreso, no la de un talle.
 - "cantidad": la CANTIDAD facturada.
 - "precioUnitario": el PRECIO UNITARIO tal como está impreso, aunque sea el
   de lista antes de un descuento. No lo recalcules.
@@ -348,4 +357,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v13'
+export const VERSION_PROMPT = 'v14'
