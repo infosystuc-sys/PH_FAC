@@ -27,6 +27,7 @@ import {
   type ArticuloTango,
 } from '@/server/tango/articulos'
 import { emparejarOcs, resolverCodigoArticulo, lineasCargo, abrirPorTalle } from '@/lib/matchOc'
+import { variantesPendientesDeBase, type ArticuloDescripto } from '@/server/tango/articulos'
 import { tipoPorContenido, NOMBRES_ADMITIDOS } from '@/lib/tipoArchivo'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import { aprenderArticuloEn, marcarSinOcEn } from './articulosProveedor'
@@ -664,7 +665,14 @@ export type OfertaOc = {
      * pero ninguna orden lo tiene con saldo. `null` cuando de verdad no se
      * reconoce: ese es el que el operador puede enseñar.
      */
-    reconocidoComo: { codArticu: string; descripcion: string } | null
+    reconocidoComo: ArticuloDescripto | null
+    /**
+     * Si `reconocidoComo` es un artículo BASE de escala, las variantes que
+     * la orden de este proveedor SÍ tiene pendientes: son los únicos
+     * artículos contra los que ese renglón se puede facturar. Vacío en
+     * cualquier otro caso.
+     */
+    variantesEscala: ArticuloDescripto[]
     /** La descripción impresa: es con lo que se vincula un renglón sin código. */
     descripcion: string | null
     /** El código salió de una descripción aprendida, no vino impreso. */
@@ -755,11 +763,14 @@ export async function listarOcParaComprobante(
     ...emparejamiento.reconocidosSinPendiente.map((r) => r.codArticu),
     ...emparejamiento.sinResolver,
   ])
-  const reconocidos = new Map<string, { codArticu: string; descripcion: string }>()
+  const reconocidos = new Map<string, ArticuloDescripto>()
   for (const r of emparejamiento.reconocidosSinPendiente) {
     const enMaestro = descripciones.get(r.codArticu)
     // Clave normalizada: sinOrden trae el codigo impreso y busca con la clave.
-    reconocidos.set(normalizarCodigo(r.codigo), enMaestro ?? { codArticu: r.codArticu, descripcion: '' })
+    reconocidos.set(
+      normalizarCodigo(r.codigo),
+      enMaestro ?? { codArticu: r.codArticu, descripcion: '', escala: 'ninguna' },
+    )
   }
   const sinResolver: string[] = []
   for (const codigo of emparejamiento.sinResolver) {
@@ -767,6 +778,18 @@ export async function listarOcParaComprobante(
     if (propio) reconocidos.set(normalizarCodigo(codigo), propio)
     else sinResolver.push(codigo)
   }
+
+  // Un codigo impreso que es un articulo BASE de Tango no es un articulo
+  // facturable: le falta el sufijo de color o de talle (STA11.USA_ESC, ver
+  // el tipo Escala). Se buscan sus variantes CON PENDIENTE en las ordenes
+  // de este proveedor, que son los unicos articulos contra los que ese
+  // renglon se puede facturar. Sin esto la pantalla decia "reconocido, sin
+  // pendiente de facturar" y mandaba al operador a buscar una orden que no
+  // existe (2026-09-30, reportado por el usuario con DASS).
+  const bases = [...reconocidos.values()].filter((a) => a.escala === 'base')
+  const variantes = bases.length > 0
+    ? await variantesPendientesDeBase(codProvee, bases.map((a) => a.codArticu))
+    : new Map<string, ArticuloDescripto[]>()
 
   // Un renglon sin orden imputada no es necesariamente un problema: si
   // alguna orden pendiente lo tiene, solo falta imputarla.
@@ -777,6 +800,9 @@ export async function listarOcParaComprobante(
     ...r,
     hayCandidata: resolverCodigoArticulo(r.codigo, enAlgunaOc, sinonimos) !== null,
     reconocidoComo: reconocidos.get(normalizarCodigo(r.codigo)) ?? null,
+    // Las variantes de escala pendientes, cuando el codigo es un base.
+    variantesEscala:
+      variantes.get(reconocidos.get(normalizarCodigo(r.codigo))?.codArticu ?? '') ?? [],
     sinOc: false,
   }))
 

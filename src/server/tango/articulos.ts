@@ -241,6 +241,102 @@ export async function sinonimosDelProveedor(
 }
 
 /**
+ * Cómo participa un artículo de una ESCALA de Tango (`STA11.USA_ESC`).
+ *
+ * Tango permite definir un artículo "con escala": un código base y una
+ * variante por cada combinación de color y/o talle, con el sufijo pegado al
+ * final del código. El maestro marca los tres papeles, y la distinción es
+ * la que faltaba:
+ *
+ *   'B' -- BASE. El padre de la escala. NO se factura ni se le lleva stock:
+ *          existe para agrupar. Son 337 en el maestro.
+ *   'S' -- CON ESCALA. La variante concreta, que es la que se compra y se
+ *          factura: `1261095140` (color 140), `167686 001 L` (talle L).
+ *          Son 1.934.
+ *   'N' -- sin escala. El artículo común. Son 7.294.
+ *
+ * Sin mirar esto, un código base se veía como un artículo perfectamente
+ * válido que casualmente no tenía saldo en ninguna orden, y la app decía
+ * "reconocido, sin pendiente de facturar" -- un mensaje que manda al
+ * operador a buscar una orden que no existe, cuando lo que falta es el
+ * color o el talle. Lo reportó el usuario con DASS (1261095, que es base de
+ * 1261095140) el 2026-09-30, y era también la causa del caso TOPPER.
+ */
+export type Escala = 'base' | 'variante' | 'ninguna'
+
+export function esEscala(valor: unknown): Escala {
+  const v = String(valor ?? '').trim().toUpperCase()
+  if (v === 'B') return 'base'
+  if (v === 'S') return 'variante'
+  return 'ninguna'
+}
+
+export type ArticuloDescripto = {
+  codArticu: string
+  descripcion: string
+  escala: Escala
+}
+
+/**
+ * Las variantes de escala de un artículo base que TIENEN saldo pendiente en
+ * alguna orden de este proveedor.
+ *
+ * Es lo que se le ofrece al operador cuando la factura trae el código base:
+ * son los únicos artículos contra los que esa línea se puede facturar. Se
+ * filtra por proveedor porque un mismo base puede tener variantes pedidas a
+ * varios, y ofrecer las de otro proveedor sería ofrecer un error.
+ *
+ * Medido el 2026-09-30: los 337 bases del maestro tienen entre 1 y 19
+ * variantes, con 4 a 10 como caso típico y solo 37 con una sola. Por eso
+ * esto DEVUELVE LA LISTA y no adivina: elegir por el operador acertaría en
+ * una minoría de los casos.
+ */
+export async function variantesPendientesDeBase(
+  codProvee: string,
+  bases: string[],
+): Promise<Map<string, ArticuloDescripto[]>> {
+  const salida = new Map<string, ArticuloDescripto[]>()
+  const prov = codProvee.trim()
+  const buscados = [...new Set(bases.map((b) => b.trim()).filter((b) => b !== ''))]
+  if (!prov || buscados.length === 0) return salida
+
+  const pool = await getPool()
+  const req = pool.request().input('prov', sql.VarChar(6), prov)
+  const marcadores = buscados.map((b, i) => {
+    req.input(`b${i}`, sql.VarChar(60), b)
+    return `@b${i}`
+  })
+
+  const r = await req.query<Record<string, unknown>>(`
+    SELECT DISTINCT
+      LTRIM(RTRIM(a.COD_ARTICU))                     AS codArticu,
+      LTRIM(RTRIM(ISNULL(a.DESCRIPCIO, '')))         AS descripcion,
+      LTRIM(RTRIM(ISNULL(a.USA_ESC, 'N')))           AS usaEsc,
+      b.base                                         AS base
+    FROM (VALUES ${marcadores.map((m) => `(${m})`).join(', ')}) AS b(base)
+    JOIN CPA36 r ON LTRIM(RTRIM(r.COD_ARTICU)) LIKE b.base + '%'
+                AND LEN(LTRIM(RTRIM(r.COD_ARTICU))) > LEN(b.base)
+    JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
+    JOIN STA11 a ON a.COD_ARTICU = r.COD_ARTICU
+    WHERE LTRIM(RTRIM(h.COD_PROVEE)) = @prov
+      AND ISNULL(r.PENDIENTE_FACTURAR, 0) > 0
+    ORDER BY b.base, LTRIM(RTRIM(a.COD_ARTICU))
+  `)
+
+  for (const f of r.recordset) {
+    const base = String(f.base)
+    const lista = salida.get(base) ?? []
+    lista.push({
+      codArticu: String(f.codArticu),
+      descripcion: String(f.descripcion),
+      escala: esEscala(f.usaEsc),
+    })
+    salida.set(base, lista)
+  }
+  return salida
+}
+
+/**
  * La descripción de cada uno de estos artículos según el maestro (STA11),
  * o ausente si el código no existe.
  *
@@ -253,12 +349,12 @@ export async function sinonimosDelProveedor(
  */
 export async function describirArticulos(
   codigos: string[],
-): Promise<Map<string, { codArticu: string; descripcion: string }>> {
+): Promise<Map<string, ArticuloDescripto>> {
   const buscados = [...new Set(codigos.map(normalizarCodigo).filter((c) => c !== ''))]
   // Clave normalizada -> el codigo TAL COMO ESTA en el maestro (con sus
   // espacios, si los tiene) y su descripcion. Lo que se muestra y se graba
   // es el del maestro, nunca la clave.
-  const m = new Map<string, { codArticu: string; descripcion: string }>()
+  const m = new Map<string, ArticuloDescripto>()
   if (buscados.length === 0) return m
 
   const pool = await getPool()
@@ -273,7 +369,8 @@ export async function describirArticulos(
     return `@c${i}`
   })
   const r = await req.query<Record<string, unknown>>(`
-    SELECT LTRIM(RTRIM(COD_ARTICU)) AS codArticu, LTRIM(RTRIM(ISNULL(DESCRIPCIO, ''))) AS descripcion
+    SELECT LTRIM(RTRIM(COD_ARTICU)) AS codArticu, LTRIM(RTRIM(ISNULL(DESCRIPCIO, ''))) AS descripcion,
+           LTRIM(RTRIM(ISNULL(USA_ESC, 'N'))) AS usaEsc
     FROM STA11
     -- La misma clave que normalizarCodigo: sin espacio, punto, guion ni
     -- barra, que son los unicos no alfanumericos que hay en los codigos.
@@ -283,6 +380,7 @@ export async function describirArticulos(
     m.set(normalizarCodigo(String(f.codArticu)), {
       codArticu: String(f.codArticu),
       descripcion: String(f.descripcion),
+      escala: esEscala(f.usaEsc),
     })
   }
   return m

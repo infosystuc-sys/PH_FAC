@@ -43,7 +43,7 @@ export type Talle = { talle: string; cantidad: number }
  * desglose con el resto de la descripción -- "26-001-ICO4-178220-P" no
  * matchea, y un precio "20.799,47" tampoco.
  */
-const PAR = /([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]{1,6})\s*:\s*(\d{1,4})(?![\d.,])/g
+const PAR = /([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9/]{1,4})\s*:\s*(\d{1,4})(?![\d.,/])/g
 
 /**
  * Cuántos pares hacen falta para tomarlo por un desglose. Con uno solo no
@@ -63,7 +63,24 @@ export function parsearDesgloseTalles(texto: string | null | undefined): Talle[]
   if (!texto) return []
   const salida: Talle[] = []
   const vistos = new Set<string>()
+  let finAnterior = -1
+
   for (const m of texto.matchAll(PAR)) {
+    const inicio = m.index ?? 0
+    // Los pares de un desglose van PEGADOS: entre uno y el siguiente no hay
+    // más que espacios. Es lo que lo distingue de dos palabras sueltas con
+    // dos puntos. DASS imprime "Despacho:26042IC05005688F Fec:13/03/2026"
+    // adentro de la descripción, y sin esta condición "spacho:26042" y
+    // "Fec:13" pasaban por un desglose de dos talles -- encontrado el
+    // 2026-09-30, al ver que la app aprendía la regla equivocada para ese
+    // proveedor. Lo que hay antes del primer par no importa: ahí está la
+    // descripción del artículo.
+    if (finAnterior >= 0 && texto.slice(finAnterior, inicio).trim() !== '') {
+      salida.length = 0
+      vistos.clear()
+    }
+    finAnterior = inicio + m[0].length
+
     const talle = m[1].trim()
     const cantidad = Number(m[2])
     const clave = normalizarCodigo(talle)

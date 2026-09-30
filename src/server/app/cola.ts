@@ -47,6 +47,7 @@ import {
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverDescuentoDeDetalle, netoCorregido } from '@/lib/descuentoGlobal'
 import { recalcularAVincularEn } from './ordenCompra'
+import { aprenderLecturaEn } from './aprenderLectura'
 import { fechaContableDe } from '@/lib/fechaContable'
 import { cierreContable } from '@/server/tango/parametros'
 import { listarAlicuotasIva } from '@/server/tango/impuestos'
@@ -1105,6 +1106,7 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // comprobante a la pestaña "A vincular". Va despues de resolver el
       // proveedor, porque lo aprendido es por proveedor.
       if (tipoFactura === 'articulos') {
+        await aprenderLecturaEn(tx, id, cod)
         const aVincular = await recalcularAVincularEn(tx, id, cod)
         if (aVincular > 0) {
           await auditarEn(

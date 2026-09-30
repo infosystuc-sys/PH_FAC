@@ -61,6 +61,27 @@ describe('parsearDesgloseTalles', () => {
     expect(parsearDesgloseTalles('ARTICULO precio: 20.799,47 unitario: 1.234,50')).toEqual([])
   })
 
+  it('no confunde con un desglose las palabras con dos puntos de una descripción', () => {
+    // La descripcion real de DASS (comprobante 24303). Tiene "Despacho:26042..."
+    // y "Fec:13/03/2026": dos pares "etiqueta:numero" que NO son un desglose.
+    // Sin exigir que los pares vayan pegados, la app leia dos talles y
+    // aprendia la regla equivocada para el proveedor (2026-09-30).
+    const dass =
+      'F23L00392-CAP UNISEX FILA F-BOX MARINO Despacho:26042IC05005688F ' +
+      'Fec:13/03/2026 Ad.:B.S.A.S Orig:1058 U 35'
+    expect(parsearDesgloseTalles(dass)).toEqual([])
+  })
+
+  it('un desglose real sigue leyéndose aunque la descripción traiga otros dos puntos', () => {
+    const mezcla = 'CAP UNISEX Despacho:26042IC Fec:13/03/2026 L : 6 M : 4 S : 2 XL : 4'
+    expect(parsearDesgloseTalles(mezcla)).toEqual([
+      { talle: 'L', cantidad: 6 },
+      { talle: 'M', cantidad: 4 },
+      { talle: 'S', cantidad: 2 },
+      { talle: 'XL', cantidad: 4 },
+    ])
+  })
+
   it('descarta el desglose entero si un talle viene repetido', () => {
     // No hay forma de saber cuál de las dos cantidades vale.
     expect(parsearDesgloseTalles('REMERA L : 4 M : 6 L : 2')).toEqual([])

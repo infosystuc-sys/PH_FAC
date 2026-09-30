@@ -208,6 +208,14 @@ artículo que la factura cobra, con cuatro datos tal como están impresos:
   ("AS-12UW4RLRCD02 N ( 21.00) *"), el código es solo la primera parte
   ("AS-12UW4RLRCD02 N"): no incluyas lo demás. Si el renglón no trae
   código, dejalo vacío.
+  EXCEPCIÓN IMPORTANTE: si el renglón tiene una COLUMNA APARTE con el
+  color, la variante o el artículo-color -- encabezados como "Color",
+  "Col.", "Cod.Color" o una segunda columna de números pegada al código --,
+  ese valor ES PARTE DEL CÓDIGO y va incluido, separado por un espacio:
+  "1261095 140", "167686 001". No es una nota ni un comentario: el mismo
+  artículo en otro color es otro artículo, con otro código, y sin ese dato
+  el renglón no se puede identificar. Poné primero el código y después el
+  color, en el orden en que están impresos.
 - "descripcion": la DESCRIPCIÓN del artículo tal como está impresa, entera.
   Es lo que identifica al artículo cuando la factura no trae código.
   ATENCIÓN CON LOS TALLES. En indumentaria y calzado es común que el
@@ -357,4 +365,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v14'
+export const VERSION_PROMPT = 'v15'

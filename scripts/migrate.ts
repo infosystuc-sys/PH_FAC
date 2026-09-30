@@ -404,6 +404,40 @@ const DEFINICIONES: Definicion[] = [
     ],
   },
   {
+    tabla: 'PHF_LECTURA_PROVEEDOR',
+    // Como lee la app las facturas de CADA proveedor (2026-09-30, pedido del
+    // usuario: "que la app guarde la forma en la que interpreta cada caso
+    // para cada proveedor").
+    //
+    // Hasta ahora lo aprendido era siempre por ARTICULO: el sinonimo en
+    // CPA15, la descripcion en PHF_ARTICULO_PROVEEDOR. Eso no alcanza para
+    // los proveedores con escala, donde lo que hay que recordar no es un
+    // articulo sino COMO viene armado el codigo en el papel: DASS imprime el
+    // color en una columna aparte y en Tango va pegado al codigo
+    // (1261095 + 140 = 1261095140); TOPPER desglosa las cantidades por talle
+    // debajo del renglon. Aprendido una vez, sirve para todos los articulos
+    // del proveedor -- incluso los que nunca se facturaron, que es
+    // justamente donde lo aprendido por articulo no ayuda.
+    ddlTabla: `
+      CREATE TABLE PHF_LECTURA_PROVEEDOR (
+        COD_PROVEE     VARCHAR(20)   NOT NULL,
+        -- 'columna-color' | 'desglose-talle' | 'ninguna'. Ver
+        -- src/lib/lecturaProveedor.ts, que es donde vive el significado.
+        ESCALA         VARCHAR(20)   NOT NULL,
+        -- En cuantos comprobantes se confirmo. Una regla vista una sola vez
+        -- se aplica igual, pero el conteo permite distinguir la que ya es
+        -- costumbre del proveedor de la que se vio una vez.
+        COMPROBANTES   INT           NOT NULL CONSTRAINT DF_PHF_LECTPROV_COMP DEFAULT 0,
+        -- Si la puso el operador a mano. Una regla elegida por una persona
+        -- no la pisa la deduccion automatica.
+        MANUAL         BIT           NOT NULL CONSTRAINT DF_PHF_LECTPROV_MANUAL DEFAULT 0,
+        ACTUALIZADO    DATETIME2     NOT NULL CONSTRAINT DF_PHF_LECTPROV_FECHA DEFAULT SYSDATETIME(),
+        USUARIO        NVARCHAR(60)  NULL,
+        CONSTRAINT PK_PHF_LECTURA_PROVEEDOR PRIMARY KEY (COD_PROVEE)
+      );
+    `,
+  },
+  {
     tabla: 'PHF_CONFIGURACION',
     // Una sola fila fija (ID=1) -- primera tabla de configuracion global de
     // la app (2026-08-26, importacion automatica desde carpetas). Todo lo

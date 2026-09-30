@@ -446,12 +446,26 @@ export function SelectorOc({
                 </span>
               )}
               {/* Reconocido pero sin saldo: se dice cual es, para que quede
-                  claro que el problema no es el codigo sino la orden. */}
+                  claro que el problema no es el codigo sino la orden.
+                  Si es un articulo BASE de escala el diagnostico es otro --no
+                  le falta una orden, le falta el color o el talle-- y se dice
+                  asi, con las variantes que la orden si tiene pendientes
+                  (2026-09-30, reportado por el usuario con DASS). */}
               {r.reconocidoComo && (
                 <span className={styles.reconocido}>
                   → {r.reconocidoComo.codArticu}
                   {r.reconocidoComo.descripcion && ` · ${r.reconocidoComo.descripcion}`}
-                  <span className={styles.reconocidoNota}> · reconocido, sin pendiente de facturar</span>
+                  {r.reconocidoComo.escala === 'base' ? (
+                    <span className={styles.reconocidoNota}>
+                      {' '}· es un artículo base: le falta el color o el talle
+                      {r.variantesEscala.length > 0 &&
+                        ` · la orden tiene pendiente ${r.variantesEscala
+                          .map((v) => v.codArticu)
+                          .join(', ')}`}
+                    </span>
+                  ) : (
+                    <span className={styles.reconocidoNota}> · reconocido, sin pendiente de facturar</span>
+                  )}
                   {!soloLectura && r.descripcion && (
                     <button
                       type="button"
@@ -469,7 +483,10 @@ export function SelectorOc({
           ))}
           <p className={styles.faltantesNota}>
             No se puede registrar hasta que todos los renglones tengan su orden.
-            {sinCandidata.some((r) => r.reconocidoComo) &&
+            {sinCandidata.some((r) => r.reconocidoComo?.escala === 'base') &&
+              ' Los artículos base no se facturan: en Tango el que se compra es la variante con el color o el talle' +
+                ' pegado al código. Si la factura no lo trae, reprocesá el comprobante o elegí la variante acá abajo.'}
+            {sinCandidata.some((r) => r.reconocidoComo && r.reconocidoComo.escala !== 'base') &&
               ' Los reconocidos necesitan una orden de compra con saldo en Tango: enseñar el código no lo resuelve.'}
             {sinCandidata.some((r) => !r.codigo) &&
               ' Los que vienen sin código se vinculan por su descripción, acá mismo: se guarda para este proveedor y la próxima factura empareja sola.'}
