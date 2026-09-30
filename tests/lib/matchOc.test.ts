@@ -141,6 +141,36 @@ describe('resolverLineasPdf', () => {
     expect(r[0].porDescripcion).toBe(false)
   })
 
+  it('un CARGO aprendido gana sobre el codigo impreso', () => {
+    // DASS factura "280910 SEGURO-FLETES": el 280910 es un codigo interno
+    // del proveedor que no existe en nuestro maestro. Respetarlo dejaria el
+    // renglon apuntando a un articulo inexistente y el registro cortaria en
+    // Tango. Que el operador lo marque como cargo y le elija un articulo es
+    // una decision explicita suya (2026-09-30).
+    const cargo = {
+      [normalizarDescripcionArticulo('SEGURO-FLETES')]: { codArticu: '103501', sinOc: true },
+    }
+    const r = resolverLineasPdf(
+      [{ orden: 1, codigo: '280910', descripcion: 'SEGURO-FLETES', cantidad: '1' }],
+      cargo,
+    )
+    expect(r[0].codigo).toBe('103501')
+    expect(r[0].sinOc).toBe(true)
+    expect(r[0].porDescripcion).toBe(true)
+    // Y llega a la lista de cargos, que es lo que lo registra sin orden.
+    expect(lineasCargo(r).map((l) => l.codigo)).toEqual(['103501'])
+  })
+
+  it('un aprendizaje que NO es cargo sigue sin pisar el codigo impreso', () => {
+    // La excepcion es solo para los cargos: en el caso normal el codigo de
+    // la factura sigue mandando.
+    const r = resolverLineasPdf(
+      [{ orden: 1, codigo: 'ABC', descripcion: '40PFD6920/77 SMART TV 40" FHD PHILIPS', cantidad: '1' }],
+      aprendidas,
+    )
+    expect(r[0].codigo).toBe('ABC')
+  })
+
   it('sin descripcion aprendida, el renglon queda sin codigo y a vincular', () => {
     const r = resolverLineasPdf(
       [
@@ -194,14 +224,23 @@ describe('cargos del proveedor (sin orden de compra)', () => {
     expect(lineasAVincular(lineas())).toEqual([])
   })
 
-  it('sinOc vale aunque la factura traiga codigo impreso', () => {
+  it('un cargo con codigo impreso usa el articulo aprendido, no el codigo', () => {
     // Que un renglon sea un cargo no depende de si el proveedor imprimio un
     // codigo al lado: la clave de lo aprendido es la descripcion.
+    //
+    // Hasta el 2026-09-30 esto afirmaba que el codigo impreso se conservaba.
+    // Era una suposicion que nunca se habia ejercitado contra una factura
+    // real: los cargos de RED DEL INTERIOR, que motivaron el caso, venian
+    // SIN codigo. DASS factura "280910 SEGURO-FLETES" y ahi se ve que esta
+    // mal -- el 280910 es interno del proveedor y no existe en nuestro
+    // maestro, asi que conservarlo deja el renglon apuntando a un articulo
+    // inexistente y el registro corta en Tango. El articulo que eligio el
+    // operador es el unico dato utilizable.
     const r = resolverLineasPdf(
       [{ orden: 1, codigo: 'ABC', descripcion: 'GESTION DE COMPRA 1%', cantidad: '1' }],
       aprendidas,
     )
-    expect(r[0].codigo).toBe('ABC')
+    expect(r[0].codigo).toBe('106715')
     expect(r[0].sinOc).toBe(true)
   })
 

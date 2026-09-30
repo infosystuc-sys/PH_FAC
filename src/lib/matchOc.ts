@@ -240,6 +240,20 @@ export function resolverLineasPdf(
   return lineas.map((l) => {
     const aprendido = porDescripcion[normalizarDescripcionArticulo(l.descripcion)]
     const sinOc = aprendido?.sinOc ?? false
+
+    // Un CARGO es la excepción a "si la factura trae código, manda el
+    // código": el código que el proveedor le pone a un seguro o a un flete
+    // es interno suyo y no existe en nuestro maestro, así que respetarlo
+    // deja el renglón apuntando a un artículo inexistente y el registro
+    // corta en Tango. DASS factura "280910 SEGURO-FLETES" (2026-09-30).
+    // Que el operador lo haya marcado como cargo Y le haya elegido un
+    // artículo es una decisión explícita suya, y gana sobre lo impreso --
+    // misma precedencia que el resto de la app: corrección del operador
+    // antes que lo aprendido, y lo aprendido antes que la regla general.
+    if (aprendido && sinOc) {
+      return { ...l, codigo: aprendido.codArticu, porDescripcion: true, sinOc }
+    }
+
     if ((l.codigo ?? '').trim() !== '') return { ...l, porDescripcion: false, sinOc }
     return aprendido
       ? { ...l, codigo: aprendido.codArticu, porDescripcion: true, sinOc }

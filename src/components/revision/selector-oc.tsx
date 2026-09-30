@@ -409,40 +409,48 @@ export function SelectorOc({
                       ))}
                     </select>
                   )}
-                  {/* Un cargo del proveedor --gestión de compra, logística--
-                      se vincula igual a un artículo, pero no va contra
-                      ninguna orden. Es una decisión del operador: el artículo
-                      puede existir en otra OC pendiente y la app no tiene
-                      cómo distinguirlo sola. */}
-                  {!soloLectura && r.descripcion && (
-                    <label className={styles.cargoOpcion}>
-                      <input
-                        type="checkbox"
-                        checked={comoCargo.has(r.orden)}
-                        disabled={pendiente}
-                        onChange={(e) =>
-                          setComoCargo((prev) => {
-                            const next = new Set(prev)
-                            if (e.target.checked) next.add(r.orden)
-                            else next.delete(r.orden)
-                            return next
-                          })
-                        }
-                      />
-                      Es un cargo del proveedor: registrar sin orden de compra
-                    </label>
-                  )}
+                </span>
+              )}
+              {/* Un cargo del proveedor --seguro, flete, gestión de compra--
+                  se vincula igual a un artículo, pero no va contra ninguna
+                  orden. Es una decisión del operador: el artículo puede
+                  existir en otra OC pendiente y la app no tiene cómo
+                  distinguirlo sola.
+
+                  Va para TODO renglón que siga sin orden, traiga código
+                  impreso o no. Hasta el 2026-09-30 estaba adentro del bloque
+                  de los que vienen SIN código, y por eso al renglón que más
+                  lo necesitaba --"280910 SEGURO-FLETES" de DASS, que trae
+                  código propio y no existe en nuestro maestro-- no se le
+                  ofrecía: lo único que la pantalla le proponía era asociarlo
+                  a un artículo de la orden, que es justo lo que no es. */}
+              {!soloLectura && r.descripcion && (
+                <span className={styles.vincularCol}>
+                  <label className={styles.cargoOpcion}>
+                    <input
+                      type="checkbox"
+                      checked={comoCargo.has(r.orden)}
+                      disabled={pendiente}
+                      onChange={(e) =>
+                        setComoCargo((prev) => {
+                          const next = new Set(prev)
+                          if (e.target.checked) next.add(r.orden)
+                          else next.delete(r.orden)
+                          return next
+                        })
+                      }
+                    />
+                    Es un cargo del proveedor: registrar sin orden de compra
+                  </label>
                   {/* El desplegable de arriba solo tiene articulos de las OC
                       pendientes. Un cargo no esta en ninguna: se busca en el
                       maestro completo. */}
-                  {!soloLectura && r.descripcion && (
-                    <BuscadorArticulo
-                      codProvee={codProvee}
-                      bloqueado={pendiente}
-                      etiqueta="Buscar en todo Tango…"
-                      onElegir={(cod) => vincular(r.descripcion!, cod, comoCargo.has(r.orden))}
-                    />
-                  )}
+                  <BuscadorArticulo
+                    codProvee={codProvee}
+                    bloqueado={pendiente}
+                    etiqueta="Buscar en todo Tango…"
+                    onElegir={(cod) => vincular(r.descripcion!, cod, comoCargo.has(r.orden))}
+                  />
                 </span>
               )}
               {/* Reconocido pero sin saldo: se dice cual es, para que quede
