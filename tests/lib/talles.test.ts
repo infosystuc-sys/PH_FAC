@@ -142,6 +142,53 @@ describe('articulosPorTalle', () => {
     expect(m!.get('XL')).toBe('10801  1113XL')
   })
 
+  it('empareja aunque la factura escriba el talle en décimos', () => {
+    // TOPPER factura A 00536440 (2026-09-30): imprime "027633 001" con los
+    // talles 310..370, y en Tango la OC 1681 tiene "27633  001 31" .. "37".
+    // Dos diferencias de notación a la vez: el cero de adelante del código
+    // --que resuelve normalizarCodigo-- y el talle en décimos.
+    const oc1681 = [
+      '27633  001 31', '27633  001 32', '27633  001 33', '27633  001 34',
+      '27633  001 35', '27633  001 36', '27633  001 37',
+    ]
+    const talles = parsearDesgloseTalles(
+      'TANGO KIDS MARINO NAVAL/AZUL OCEANA 310: 2 320: 2 330: 4 340: 4 350: 4 360: 4 370: 4',
+    )
+    expect(totalDesglosado(talles)).toBe(24)
+
+    const m = articulosPorTalle('027633 001', talles, oc1681)
+    expect(m).not.toBeNull()
+    expect(m!.get('310')).toBe('27633  001 31')
+    expect(m!.get('370')).toBe('27633  001 37')
+    expect(new Set(m!.values()).size).toBe(7)
+  })
+
+  it('el factor tiene que explicar el renglón entero, no algunos talles', () => {
+    // Si un solo talle no encaja con el mismo factor, no se abre nada: una
+    // correspondencia a medias manda mercadería al artículo equivocado.
+    const m = articulosPorTalle(
+      '27633 001',
+      [
+        { talle: '310', cantidad: 2 },
+        { talle: '999', cantidad: 2 },
+      ],
+      ['27633  001 31', '27633  001 32'],
+    )
+    expect(m).toBeNull()
+  })
+
+  it('no mezcla escalas: dos talles no pueden caer en el mismo artículo', () => {
+    const m = articulosPorTalle(
+      '27633 001',
+      [
+        { talle: '310', cantidad: 2 },
+        { talle: '3100', cantidad: 2 },
+      ],
+      ['27633  001 31', '27633  001 32'],
+    )
+    expect(m).toBeNull()
+  })
+
   it('devuelve null si un talle no tiene artículo: no resuelve a medias', () => {
     const m = articulosPorTalle('167686', [
       { talle: 'S', cantidad: 2 },

@@ -150,6 +150,7 @@ export function articulosPorTalle(
     (a, b) => normalizarCodigo(b.talle).length - normalizarCodigo(a.talle).length,
   )
 
+  let completo = true
   for (const { talle } of porLargo) {
     const sufijo = normalizarCodigo(talle)
     if (sufijo === '') return null
@@ -157,11 +158,81 @@ export function articulosPorTalle(
       .filter((c) => !usados.has(c.clave) && c.clave.endsWith(sufijo))
       .sort((a, b) => a.clave.length - b.clave.length)
     const elegido = libres[0]
-    if (!elegido) return null
+    if (!elegido) {
+      completo = false
+      break
+    }
     usados.add(elegido.clave)
     salida.set(talle, elegido.codigo)
   }
-  return salida
+  if (completo) return salida
+
+  // El talle impreso y el guardado pueden estar en distinta escala: TOPPER
+  // factura "310 320 330" y en Tango los artículos terminan en "31 32 33"
+  // --el papel escribe el talle en décimos--. Se resuelve buscando UN factor
+  // que explique el renglón entero, no arreglando talle por talle: si la
+  // misma división lleva los siete talles impresos a los siete artículos de
+  // la orden, uno a uno, la correspondencia es la que es. Un factor que
+  // funcione para algunos y no para todos se descarta entero.
+  return porEscalaNumerica(talles, conPrefijo, prefijo)
+}
+
+/**
+ * La correspondencia talle → artículo cuando los dos están en escalas
+ * numéricas distintas, o `null` si no hay un factor que explique todo el
+ * renglón.
+ */
+function porEscalaNumerica(
+  talles: Talle[],
+  conPrefijo: { codigo: string; clave: string }[],
+  prefijo: string,
+): Map<string, string> | null {
+  const restos = new Map<string, string>()
+  for (const c of conPrefijo) {
+    const resto = c.clave.slice(prefijo.length)
+    // Dos artículos con el mismo resto no puede pasar --serían el mismo
+    // código-- pero si pasara, no hay forma de elegir.
+    if (restos.has(resto)) return null
+    restos.set(resto, c.codigo)
+  }
+
+  const esNumero = (s: string) => /^\d+$/.test(s)
+  if (!talles.every((t) => esNumero(t.talle.trim()))) return null
+  if (![...restos.keys()].every(esNumero)) return null
+
+  // Del impreso al guardado se divide (310 → 31) o se multiplica (31 → 310).
+  const factores: { k: number; dividir: boolean }[] = [
+    { k: 10, dividir: true },
+    { k: 100, dividir: true },
+    { k: 10, dividir: false },
+    { k: 100, dividir: false },
+  ]
+
+  for (const { k, dividir } of factores) {
+    const salida = new Map<string, string>()
+    const usados = new Set<string>()
+    let sirve = true
+
+    for (const { talle } of talles) {
+      const n = Number(talle.trim())
+      if (dividir && n % k !== 0) {
+        sirve = false
+        break
+      }
+      const buscado = String(dividir ? n / k : n * k)
+      const codigo = restos.get(buscado)
+      // Uno a uno: un artículo no puede quedar asignado a dos talles.
+      if (!codigo || usados.has(buscado)) {
+        sirve = false
+        break
+      }
+      usados.add(buscado)
+      salida.set(talle, codigo)
+    }
+
+    if (sirve && salida.size === talles.length) return salida
+  }
+  return null
 }
 
 /**

@@ -78,7 +78,20 @@ const TOLERANCIA = 0.00005
  * en Tango es siempre el código tal como está en la OC o en el maestro.
  */
 export function normalizarCodigo(codigo: string): string {
-  return codigo.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return codigo
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    // Y desde el 2026-09-30, los CEROS DE ADELANTE: TOPPER factura "027633
+    // 001" y en Tango el artículo es "27633  001 31". Es la misma diferencia
+    // de siempre --el papel rellena a un ancho fijo, el maestro no-- y sin
+    // esto el código no empareja con nada, ni siquiera para darse cuenta de
+    // que es un artículo con escala. Se conserva siempre al menos un
+    // carácter, así que un código que sea todo ceros no queda vacío.
+    //
+    // Medido ese día sobre toda la base antes de aplicarlo: 0 colisiones en
+    // 9.587 códigos de STA11 y 0 en 377 sinónimos de CPA15. Solo 6 códigos
+    // del maestro empiezan con cero.
+    .replace(/^0+(?=.)/, '')
 }
 
 /**

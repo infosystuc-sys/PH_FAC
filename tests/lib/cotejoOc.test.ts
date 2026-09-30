@@ -134,6 +134,22 @@ describe('normalizarCodigo', () => {
     expect(normalizarCodigo('  abc1 ')).toBe('ABC1')
   })
 
+  it('ignora los ceros de ADELANTE', () => {
+    // TOPPER, 2026-09-30: la factura imprime "027633 001" y en Tango el
+    // articulo es "27633  001 31". Medido antes de aplicarlo: 0 colisiones
+    // en 9.587 codigos de STA11 y 0 en 377 sinonimos de CPA15.
+    expect(normalizarCodigo('027633 001')).toBe('27633001')
+    expect(normalizarCodigo('27633  001 31')).toBe('2763300131')
+    expect(normalizarCodigo('0000123')).toBe('123')
+  })
+
+  it('un codigo de puros ceros no queda vacio', () => {
+    // Se conserva siempre al menos un caracter: una clave vacia matchearia
+    // contra cualquier cosa que tampoco tenga clave.
+    expect(normalizarCodigo('000')).toBe('0')
+    expect(normalizarCodigo('0')).toBe('0')
+  })
+
   it('ignora tambien los espacios de ADENTRO', () => {
     // C C AGRO, 2026-09-16: la factura imprime "RO1274DW MT/1-12" y el
     // sinonimo en CPA15 es "RO1274DWMT/1-12". No es un caso aislado: 50 de

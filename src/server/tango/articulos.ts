@@ -262,6 +262,18 @@ export async function sinonimosDelProveedor(
  * color o el talle. Lo reportó el usuario con DASS (1261095, que es base de
  * 1261095140) el 2026-09-30, y era también la causa del caso TOPPER.
  */
+/**
+ * La clave de comparacion de un codigo, en SQL: la gemela de
+ * `normalizarCodigo` (lib/cotejoOc.ts). Quita los cuatro caracteres no
+ * alfanumericos que aparecen en los codigos de la base -- espacio, punto,
+ * guion y barra --; los ceros de adelante los saca quien la usa, porque
+ * PATINDEX necesita repetir la expresion.
+ *
+ * Si alguna de las dos cambia, la otra tiene que cambiar igual: son la
+ * misma clave a los dos lados de la conexion.
+ */
+const CLAVE_SQL = "REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COD_ARTICU), ' ', ''), '.', ''), '-', ''), '/', '')"
+
 export type Escala = 'base' | 'variante' | 'ninguna'
 
 export function esEscala(valor: unknown): Escala {
@@ -373,8 +385,14 @@ export async function describirArticulos(
            LTRIM(RTRIM(ISNULL(USA_ESC, 'N'))) AS usaEsc
     FROM STA11
     -- La misma clave que normalizarCodigo: sin espacio, punto, guion ni
-    -- barra, que son los unicos no alfanumericos que hay en los codigos.
-    WHERE REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COD_ARTICU), ' ', ''), '.', ''), '-', ''), '/', '') IN (${marcadores.join(', ')})
+    -- barra --los unicos no alfanumericos que hay en los codigos-- y sin
+    -- los ceros de adelante, conservando al menos un caracter. Las dos
+    -- versiones tienen que dar el MISMO resultado: si divergen, un codigo
+    -- que la app resuelve en memoria no se encuentra en la base.
+    WHERE CASE
+            WHEN PATINDEX('%[^0]%', ${CLAVE_SQL}) = 0 THEN LEFT(${CLAVE_SQL}, 1)
+            ELSE SUBSTRING(${CLAVE_SQL}, PATINDEX('%[^0]%', ${CLAVE_SQL}), LEN(${CLAVE_SQL}))
+          END IN (${marcadores.join(', ')})
   `)
   for (const f of r.recordset) {
     m.set(normalizarCodigo(String(f.codArticu)), {
