@@ -27,7 +27,14 @@ import {
   type ArticuloTango,
 } from '@/server/tango/articulos'
 import { emparejarOcs, resolverCodigoArticulo, lineasCargo, abrirPorTalle } from '@/lib/matchOc'
-import { variantesPendientesDeBase, type ArticuloDescripto } from '@/server/tango/articulos'
+import {
+  variantesPendientesDeBase,
+  variantesDeEscala,
+  type ArticuloDescripto,
+} from '@/server/tango/articulos'
+import { equivalenciasPorTalle } from '@/lib/talles'
+import { parsearImporte } from '@/lib/formato'
+import { reglaDeProveedorEn } from './lecturaProveedor'
 import { tipoPorContenido, NOMBRES_ADMITIDOS } from '@/lib/tipoArchivo'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import { aprenderArticuloEn, marcarSinOcEn } from './articulosProveedor'
@@ -673,6 +680,20 @@ export type OfertaOc = {
      * cualquier otro caso.
      */
     variantesEscala: ArticuloDescripto[]
+    /**
+     * El código del papel llevado a los artículos de Tango, talle por talle.
+     * Solo para MOSTRAR: sin una orden contra la cual resolver, el operador
+     * no tenía forma de saber a qué artículo nuestro apunta "026459 001".
+     * Vacío cuando el renglón no viene desglosado o algún talle no tiene
+     * artículo -- no se muestra una equivalencia a medias.
+     */
+    equivalencias: {
+      codigoFactura: string
+      talle: string
+      cantidad: number
+      codArticu: string
+      descripcion: string
+    }[]
     /** La descripción impresa: es con lo que se vincula un renglón sin código. */
     descripcion: string | null
     /** El código salió de una descripción aprendida, no vino impreso. */
@@ -714,7 +735,7 @@ export async function listarOcParaComprobante(
     ).values(),
   ].sort((a, b) => a.codArticu.localeCompare(b.codArticu))
 
-  const { detalle, sinOrden, lineas } = await conTransaccion(async (tx) => {
+  const { detalle, sinOrden, lineas, regla } = await conTransaccion(async (tx) => {
     const detalle = await obtenerDetalleEn(tx, comprobanteId)
     return {
       detalle,
@@ -722,6 +743,9 @@ export async function listarOcParaComprobante(
       // Con el codigo aprendido por descripcion ya aplicado, para que un
       // renglon vinculado empareje igual que uno con codigo impreso.
       lineas: await lineasPdfResueltasEn(tx, detalle, codProvee),
+      // Como lee la app las facturas de este proveedor: decide si una linea
+      // con UN SOLO talle impreso se toma por un desglose.
+      regla: await reglaDeProveedorEn(tx, codProvee),
     }
   })
   const imputadas = [
@@ -796,6 +820,25 @@ export async function listarOcParaComprobante(
   const enAlgunaOc = new Set(
     todas.flatMap((oc) => oc.renglones.map((r) => normalizarCodigo(r.codArticu))),
   )
+  // La equivalencia entre el codigo del papel y el articulo de Tango, talle
+  // por talle, para los renglones que NO tienen orden (2026-10-05, pedido
+  // del usuario con TOPPER A 00535956). Es solo de VISUALIZACION: sin una
+  // orden contra la cual resolver, el operador veia "026459 001" a secas y
+  // no tenia forma de saber a que articulo nuestro apunta. No imputa, no
+  // valida y no registra: abrirPorTalle sigue trabajando solo contra las
+  // ordenes.
+  //
+  // Un solo talle impreso ("350: 2") se acepta como desglose unicamente si
+  // el proveedor ya esta marcado como 'desglose-talle': con un par suelto y
+  // sin ese antecedente, cualquier "Lote : 3" pasaria por talle.
+  const unTalle = regla?.escala === 'desglose-talle'
+  const variantesEscalaPorPrefijo = await variantesDeEscala(sinOrden.map((r) => r.codigo))
+  const descripcionDeVariante = new Map(
+    [...variantesEscalaPorPrefijo.values()]
+      .flat()
+      .map((a) => [a.codArticu, a.descripcion] as const),
+  )
+
   const sinOrdenAnotado = sinOrden.map((r) => ({
     ...r,
     hayCandidata: resolverCodigoArticulo(r.codigo, enAlgunaOc, sinonimos) !== null,
@@ -803,6 +846,14 @@ export async function listarOcParaComprobante(
     // Las variantes de escala pendientes, cuando el codigo es un base.
     variantesEscala:
       variantes.get(reconocidos.get(normalizarCodigo(r.codigo))?.codArticu ?? '') ?? [],
+    // El codigo del papel llevado a los articulos de Tango, talle por talle.
+    equivalencias: equivalenciasPorTalle(
+      r.codigo,
+      r.descripcion,
+      parsearImporte(r.cantidad),
+      (variantesEscalaPorPrefijo.get(normalizarCodigo(r.codigo)) ?? []).map((a) => a.codArticu),
+      unTalle,
+    ).map((e) => ({ ...e, descripcion: descripcionDeVariante.get(e.codArticu) ?? '' })),
     sinOc: false,
   }))
 

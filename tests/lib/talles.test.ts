@@ -6,6 +6,7 @@ import {
   articulosPorTalle,
   prorratear,
   repartirNetoEntreHermanos,
+  equivalenciasPorTalle,
 } from '@/lib/talles'
 
 // Las tres descripciones son las que la app leyó del PDF de TOPPER
@@ -269,5 +270,117 @@ describe('repartirNetoEntreHermanos', () => {
   it('un renglón sin línea del PDF no recibe importe', () => {
     const r = repartirNetoEntreHermanos([{ id: 10, pdfOrden: null, cantidad: 3 }], neto)
     expect(r.get(10)).toBeUndefined()
+  })
+})
+
+describe('equivalenciasPorTalle', () => {
+  // TOPPER A 00535956 (comprobante 24306, 2026-10-05). Las variantes salen
+  // del MAESTRO, no de una orden: el caso existe justamente porque ninguna
+  // orden del proveedor tiene estos articulos pendientes.
+  const SAN_CIRO = [
+    '26459  001 35', '26459  001 36', '26459  001 37', '26459  001 38',
+    '26459  001 39', '26459  001 40', '26459  001 41', '26459  001 42',
+    '26459  001 43', '26459  001 44',
+  ]
+  const KAISER = [
+    '27409  001 35', '27409  001 36', '27409  001 37', '27409  001 38',
+    '27409  001 39', '27409  001 40', '27409  001 41', '27409  001 42',
+    '27409  001 43', '27409  001 44', '27409  001 45',
+  ]
+  const SEGOVIA = ['27620  001 25', '27620  001 26', '27620  001 27']
+
+  it('lleva cada talle impreso a su artículo del maestro', () => {
+    const r = equivalenciasPorTalle(
+      '027409 001',
+      'KAISER 4 FG GRIS LUNAR/GRIS STEEL/CORAL 360: 2 370: 2 400: 4',
+      8,
+      KAISER,
+      true,
+    )
+    expect(r).toEqual([
+      { codigoFactura: '027409 001 360', talle: '360', cantidad: 2, codArticu: '27409  001 36' },
+      { codigoFactura: '027409 001 370', talle: '370', cantidad: 2, codArticu: '27409  001 37' },
+      { codigoFactura: '027409 001 400', talle: '400', cantidad: 4, codArticu: '27409  001 40' },
+    ])
+  })
+
+  it('resuelve un renglón de UN SOLO talle cuando el proveedor desglosa', () => {
+    // "350: 2" es un par suelto: solo se toma por desglose si el proveedor
+    // ya está marcado como 'desglose-talle'.
+    const r = equivalenciasPorTalle(
+      '026459 001',
+      'SAN CIRO V TF BLANCO / NEGRO 350: 2',
+      2,
+      SAN_CIRO,
+      true,
+    )
+    expect(r).toHaveLength(1)
+    expect(r[0].codArticu).toBe('26459  001 35')
+    expect(r[0].codigoFactura).toBe('026459 001 350')
+  })
+
+  it('con un solo talle y sin el antecedente del proveedor, no muestra nada', () => {
+    const r = equivalenciasPorTalle(
+      '026459 001',
+      'SAN CIRO V TF BLANCO / NEGRO 350: 2',
+      2,
+      SAN_CIRO,
+      false,
+    )
+    expect(r).toEqual([])
+  })
+
+  it('con un solo talle exige además que la cantidad impresa coincida', () => {
+    // Sin cantidad no hay con qué confirmar que ese par es un talle.
+    expect(
+      equivalenciasPorTalle('026459 001', 'SAN CIRO 350: 2', 0, SAN_CIRO, true),
+    ).toEqual([])
+    expect(
+      equivalenciasPorTalle('026459 001', 'SAN CIRO 350: 2', 9, SAN_CIRO, true),
+    ).toEqual([])
+  })
+
+  it('no muestra nada si los talles no suman la cantidad impresa', () => {
+    expect(
+      equivalenciasPorTalle('027620 001', 'SEGOVIA 250: 2 260: 2 270: 2', 99, SEGOVIA, true),
+    ).toEqual([])
+  })
+
+  it('no muestra una equivalencia a medias: o están todos los talles o ninguno', () => {
+    // El 450 no existe en el maestro. Mostrar solo dos de tres le haria
+    // creer al operador que el tercero no se factura.
+    const r = equivalenciasPorTalle(
+      '027620 001',
+      'SEGOVIA 250: 2 260: 2 450: 2',
+      6,
+      SEGOVIA,
+      true,
+    )
+    expect(r).toEqual([])
+  })
+
+  it('sin código impreso o sin candidatos no devuelve nada', () => {
+    expect(equivalenciasPorTalle(null, 'SEGOVIA 250: 2 260: 2', 4, SEGOVIA, true)).toEqual([])
+    expect(equivalenciasPorTalle('027620 001', 'SEGOVIA 250: 2 260: 2', 4, [], true)).toEqual([])
+  })
+
+  it('un renglón sin desglose no genera equivalencias', () => {
+    expect(
+      equivalenciasPorTalle('106037', 'HELADERA MIDEA 340LT INVER', 2, ['106037 01'], true),
+    ).toEqual([])
+  })
+})
+
+describe('parsearDesgloseTalles con minimoPares', () => {
+  it('el default sigue exigiendo dos pares', () => {
+    expect(parsearDesgloseTalles('SAN CIRO 350: 2')).toEqual([])
+  })
+
+  it('bajándolo a uno lee el par suelto', () => {
+    expect(parsearDesgloseTalles('SAN CIRO 350: 2', 1)).toEqual([{ talle: '350', cantidad: 2 }])
+  })
+
+  it('aun con mínimo uno, una descripción sin pares no inventa talles', () => {
+    expect(parsearDesgloseTalles('HELADERA MIDEA 340LT INVER', 1)).toEqual([])
   })
 })

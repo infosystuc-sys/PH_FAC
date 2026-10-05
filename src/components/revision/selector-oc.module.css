@@ -447,3 +447,23 @@
   align-items: center;
   gap: 10px;
 }
+
+/* La equivalencia entre el codigo del papel y el articulo de Tango, talle
+   por talle, debajo del renglon que no encontro orden (2026-10-05).
+   Comparte la grilla de .faltanteFila para que las tres columnas --codigo,
+   articulo, cantidad-- queden alineadas con la fila de arriba; lo unico
+   que cambia es la sangria y el tono, porque es detalle de esa fila y no
+   un renglon mas de la factura. */
+.equivalencia {
+  display: grid;
+  grid-template-columns: auto 1fr 90px;
+  gap: 8px;
+  padding: 1px 0 1px 16px;
+  font-size: 11px;
+  color: var(--texto-3);
+}
+
+.equivalenciaFlecha {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}

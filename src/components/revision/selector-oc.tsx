@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import {
   listarOcParaComprobante,
   imputarOrdenCompra,
@@ -377,7 +377,8 @@ export function SelectorOc({
               : 'Ninguna orden de compra de este proveedor tiene estos artículos:'}
           </p>
           {sinCandidata.map((r) => (
-            <div key={r.orden} className={styles.faltanteFila}>
+            <Fragment key={r.orden}>
+            <div className={styles.faltanteFila}>
               <span className={styles.codigo}>
                 {r.codigo || '(sin código)'}
                 {r.porDescripcion && (
@@ -488,6 +489,23 @@ export function SelectorOc({
               )}
               <span className={styles.cant}>{r.cantidad ?? '—'}</span>
             </div>
+            {/* A que articulo de Tango corresponde cada talle del renglon.
+                Se muestra aunque no haya ninguna orden con saldo: es el
+                dato que faltaba para entender que "026459 001" es nuestro
+                "26459  001 35" (2026-10-05, pedido del usuario). Es solo
+                informacion -- lo que decide que se registra sigue siendo la
+                orden imputada. */}
+            {r.equivalencias.map((e) => (
+              <div key={e.codArticu} className={styles.equivalencia}>
+                <span className={styles.codigo}>{e.codigoFactura}</span>
+                <span className={styles.equivalenciaFlecha}>
+                  → {e.codArticu}
+                  {e.descripcion && ` · ${e.descripcion}`}
+                </span>
+                <span className={styles.cant}>{e.cantidad}</span>
+              </div>
+            ))}
+            </Fragment>
           ))}
           <p className={styles.faltantesNota}>
             No se puede registrar hasta que todos los renglones tengan su orden.

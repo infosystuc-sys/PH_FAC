@@ -303,6 +303,81 @@ export type ArticuloDescripto = {
  * esto DEVUELVE LA LISTA y no adivina: elegir por el operador acertaría en
  * una minoría de los casos.
  */
+/**
+ * Cuantos caracteres tiene que tener un codigo impreso para que valga la
+ * pena buscarle variantes. Con menos, el LIKE barre medio maestro y lo que
+ * devuelve no identifica nada: "27" matchea 2.700 articulos.
+ */
+const LARGO_MINIMO_PREFIJO = 4
+
+/**
+ * Las variantes de escala del maestro cuyo codigo empieza con alguno de
+ * estos codigos impresos.
+ *
+ * Es la contraparte de `variantesPendientesDeBase` para cuando NO hay
+ * ninguna orden de compra: ahi no existe la lista de renglones contra la
+ * cual resolver los talles, y el operador veia el codigo del papel a secas
+ * ("026459 001") sin saber a que articulo nuestro apunta. Esto es solo para
+ * MOSTRARLE la equivalencia -- no imputa, no valida y no registra nada.
+ *
+ * Busca por la misma clave que `describirArticulos`, ceros de adelante
+ * incluidos, porque el papel los escribe y el maestro no (TOPPER imprime
+ * "026459" y el articulo es "26459  001 35").
+ */
+export async function variantesDeEscala(
+  prefijos: string[],
+): Promise<Map<string, ArticuloDescripto[]>> {
+  const salida = new Map<string, ArticuloDescripto[]>()
+  const buscados = [
+    ...new Set(
+      prefijos
+        .map((p) => normalizarCodigo(p ?? ''))
+        .filter((p) => p.length >= LARGO_MINIMO_PREFIJO),
+    ),
+  ]
+  if (buscados.length === 0) return salida
+
+  const pool = await getPool()
+  const req = pool.request()
+  const marcadores = buscados.map((p, i) => {
+    req.input(`p${i}`, sql.VarChar(60), p)
+    return `@p${i}`
+  })
+
+  // La clave sin ceros de adelante, igual que en describirArticulos. Se
+  // compara con LIKE contra cada prefijo: el articulo tiene que ser ese
+  // codigo MAS el sufijo del talle, nunca el codigo pelado.
+  const clave = `CASE
+      WHEN PATINDEX('%[^0]%', ${CLAVE_SQL}) = 0 THEN LEFT(${CLAVE_SQL}, 1)
+      ELSE SUBSTRING(${CLAVE_SQL}, PATINDEX('%[^0]%', ${CLAVE_SQL}), LEN(${CLAVE_SQL}))
+    END`
+
+  const r = await req.query<Record<string, unknown>>(`
+    SELECT p.prefijo                                 AS prefijo,
+           LTRIM(RTRIM(a.COD_ARTICU))                AS codArticu,
+           LTRIM(RTRIM(ISNULL(a.DESCRIPCIO, '')))    AS descripcion,
+           LTRIM(RTRIM(ISNULL(a.USA_ESC, 'N')))      AS usaEsc
+    FROM (VALUES ${marcadores.map((m) => `(${m})`).join(', ')}) AS p(prefijo)
+    JOIN STA11 a
+      ON LTRIM(RTRIM(ISNULL(a.USA_ESC, 'N'))) = 'S'
+     AND ${clave} LIKE p.prefijo + '%'
+     AND LEN(${clave}) > LEN(p.prefijo)
+    ORDER BY p.prefijo, LTRIM(RTRIM(a.COD_ARTICU))
+  `)
+
+  for (const f of r.recordset) {
+    const prefijo = String(f.prefijo)
+    const lista = salida.get(prefijo) ?? []
+    lista.push({
+      codArticu: String(f.codArticu),
+      descripcion: String(f.descripcion),
+      escala: esEscala(f.usaEsc),
+    })
+    salida.set(prefijo, lista)
+  }
+  return salida
+}
+
 export async function variantesPendientesDeBase(
   codProvee: string,
   bases: string[],

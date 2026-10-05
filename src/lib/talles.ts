@@ -58,8 +58,15 @@ const MINIMO_PARES = 2
  *
  * No valida contra la cantidad total: eso lo hace `cuadraConTotal`, porque
  * la decisión de qué hacer cuando no cuadra es de quien llama.
+ *
+ * `minimoPares` solo lo baja `equivalenciasPorTalle`, para MOSTRAR un único
+ * talle ("350: 2") de un proveedor que ya se sabe que desglosa. El default
+ * sigue en 2 y es el que usa todo lo que abre renglones para registrar.
  */
-export function parsearDesgloseTalles(texto: string | null | undefined): Talle[] {
+export function parsearDesgloseTalles(
+  texto: string | null | undefined,
+  minimoPares: number = MINIMO_PARES,
+): Talle[] {
   if (!texto) return []
   const salida: Talle[] = []
   const vistos = new Set<string>()
@@ -90,7 +97,61 @@ export function parsearDesgloseTalles(texto: string | null | undefined): Talle[]
     vistos.add(clave)
     salida.push({ talle, cantidad })
   }
-  return salida.length >= MINIMO_PARES ? salida : []
+  return salida.length >= Math.max(1, minimoPares) ? salida : []
+}
+
+/** Un talle de una línea impresa y el artículo de Tango que le corresponde. */
+export type EquivalenciaTalle = {
+  /** El código del papel con el talle al final: "026459 001 350". */
+  codigoFactura: string
+  talle: string
+  cantidad: number
+  /** El artículo de Tango, tal como está en el maestro. */
+  codArticu: string
+}
+
+/**
+ * A qué artículo de Tango corresponde cada talle de una línea desglosada,
+ * para MOSTRARLO. No abre ni graba renglones: eso sigue siendo cosa de
+ * `abrirPorTalle` contra la orden de compra.
+ *
+ * Existe para el aviso "ninguna orden tiene estos artículos" (2026-10-05,
+ * pedido del usuario con TOPPER A 00535956): sin orden no había contra qué
+ * resolver los talles y el operador veía "026459 001" a secas, sin saber a
+ * qué artículo nuestro apuntaba. `candidatos` son acá las variantes del
+ * maestro, no las de una orden.
+ *
+ * `unTalle` acepta una línea con un solo par -- TOPPER imprime "350: 2" --
+ * y solo debe pasarse cuando el proveedor ya está marcado como
+ * 'desglose-talle'. Con un solo talle se exige además que la cantidad
+ * impresa exista y coincida: es la única evidencia de que es un desglose.
+ *
+ * Mismo criterio que `abrirPorTalle` para no mostrar algo a medias: si los
+ * talles no suman la cantidad impresa, o alguno no tiene artículo, devuelve
+ * `[]`.
+ */
+export function equivalenciasPorTalle(
+  codigoImpreso: string | null | undefined,
+  descripcion: string | null | undefined,
+  cantidadImpresa: number,
+  candidatos: string[],
+  unTalle: boolean,
+): EquivalenciaTalle[] {
+  const codigo = (codigoImpreso ?? '').trim()
+  if (codigo === '') return []
+  const talles = parsearDesgloseTalles(descripcion, unTalle ? 1 : MINIMO_PARES)
+  if (talles.length === 0) return []
+  if (cantidadImpresa > 0 && Math.abs(totalDesglosado(talles) - cantidadImpresa) > 0.00005) return []
+  if (talles.length === 1 && !(cantidadImpresa > 0)) return []
+
+  const porTalle = articulosPorTalle(codigo, talles, candidatos)
+  if (!porTalle) return []
+  return talles.map((t) => ({
+    codigoFactura: `${codigo} ${t.talle}`,
+    talle: t.talle,
+    cantidad: t.cantidad,
+    codArticu: porTalle.get(t.talle)!,
+  }))
 }
 
 /** La suma de los talles, para cotejarla contra la cantidad impresa. */
