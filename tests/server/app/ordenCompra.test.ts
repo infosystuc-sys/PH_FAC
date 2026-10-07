@@ -4,7 +4,13 @@ import { conRollback } from '@/server/db/tx'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 import { obtenerDetalleEn } from '@/server/app/detalle'
-import { aprenderArticuloEn, marcarSinOcEn } from '@/server/app/articulosProveedor'
+import {
+  aprenderArticuloEn,
+  marcarSinOcEn,
+  articulosPorDescripcionEn,
+} from '@/server/app/articulosProveedor'
+import { vincularDescripcionArticuloEn, comprobanteCerradoEn } from '@/server/app/acciones'
+import { normalizarDescripcionArticulo } from '@/lib/matchOc'
 import {
   agregarOcEn,
   quitarOcEn,
@@ -12,6 +18,7 @@ import {
   renglonesSinOcEn,
   recalcularAVincularEn,
   sincronizarCargosEn,
+  lineasPdfResueltasEn,
 } from '@/server/app/ordenCompra'
 import { buscarOcPendientes, type OrdenCompra } from '@/server/tango/ordenesCompra'
 
@@ -422,6 +429,80 @@ describe('cargos del proveedor: renglones sin orden de compra', () => {
       expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(0)
       // Y vuelve a exigir orden de compra.
       expect(await renglonesSinOcEn(tx, id, p!.codProvee)).toHaveLength(1)
+    })
+  })
+})
+
+describe('ensenar una descripcion en un comprobante cerrado', () => {
+  // 2026-10-07, decision del usuario. Los proveedores que todavia se cargan
+  // a mano en Tango dejan todos sus comprobantes en 'existente', asi que si
+  // ensenar estuviera bloqueado ahi la app no podria aprender nunca --
+  // SPRINGWALL/VAZQUEZ es el caso que lo destapo. Se permite, pero lo que
+  // se guarda es del PROVEEDOR: el comprobante cerrado no se toca.
+  async function renglonSinCodigo(tx: sql.Transaction, id: number, orden: number, descripcion: string) {
+    await tx
+      .request()
+      .input('id', sql.Int, id).input('orden', sql.Int, orden)
+      .input('desc', sql.NVarChar(300), descripcion)
+      .query(`
+        INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO)
+        VALUES (@id, @orden, NULL, @desc, 1, 1000, 1000)`)
+  }
+
+  it('reconoce que un comprobante registrado o existente esta cerrado', async () => {
+    await conRollback(async (tx) => {
+      const leido = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const registrado = await insertarComprobantePrueba(tx, { estado: 'registrado' })
+      const existente = await insertarComprobantePrueba(tx, { estado: 'existente' })
+      expect(await comprobanteCerradoEn(tx, leido)).toBe(false)
+      expect(await comprobanteCerradoEn(tx, registrado)).toBe(true)
+      expect(await comprobanteCerradoEn(tx, existente)).toBe(true)
+    })
+  })
+
+  it('en uno abierto, ensenar un cargo le crea el renglon', async () => {
+    const p = await unProveedorConOc()
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonSinCodigo(tx, id, 1, 'SEGURO Y FLETES')
+      await vincularDescripcionArticuloEn(tx, id, p!.codProvee, 'SEGURO Y FLETES', '106999', true)
+      expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(1)
+    })
+  })
+
+  it('en uno CERRADO, ensenar guarda lo aprendido y NO le toca los renglones', async () => {
+    // Es la garantia que importa: en un comprobante registrado los
+    // renglones son el registro de lo que se mando a Tango, y rehacerlos lo
+    // corromperia.
+    const p = await unProveedorConOc()
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'registrado' })
+      await renglonSinCodigo(tx, id, 1, 'SEGURO Y FLETES')
+      const antes = (await obtenerDetalleEn(tx, id)).renglones.length
+
+      await vincularDescripcionArticuloEn(tx, id, p!.codProvee, 'SEGURO Y FLETES', '106999', true)
+
+      // El comprobante quedo igual...
+      expect((await obtenerDetalleEn(tx, id)).renglones).toHaveLength(antes)
+      // ...pero lo aprendido vale para el proveedor, que es el punto.
+      const aprendidas = await articulosPorDescripcionEn(tx, p!.codProvee)
+      expect(aprendidas[normalizarDescripcionArticulo('SEGURO Y FLETES')]?.codArticu).toBe('106999')
+    })
+  })
+
+  it('lo aprendido desde un comprobante cerrado resuelve el renglon de OTRO', async () => {
+    const p = await unProveedorConOc()
+    await conRollback(async (tx) => {
+      const cerrado = await insertarComprobantePrueba(tx, { estado: 'existente' })
+      await renglonSinCodigo(tx, cerrado, 1, 'MAQUETA DELUXE NVO')
+      await vincularDescripcionArticuloEn(tx, cerrado, p!.codProvee, 'MAQUETA DELUXE NVO', '106999', false)
+
+      const nuevo = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonSinCodigo(tx, nuevo, 1, 'MAQUETA DELUXE NVO')
+      const detalle = await obtenerDetalleEn(tx, nuevo)
+      const lineas = await lineasPdfResueltasEn(tx, detalle, p!.codProvee)
+      expect(lineas[0].codigo).toBe('106999')
+      expect(lineas[0].porDescripcion).toBe(true)
     })
   })
 })

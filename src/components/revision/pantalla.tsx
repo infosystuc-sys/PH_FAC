@@ -227,6 +227,11 @@ export function Pantalla({
             comprobanteId={comprobanteId}
             codProvee={codProvee}
             soloLectura={soloLectura}
+            // Ensenar una descripcion se permite siempre: es conocimiento
+            // del proveedor y sirve para las facturas que vengan, no un
+            // cambio de este comprobante (2026-10-07, decision del
+            // usuario). Ver puedeVincular en selector-oc.tsx.
+            permitirVincular
           />
         )}
         {/* Va antes de Renglones porque en tarjeta es la tarjeta con el

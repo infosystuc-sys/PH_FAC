@@ -428,6 +428,24 @@ export async function asociarCodigoProveedor(
  * vincular" cuando llega a cero-- y se deja constancia en el historial.
  * Es la contraparte de `asociarCodigoProveedor` para cuando no hay codigo.
  */
+/**
+ * Un comprobante que ya no se modifica: registrado por la app, o detectado
+ * como ya existente en Tango. Es el mismo criterio con el que la pantalla
+ * se pone de solo lectura (ver comprobantes/[id]/page.tsx); si cambia uno,
+ * tiene que cambiar el otro.
+ */
+export async function comprobanteCerradoEn(
+  e: { request(): sql.Request },
+  comprobanteId: number,
+): Promise<boolean> {
+  const r = await e
+    .request()
+    .input('id', sql.Int, comprobanteId)
+    .query<{ ESTADO: string }>('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')
+  const estado = r.recordset[0]?.ESTADO
+  return estado === 'registrado' || estado === 'existente'
+}
+
 export async function vincularDescripcionArticulo(
   comprobanteId: number,
   codProvee: string,
@@ -439,7 +457,30 @@ export async function vincularDescripcionArticulo(
   const art = codArticu.trim()
   if (!codProvee.trim() || !desc || !art) throw new Error('Faltan datos para vincular el artículo.')
 
-  const quedan = await conTransaccion(async (tx) => {
+  const quedan = await conTransaccion((tx) =>
+    vincularDescripcionArticuloEn(tx, comprobanteId, codProvee, desc, art, sinOc),
+  )
+
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  revalidatePath('/comprobantes')
+  return { quedan }
+}
+
+/**
+ * Separada en `_En`/wrapper, mismo patron que `marcarObservacionEn`: asi
+ * los tests pueden ejercitarla dentro de la misma transaccion que inserto
+ * el comprobante de prueba, y sin `revalidatePath`, que fuera del runtime
+ * de Next lanza.
+ */
+export async function vincularDescripcionArticuloEn(
+  tx: { request(): sql.Request },
+  comprobanteId: number,
+  codProvee: string,
+  desc: string,
+  art: string,
+  sinOc: boolean,
+): Promise<number> {
+  {
     await aprenderArticuloEn(tx, codProvee, desc, art, sinOc)
     await auditarEn(
       tx,
@@ -447,13 +488,24 @@ export async function vincularDescripcionArticulo(
       `Descripción vinculada a un artículo para el proveedor: "${desc}" = ${art}` +
         (sinOc ? ' — cargo del proveedor, se registra sin orden de compra' : ''),
     )
-    await sincronizarCargosEn(tx, comprobanteId, codProvee)
-    return recalcularAVincularEn(tx, comprobanteId, codProvee)
-  })
 
-  revalidatePath(`/comprobantes/${comprobanteId}`)
-  revalidatePath('/comprobantes')
-  return { quedan }
+    // Un comprobante cerrado --registrado en Tango por la app, o que ya
+    // estaba en Tango-- NO se toca (2026-10-07, decision del usuario). Lo
+    // que se guarda arriba es conocimiento DEL PROVEEDOR y vale para las
+    // facturas que vengan; los renglones de este comprobante, en cambio,
+    // son el registro de lo que se mando a Tango y rehacerlos lo
+    // corromperia. Sin esto, ensenar una descripcion desde un comprobante
+    // registrado le borraba y recreaba los renglones de cargo.
+    //
+    // Hace falta poder ensenar desde ahi porque si no hay un circulo: los
+    // proveedores que todavia se cargan a mano en Tango dejan todos sus
+    // comprobantes en 'existente', y la app no puede aprender justamente
+    // porque todavia no se la usa para registrar.
+    if (!(await comprobanteCerradoEn(tx, comprobanteId))) {
+      await sincronizarCargosEn(tx, comprobanteId, codProvee)
+    }
+    return recalcularAVincularEn(tx, comprobanteId, codProvee)
+  }
 }
 
 /**

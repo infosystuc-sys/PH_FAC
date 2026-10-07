@@ -154,11 +154,17 @@ export function SelectorOc({
   comprobanteId,
   codProvee,
   soloLectura = false,
+  permitirVincular = false,
 }: {
   comprobanteId: number
   /** El proveedor ya resuelto. Sin él no hay contra qué buscar. */
   codProvee: string | null
   soloLectura?: boolean
+  /**
+   * Deja enseñar una descripción aunque el resto esté de solo lectura. Ver
+   * `puedeVincular`: lo que se guarda es del proveedor, no del comprobante.
+   */
+  permitirVincular?: boolean
 }) {
   const [oferta, setOferta] = useState<OfertaOc | null>(null)
   const [errorCarga, setErrorCarga] = useState<string | null>(null)
@@ -171,6 +177,20 @@ export function SelectorOc({
   const [comoCargo, setComoCargo] = useState<Set<number>>(new Set())
   const [pendiente, arrancar] = useTransition()
   const toast = useToast()
+
+  // Vincular una descripcion con un articulo de Tango es conocimiento DEL
+  // PROVEEDOR, no un cambio de este comprobante: se permite aunque el
+  // comprobante este cerrado --registrado, o ya existente en Tango--
+  // (2026-10-07, decision del usuario). Sin esto habia un circulo: los
+  // proveedores que todavia se cargan a mano en Tango dejan todos sus
+  // comprobantes en 'existente', y la app no podia aprender justamente
+  // porque todavia no se la usaba para registrar.
+  //
+  // Es lo UNICO que se habilita. Imputar una orden, marcar un cargo,
+  // corregir o registrar siguen bloqueados: eso si cambiaria el
+  // comprobante. El server action ademas no toca sus renglones cuando esta
+  // cerrado (ver comprobanteCerradoEn).
+  const puedeVincular = !soloLectura || permitirVincular
 
   const cargar = useCallback(() => {
     if (!codProvee) {
@@ -392,7 +412,7 @@ export function SelectorOc({
               {!r.codigo && (
                 <span className={styles.vincularCol}>
                   <span className={styles.descripcionFactura}>{r.descripcion ?? '(sin descripción)'}</span>
-                  {!soloLectura && r.descripcion && oferta && (
+                  {puedeVincular && r.descripcion && oferta && (
                     <select
                       className={styles.selectArticulo}
                       defaultValue=""
@@ -425,8 +445,11 @@ export function SelectorOc({
                   código propio y no existe en nuestro maestro-- no se le
                   ofrecía: lo único que la pantalla le proponía era asociarlo
                   a un artículo de la orden, que es justo lo que no es. */}
-              {!soloLectura && r.descripcion && (
+              {puedeVincular && r.descripcion && (
                 <span className={styles.vincularCol}>
+                  {/* Marcar un cargo SI cambia el comprobante --crea y borra
+                      renglones--, asi que ese sigue atado a soloLectura. */}
+                  {!soloLectura && (
                   <label className={styles.cargoOpcion}>
                     <input
                       type="checkbox"
@@ -443,6 +466,7 @@ export function SelectorOc({
                     />
                     Es un cargo del proveedor: registrar sin orden de compra
                   </label>
+                  )}
                   {/* El desplegable de arriba solo tiene articulos de las OC
                       pendientes. Un cargo no esta en ninguna: se busca en el
                       maestro completo. */}
