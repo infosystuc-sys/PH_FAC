@@ -34,8 +34,9 @@ import styles from './pantalla.module.css'
  */
 const Visor = dynamic(() => import('./visor').then((m) => m.Visor), { ssr: false })
 
-/** La preferencia vale para toda la sesión, no para un comprobante. */
+/** Las preferencias valen para toda la sesión, no para un comprobante. */
 const CLAVE_PDF_OCULTO = 'phf.pdfOculto'
+const CLAVE_OCULTAR_OK = 'phf.ocultarEnOrden'
 
 /**
  * Contenedor cliente del cuerpo de dos paneles. Sostiene el estado del
@@ -132,13 +133,36 @@ export function Pantalla({
 }) {
   const [enfocado, setEnfocado] = useState<string | null>(null)
 
-  // Arranca SIEMPRE con el PDF visible y recien despues lee la preferencia,
-  // en un efecto: leer localStorage durante el render rompe la hidratacion
-  // (el servidor no lo tiene y pintaria distinto que el cliente).
-  const [pdfOculto, setPdfOculto] = useState(false)
+  // El PDF NO se incrusta salvo que lo pidan (2026-10-08, decision del
+  // usuario): el boton principal lo abre en otra ventana del navegador, que
+  // el operador acomoda donde quiera en su monitor. El panel incrustado
+  // sigue disponible con Ctrl+P, porque es el unico que resalta el campo
+  // que se esta editando -- eso no se puede sincronizar entre ventanas.
+  //
+  // El estado arranca igual en el servidor y en el cliente y recien despues
+  // lee localStorage, en un efecto: leerlo durante el render rompe la
+  // hidratacion.
+  const [pdfOculto, setPdfOculto] = useState(true)
+  const [ocultarEnOrden, setOcultarEnOrden] = useState(false)
   useEffect(() => {
-    setPdfOculto(window.localStorage.getItem(CLAVE_PDF_OCULTO) === '1')
+    // El default es OCULTO: solo un '0' explicito lo incrusta.
+    setPdfOculto(window.localStorage.getItem(CLAVE_PDF_OCULTO) !== '0')
+    setOcultarEnOrden(window.localStorage.getItem(CLAVE_OCULTAR_OK) === '1')
   }, [])
+
+  const alternarOcultarEnOrden = useCallback(() => {
+    setOcultarEnOrden((previo) => {
+      const siguiente = !previo
+      window.localStorage.setItem(CLAVE_OCULTAR_OK, siguiente ? '1' : '0')
+      return siguiente
+    })
+  }, [])
+
+  // Una ventana por comprobante: volver a tocarlo trae al frente la que ya
+  // estaba abierta en vez de apilar copias.
+  const abrirPdfAparte = useCallback(() => {
+    window.open(`/api/pdf/${comprobanteId}`, `phf-pdf-${comprobanteId}`)
+  }, [comprobanteId])
 
   // La preferencia se guarda porque el operador navega entre comprobantes
   // con J/K todo el dia: si se reseteara en cada uno, esconder el PDF no
@@ -179,13 +203,25 @@ export function Pantalla({
         ))}
       <div className={styles.derecha}>
         <div className={styles.barraVista}>
+          <label className={styles.tildeVista} title="Esconde los casilleros de impuestos sin valor y los controles que dieron OK">
+            <input
+              type="checkbox"
+              checked={ocultarEnOrden}
+              onChange={alternarOcultarEnOrden}
+            />
+            Ocultar lo que está en orden
+          </label>
+          <span className={styles.separadorVista} />
           <button
             type="button"
             className={styles.alternarPdf}
             onClick={alternarPdf}
-            title="Ctrl+P"
+            title="Ctrl+P — lo trae al lado del formulario y resalta el campo que estás editando"
           >
-            {pdfOculto ? 'Mostrar PDF' : 'Ocultar PDF'}
+            {pdfOculto ? 'Incrustar PDF' : 'Quitar el PDF de acá'}
+          </button>
+          <button type="button" className={styles.verPdf} onClick={abrirPdfAparte}>
+            Ver PDF ↗
           </button>
         </div>
         <PanelObservacion motivo={motivoObservacion} nota={notaObservacion} />
@@ -197,15 +233,32 @@ export function Pantalla({
           confianza={confianza}
           hayCorrecciones={hayCorrecciones}
         />
-        <PanelValidaciones comprobanteId={comprobanteId} validaciones={validaciones} />
-        {listoParaRegistrar && (
-          <ListoParaRegistrar
+        {/* Estado del comprobante: lo que hay que mirar antes de tocar un
+            campo. Van lado a lado porque con el tilde puesto los dos se
+            reducen a una linea. */}
+        <div className={styles.estado}>
+          <PanelValidaciones
             comprobanteId={comprobanteId}
-            resultado={listoParaRegistrar}
-            tipoFactura={iniciales.tipoFactura?.valor || null}
-            codProvee={codProvee}
+            validaciones={validaciones}
+            ocultarOk={ocultarEnOrden}
           />
-        )}
+          {listoParaRegistrar && (
+            <ListoParaRegistrar
+              comprobanteId={comprobanteId}
+              resultado={listoParaRegistrar}
+              tipoFactura={iniciales.tipoFactura?.valor || null}
+              codProvee={codProvee}
+              ocultarOk={ocultarEnOrden}
+            />
+          )}
+        </div>
+
+        {/* Dos columnas por tema (2026-10-08, decision del usuario): a la
+            izquierda lo que dice el papel --cabecera, proveedor, importes--
+            y a la derecha lo que se va a imputar en Tango. Con el PDF
+            incrustado no hay ancho para dos, y la grilla cae a una sola. */}
+        <div className={styles.columnas}>
+          <div className={styles.columna}>
         <Formulario
           comprobanteId={comprobanteId}
           iniciales={iniciales}
@@ -219,7 +272,10 @@ export function Pantalla({
           aprendidosIva={aprendidosIva}
           aprendidosPercepcion={aprendidosPercepcion}
           aprendidosVarios={aprendidosVarios}
+          ocultarVacios={ocultarEnOrden}
         />
+          </div>
+          <div className={styles.columna}>
         {/* Solo en articulos: es el paso que reemplaza al remito como
             origen del detalle, y va antes de Renglones porque los define. */}
         {iniciales.tipoFactura?.valor === 'articulos' && (
@@ -242,6 +298,8 @@ export function Pantalla({
           netoVigente={iniciales.neto?.valor ?? null}
           soloLectura={soloLectura}
         />
+          </div>
+        </div>
         {/* Con una OC imputada, la tarjeta muestra la factura y la orden lado
             a lado (decision del usuario, 2026-09-15). La de remito sigue para
             los comprobantes que quedaron en ese circuito. */}

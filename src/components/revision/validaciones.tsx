@@ -27,27 +27,51 @@ function Item({
 export function PanelValidaciones({
   comprobanteId,
   validaciones,
+  ocultarOk = false,
 }: {
   comprobanteId: number
   validaciones: Validaciones
+  /**
+   * Esconde las validaciones que dieron OK (2026-10-08, pedido del
+   * usuario): en un comprobante sano son todas, y lo que el operador
+   * necesita ver es lo que NO esta bien.
+   */
+  ocultarOk?: boolean
 }) {
+  // El proveedor es la unica que lleva algo adentro --el buscador, cuando
+  // falla--, asi que no entra en la lista generica.
+  const resto = [validaciones.duplicado, validaciones.totales, validaciones.cae].filter(
+    (v): v is NonNullable<typeof v> => v != null,
+  )
+  const proveedorOculto = ocultarOk && validaciones.proveedor.estado === 'ok'
+  const visibles = ocultarOk ? resto.filter((v) => v.estado !== 'ok') : resto
+  const enOrden =
+    (proveedorOculto ? 1 : 0) + (ocultarOk ? resto.length - visibles.length : 0)
+
   return (
     <section className={styles.tarjeta}>
       <h3 className={styles.titulo}>Validaciones</h3>
       <div className={styles.lista}>
-        <Item
-          estado={validaciones.proveedor.estado}
-          mensaje={validaciones.proveedor.mensaje}
-          extra={
-            validaciones.proveedor.estado === 'error' ? (
-              <SelectorProveedor comprobanteId={comprobanteId} candidatos={validaciones.candidatosProveedor} />
-            ) : undefined
-          }
-        />
-        <Item estado={validaciones.duplicado.estado} mensaje={validaciones.duplicado.mensaje} />
-        <Item estado={validaciones.totales.estado} mensaje={validaciones.totales.mensaje} />
-        {validaciones.cae && (
-          <Item estado={validaciones.cae.estado} mensaje={validaciones.cae.mensaje} />
+        {!proveedorOculto && (
+          <Item
+            estado={validaciones.proveedor.estado}
+            mensaje={validaciones.proveedor.mensaje}
+            extra={
+              validaciones.proveedor.estado === 'error' ? (
+                <SelectorProveedor comprobanteId={comprobanteId} candidatos={validaciones.candidatosProveedor} />
+              ) : undefined
+            }
+          />
+        )}
+        {visibles.map((v, i) => (
+          <Item key={i} estado={v.estado} mensaje={v.mensaje} />
+        ))}
+        {/* Lo que se escondio se CUENTA. Sacarlo sin dejar rastro haria
+            creer que no se verifico. */}
+        {enOrden > 0 && (
+          <p className={styles.enOrden}>
+            {enOrden === 1 ? '1 validación en orden' : `${enOrden} validaciones en orden`}
+          </p>
         )}
       </div>
     </section>

@@ -69,3 +69,14 @@
   font-size: 13px;
   color: var(--texto-2);
 }
+
+/* Cuantos items se escondieron por estar en orden (2026-10-08). Se cuentan
+   y no se omiten en silencio: que no aparezcan no puede hacer creer que no
+   se verificaron. */
+.enOrden {
+  margin: 0;
+  padding: 8px 0 2px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--texto-4);
+}

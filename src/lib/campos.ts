@@ -359,3 +359,50 @@ export function schemaExtraccion(tipo: TipoFactura): Record<string, unknown> {
 
   return objeto(props)
 }
+
+/**
+ * Los pares de campos que forman un "casillero" de impuesto en el grupo
+ * Importes: la alícuota y su importe, el rótulo de la percepción y el suyo.
+ *
+ * Se tratan de a pares y no de a uno porque esconder la mitad de un
+ * casillero no tiene sentido --un importe sin su alícuota no se puede
+ * imputar-- y porque sacar un campo suelto descuadra la grilla de 6
+ * columnas.
+ */
+export const PARES_IMPUESTO: readonly (readonly [string, string])[] = [
+  ['porciva1', 'impiva1'],
+  ['porciva2', 'impiva2'],
+  ['porciva3', 'impiva3'],
+  ['porciva4', 'impiva4'],
+  ['porciva5', 'impiva5'],
+  ['percep1', 'imppercep1'],
+  ['percep2', 'imppercep2'],
+  ['percep3', 'imppercep3'],
+  ['percep4', 'imppercep4'],
+  ['varios1', 'impvarios1'],
+  ['varios2', 'impvarios2'],
+]
+
+/**
+ * Qué campos de impuestos, alícuotas y percepciones se pueden esconder
+ * porque el casillero entero está vacío (2026-10-08, pedido del usuario).
+ *
+ * Un comprobante usa dos o tres casilleros de los once, así que el grupo
+ * Importes mostraba una veintena de casillas vacías en la pantalla donde el
+ * operador pasa el día.
+ *
+ * Solo se esconde el par COMPLETO: si cualquiera de los dos tiene algo, los
+ * dos quedan. Un importe cargado sin su alícuota es justo el caso que hay
+ * que ver, no el que hay que tapar.
+ */
+export function clavesDeImpuestosVacios(valores: Record<string, string>): Set<string> {
+  const ocultas = new Set<string>()
+  for (const [a, b] of PARES_IMPUESTO) {
+    const vacio = (c: string) => (valores[c] ?? '').trim() === ''
+    if (vacio(a) && vacio(b)) {
+      ocultas.add(a)
+      ocultas.add(b)
+    }
+  }
+  return ocultas
+}

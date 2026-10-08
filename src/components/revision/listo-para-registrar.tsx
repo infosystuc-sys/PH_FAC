@@ -30,6 +30,7 @@ export function ListoParaRegistrar({
   resultado,
   tipoFactura,
   codProvee,
+  ocultarOk = false,
 }: {
   comprobanteId: number
   resultado: ResultadoListoParaRegistrar
@@ -39,6 +40,12 @@ export function ListoParaRegistrar({
   tipoFactura: string | null
   /** El proveedor al que se le asociaría el concepto elegido. */
   codProvee: string | null
+  /**
+   * Esconde los controles que dieron OK (2026-10-08, pedido del usuario).
+   * Son dieciséis: en un comprobante sano la tarjeta es una pared de tildes
+   * verdes, y lo que hay que leer es lo que falta.
+   */
+  ocultarOk?: boolean
 }) {
   const items = [
     resultado.condCompra,
@@ -71,11 +78,14 @@ export function ListoParaRegistrar({
     resultado.preciosOc,
   ]
 
+  const visibles = ocultarOk ? items.filter((r) => r.estado !== 'ok') : items
+  const enOrden = items.length - visibles.length
+
   return (
     <section className={styles.tarjeta}>
       <h3 className={styles.titulo}>Listo para registrar</h3>
       <div className={styles.lista}>
-        {items.map((r, i) => (
+        {visibles.map((r, i) => (
           <Item
             key={i}
             estado={r.estado}
@@ -94,6 +104,16 @@ export function ListoParaRegistrar({
             }
           />
         ))}
+        {/* Lo escondido se CUENTA: sacarlo sin dejar rastro haria creer que
+            esos controles no se corrieron. */}
+        {enOrden > 0 && (
+          <p className={styles.enOrden}>
+            {enOrden === 1 ? '1 control en orden' : `${enOrden} controles en orden`}
+          </p>
+        )}
+        {visibles.length === 0 && (
+          <p className={styles.todoEnOrden}>Todo en orden: el comprobante se puede registrar.</p>
+        )}
       </div>
     </section>
   )

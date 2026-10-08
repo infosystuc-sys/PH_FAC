@@ -5,6 +5,7 @@ import {
   GRUPOS,
   camposDelGrupo,
   OCULTOS_EN_GRILLA,
+  clavesDeImpuestosVacios,
   type GrupoCampo,
   type DefCampo,
 } from '@/lib/campos'
@@ -95,6 +96,7 @@ function camposVisibles(
   grupo: GrupoCampo,
   slots: number,
   valores: Record<string, string>,
+  ocultarVacios: boolean,
 ): DefCampo[] {
   const tipo = tipoFacturaODefault(valores.tipoFactura)
 
@@ -125,7 +127,14 @@ function camposVisibles(
   // campos.ts.
   const visibles = todos.filter((def) => !OCULTOS_EN_GRILLA.test(def.clave))
   if (grupo !== 'importes') return visibles
+
+  // Los casilleros de impuesto que estan enteramente vacios, cuando el
+  // operador pidio esconderlos (2026-10-08). Un comprobante usa dos o tres
+  // de los once, asi que el grupo mostraba una veintena de casillas vacias.
+  const vacias = ocultarVacios ? clavesDeImpuestosVacios(valores) : null
+
   return visibles.filter((def) => {
+    if (vacias?.has(def.clave)) return false
     const m = RE_SLOT_ALICUOTA.exec(def.clave)
     return !m || Number(m[1]) <= slots
   })
@@ -136,6 +145,7 @@ export function Formulario({
   iniciales,
   onEnfocar,
   soloLectura = false,
+  ocultarVacios = false,
   condicionesCompra,
   codigosImpuesto,
   alicuotasIva,
@@ -148,6 +158,12 @@ export function Formulario({
   comprobanteId: number
   iniciales: Record<string, ValorInicial>
   onEnfocar: (texto: string | null) => void
+  /**
+   * Esconde los casilleros de impuestos, alicuotas y percepciones que no
+   * tienen ningun valor. Lo decide el operador con un tilde de la barra de
+   * vista; se guarda en localStorage y vale para todos los comprobantes.
+   */
+  ocultarVacios?: boolean
   // El comprobante está en estado `registrado`: terminal e inmutable
   // (mismo criterio que ya aplica BarraAcciones deshabilitando el botón
   // primario con title="Ver asiento en Tango"). El backend ya bloquea la
@@ -279,7 +295,7 @@ export function Formulario({
           <section key={g.clave} className={styles.tarjeta}>
             <h3 className={styles.tituloGrupo}>{g.titulo}</h3>
             <div className={styles.grilla}>
-              {camposVisibles(g.clave, slots, valores).flatMap((def) => {
+              {camposVisibles(g.clave, slots, valores, ocultarVacios).flatMap((def) => {
                 // "Total imputado" no es un input: se recalcula en vivo a
                 // partir de los demas campos del grupo. Un <input readOnly>
                 // generico no serviria: Campo guarda su valor en estado
