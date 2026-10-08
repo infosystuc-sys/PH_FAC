@@ -398,6 +398,14 @@ export function SelectorOc({
           </p>
           {sinCandidata.map((r) => (
             <Fragment key={r.orden}>
+            {/* La fila tiene SIEMPRE tres celdas --codigo, articulo,
+                cantidad-- y nada mas. Lo que creciera adentro (los
+                controles para vincular, el diagnostico, los talles) corria
+                las columnas: hasta el 2026-10-08 el control de "cargo"
+                metia una celda de mas en las filas CON codigo, y por eso el
+                articulo caia en la columna de 90px --apilado en vertical--
+                y la cantidad se iba a una linea aparte. Todo eso vive ahora
+                en subfilas debajo. */}
             <div className={styles.faltanteFila}>
               <span className={styles.codigo}>
                 {r.codigo || '(sin código)'}
@@ -407,49 +415,78 @@ export function SelectorOc({
                   </span>
                 )}
               </span>
-              {/* Sin codigo: lo unico que identifica al articulo es la
-                  descripcion, y se vincula desde aca mismo. */}
-              {!r.codigo && (
-                <span className={styles.vincularCol}>
-                  <span className={styles.descripcionFactura}>{r.descripcion ?? '(sin descripción)'}</span>
-                  {puedeVincular && r.descripcion && oferta && (
-                    <select
-                      className={styles.selectArticulo}
-                      defaultValue=""
-                      disabled={pendiente}
-                      onChange={(e) => {
-                        if (!e.target.value) return
-                        vincular(r.descripcion!, e.target.value, comoCargo.has(r.orden))
-                      }}
-                    >
-                      <option value="">¿A qué artículo corresponde?</option>
-                      {oferta.articulosDisponibles.map((a) => (
-                        <option key={a.codArticu} value={a.codArticu}>
-                          {a.codArticu} · {a.descripcion}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </span>
-              )}
-              {/* Un cargo del proveedor --seguro, flete, gestión de compra--
-                  se vincula igual a un artículo, pero no va contra ninguna
-                  orden. Es una decisión del operador: el artículo puede
-                  existir en otra OC pendiente y la app no tiene cómo
-                  distinguirlo sola.
+              <span className={styles.desc}>
+                {r.reconocidoComo ? (
+                  <>
+                    {/* El codigo solo se repite si es OTRO que el impreso:
+                        cuando el renglon se resolvio por descripcion, el de
+                        la izquierda YA es el de Tango y volver a escribirlo
+                        es ruido. */}
+                    {r.reconocidoComo.codArticu !== (r.codigo ?? '').trim() && (
+                      <span className={styles.codigoNuestro}>→ {r.reconocidoComo.codArticu} · </span>
+                    )}
+                    {r.reconocidoComo.descripcion || '(sin descripción en el maestro)'}
+                    {r.reconocidoComo.escala !== 'base' && (
+                      <span className={styles.reconocidoNota}> · sin pendiente</span>
+                    )}
+                  </>
+                ) : (
+                  <span className={styles.descripcionFactura}>
+                    {r.descripcion ?? '(sin descripción)'}
+                  </span>
+                )}
+              </span>
+              <span className={styles.cant}>{r.cantidad ?? '—'}</span>
+            </div>
 
-                  Va para TODO renglón que siga sin orden, traiga código
-                  impreso o no. Hasta el 2026-09-30 estaba adentro del bloque
-                  de los que vienen SIN código, y por eso al renglón que más
-                  lo necesitaba --"280910 SEGURO-FLETES" de DASS, que trae
-                  código propio y no existe en nuestro maestro-- no se le
-                  ofrecía: lo único que la pantalla le proponía era asociarlo
-                  a un artículo de la orden, que es justo lo que no es. */}
-              {puedeVincular && r.descripcion && (
-                <span className={styles.vincularCol}>
-                  {/* Marcar un cargo SI cambia el comprobante --crea y borra
-                      renglones--, asi que ese sigue atado a soloLectura. */}
-                  {!soloLectura && (
+            {/* Un articulo BASE de escala no necesita otra orden: le falta
+                el color o el talle. Va aparte porque es un diagnostico
+                largo y poco frecuente, y en la fila desalineaba todo
+                (2026-09-30, reportado por el usuario con DASS). */}
+            {r.reconocidoComo?.escala === 'base' && (
+              <p className={styles.faltanteNota}>
+                {r.reconocidoComo.codArticu} es un artículo base: le falta el color o el talle
+                {r.variantesEscala.length > 0 &&
+                  ` · la orden tiene pendiente ${r.variantesEscala.map((v) => v.codArticu).join(', ')}`}
+              </p>
+            )}
+
+            {/* Los controles para resolverlo. Debajo y no en la fila: son
+                de alto variable --un desplegable, un buscador, un tilde--
+                y meterlos en una celda rompia la grilla. */}
+            {puedeVincular && r.descripcion && (
+              <div className={styles.faltanteAcciones}>
+                {/* El desplegable solo tiene articulos de las OC pendientes,
+                    asi que solo sirve cuando el renglon no trae codigo. */}
+                {!r.codigo && oferta && (
+                  <select
+                    className={styles.selectArticulo}
+                    defaultValue=""
+                    disabled={pendiente}
+                    onChange={(e) => {
+                      if (!e.target.value) return
+                      vincular(r.descripcion!, e.target.value, comoCargo.has(r.orden))
+                    }}
+                  >
+                    <option value="">¿A qué artículo corresponde?</option>
+                    {oferta.articulosDisponibles.map((a) => (
+                      <option key={a.codArticu} value={a.codArticu}>
+                        {a.codArticu} · {a.descripcion}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {/* Un cargo no esta en ninguna orden: se busca en el maestro
+                    completo. */}
+                <BuscadorArticulo
+                  codProvee={codProvee}
+                  bloqueado={pendiente}
+                  etiqueta="Buscar en todo Tango…"
+                  onElegir={(cod) => vincular(r.descripcion!, cod, comoCargo.has(r.orden))}
+                />
+                {/* Marcar un cargo SI cambia el comprobante --crea y borra
+                    renglones--, asi que sigue atado a soloLectura. */}
+                {!soloLectura && (
                   <label className={styles.cargoOpcion}>
                     <input
                       type="checkbox"
@@ -466,53 +503,9 @@ export function SelectorOc({
                     />
                     Es un cargo del proveedor: registrar sin orden de compra
                   </label>
-                  )}
-                  {/* El desplegable de arriba solo tiene articulos de las OC
-                      pendientes. Un cargo no esta en ninguna: se busca en el
-                      maestro completo. */}
-                  <BuscadorArticulo
-                    codProvee={codProvee}
-                    bloqueado={pendiente}
-                    etiqueta="Buscar en todo Tango…"
-                    onElegir={(cod) => vincular(r.descripcion!, cod, comoCargo.has(r.orden))}
-                  />
-                </span>
-              )}
-              {/* Reconocido pero sin saldo: se dice cual es, para que quede
-                  claro que el problema no es el codigo sino la orden.
-                  Si es un articulo BASE de escala el diagnostico es otro --no
-                  le falta una orden, le falta el color o el talle-- y se dice
-                  asi, con las variantes que la orden si tiene pendientes
-                  (2026-09-30, reportado por el usuario con DASS). */}
-              {r.reconocidoComo && (
-                <span className={styles.reconocido}>
-                  → {r.reconocidoComo.codArticu}
-                  {r.reconocidoComo.descripcion && ` · ${r.reconocidoComo.descripcion}`}
-                  {r.reconocidoComo.escala === 'base' ? (
-                    <span className={styles.reconocidoNota}>
-                      {' '}· es un artículo base: le falta el color o el talle
-                      {r.variantesEscala.length > 0 &&
-                        ` · la orden tiene pendiente ${r.variantesEscala
-                          .map((v) => v.codArticu)
-                          .join(', ')}`}
-                    </span>
-                  ) : (
-                    <span className={styles.reconocidoNota}> · reconocido, sin pendiente de facturar</span>
-                  )}
-                  {!soloLectura && r.descripcion && (
-                    <button
-                      type="button"
-                      className={styles.quitar}
-                      disabled={pendiente}
-                      onClick={() => vincular(r.descripcion!, r.reconocidoComo!.codArticu, true)}
-                    >
-                      Es un cargo del proveedor
-                    </button>
-                  )}
-                </span>
-              )}
-              <span className={styles.cant}>{r.cantidad ?? '—'}</span>
-            </div>
+                )}
+              </div>
+            )}
             {/* A que articulo de Tango corresponde cada talle del renglon.
                 Se muestra aunque no haya ninguna orden con saldo: es el
                 dato que faltaba para entender que "026459 001" es nuestro
