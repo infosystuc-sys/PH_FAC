@@ -8,13 +8,14 @@ import {
   asociarCodigoProveedor,
   vincularDescripcionArticulo,
   marcarRenglonSinOc,
-  buscarArticulosTango,
+  buscarArticuloPorCodigo,
   type OfertaOc,
 } from '@/server/app/acciones'
 import type { ArticuloTango } from '@/server/tango/articulos'
 import { useToast } from '@/components/toast/toast-provider'
 import { formatMoneda, formatCantidad } from '@/lib/formato'
 import { normalizarCodigo } from '@/lib/cotejoOc'
+import { BuscadorArticulos } from './buscador-articulos'
 import styles from './selector-oc.module.css'
 
 /**
@@ -35,118 +36,77 @@ import styles from './selector-oc.module.css'
  * imputando otra orden o enseñando el sinónimo.
  */
 /**
- * Busca un artículo en TODO el maestro de Tango, no solo entre los de las
- * órdenes pendientes.
+ * El campo donde el operador ESCRIBE el código de Tango (2026-10-08, pedido
+ * del usuario). Para los proveedores que no imprimen código, que son los
+ * que llegan acá, el operador casi siempre sabe cuál es y tipearlo es más
+ * rápido que buscarlo.
  *
- * Existe porque el desplegable de la tarjeta ofrece `articulosDisponibles`,
- * que sale de las OC del proveedor -- y un CARGO (gestión de compra, flete,
- * logística) no está en ninguna orden, por definición. Sin esto el operador
- * no tenía de dónde sacar el artículo correcto y terminaba eligiendo
- * cualquiera de la lista con tal de destrabar: en RED DEL INTERIOR quedó
- * "GESTION DE COMPRA 1%" apuntando a un LAVARROPAS y "GESTION ROSARIO
- * LOGISTICA S.A." a un AIRE ACONDICIONADO (2026-09-22). Eso habría entrado
- * a CPA46 como movimiento de esos artículos.
- *
- * Mismo patrón que `SelectorArticulo`: debounce de 250 ms y una bandera
- * `vigente` por corrida, para que una respuesta lenta de una búsqueda vieja
- * no pise los resultados de la nueva.
+ * No vincula lo que se teclea: antes lo resuelve contra el maestro y avisa
+ * si no existe. La comparación ignora mayúsculas, puntuación, espacios
+ * interiores y ceros de adelante (ver `normalizarCodigo`), así que quien
+ * escribe "26459 001 35" encuentra "26459  001 35"; lo que se guarda es
+ * siempre el código tal como está en el maestro, no lo tecleado.
  */
-function BuscadorArticulo({
-  codProvee,
+function CampoCodigo({
   bloqueado,
-  etiqueta,
-  onElegir,
+  onResolver,
 }: {
-  codProvee: string | null
   bloqueado: boolean
-  etiqueta: string
-  onElegir: (codArticu: string) => void
+  onResolver: (codArticu: string) => void
 }) {
-  const [abierto, setAbierto] = useState(false)
-  const [query, setQuery] = useState('')
-  const [resultados, setResultados] = useState<ArticuloTango[]>([])
-  const [buscando, setBuscando] = useState(false)
-  const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [codigo, setCodigo] = useState('')
+  const [verificando, setVerificando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    clearTimeout(debounce.current)
-    if (!abierto || query.trim().length < 2) {
-      setResultados([])
-      setBuscando(false)
-      return
+  const confirmar = async () => {
+    const c = codigo.trim()
+    if (c === '' || bloqueado || verificando) return
+    setVerificando(true)
+    setError(null)
+    try {
+      const art = await buscarArticuloPorCodigo(c)
+      if (!art) {
+        setError(`No existe el artículo ${c}`)
+        return
+      }
+      setCodigo('')
+      onResolver(art.codArticu)
+    } catch {
+      setError('No se pudo verificar el código.')
+    } finally {
+      setVerificando(false)
     }
-    let vigente = true
-    setBuscando(true)
-    debounce.current = setTimeout(() => {
-      buscarArticulosTango(query, codProvee)
-        .then((r) => {
-          if (!vigente) return
-          setResultados(r)
-          setBuscando(false)
-        })
-        .catch(() => vigente && setBuscando(false))
-    }, 250)
-    return () => {
-      vigente = false
-      clearTimeout(debounce.current)
-    }
-  }, [query, abierto, codProvee])
-
-  if (!abierto) {
-    return (
-      <button
-        type="button"
-        className={styles.buscarArticulo}
-        disabled={bloqueado}
-        onClick={() => setAbierto(true)}
-      >
-        {etiqueta}
-      </button>
-    )
   }
 
   return (
-    <div className={styles.buscador}>
+    <span className={styles.campoCodigo}>
       <input
-        className={styles.buscadorInput}
+        className={styles.inputCodigo}
         type="text"
-        autoFocus
-        placeholder="Buscar en Tango: código, descripción…"
-        value={query}
-        disabled={bloqueado}
-        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Código de Tango"
+        value={codigo}
+        disabled={bloqueado || verificando}
+        onChange={(e) => {
+          setCodigo(e.target.value)
+          if (error) setError(null)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            void confirmar()
+          }
+        }}
       />
-      {buscando && <p className={styles.buscadorNota}>Buscando…</p>}
-      {!buscando && query.trim().length >= 2 && resultados.length === 0 && (
-        <p className={styles.buscadorNota}>Ningún artículo coincide.</p>
-      )}
-      {resultados.map((a) => (
-        <button
-          key={a.codArticu}
-          type="button"
-          className={styles.buscadorFila}
-          disabled={bloqueado}
-          onClick={() => {
-            setAbierto(false)
-            setQuery('')
-            onElegir(a.codArticu)
-          }}
-        >
-          <span className={styles.codigo}>{a.codArticu}</span>
-          <span className={styles.desc}>{a.descripcion}</span>
-        </button>
-      ))}
       <button
         type="button"
-        className={styles.buscarArticulo}
-        onClick={() => {
-          setAbierto(false)
-          setQuery('')
-        }}
+        className={styles.vincularBoton}
+        disabled={bloqueado || verificando || codigo.trim() === ''}
+        onClick={() => void confirmar()}
       >
-        Cancelar
+        {verificando ? 'Verificando…' : 'Vincular'}
       </button>
-    </div>
+      {error && <span className={styles.errorCodigo}>{error}</span>}
+    </span>
   )
 }
 
@@ -175,6 +135,10 @@ export function SelectorOc({
   // opcion antes de elegir articulo no tenia nada que actualizar --no existe
   // fila en PHF_ARTICULO_PROVEEDOR todavia-- y quedaba en un no-op silencioso.
   const [comoCargo, setComoCargo] = useState<Set<number>>(new Set())
+  // Que fila tiene abierta la ventana de busqueda. Una sola a la vez: es
+  // modal. La clave lleva de que lista viene, porque el ORDEN del PDF se
+  // repite entre los faltantes y los cargos.
+  const [buscandoPara, setBuscandoPara] = useState<string | null>(null)
   const [pendiente, arrancar] = useTransition()
   const toast = useToast()
 
@@ -362,12 +326,22 @@ export function SelectorOc({
               <span className={styles.cant}>{c.cantidad ?? '—'}</span>
               {!soloLectura && c.descripcion && (
                 <span className={styles.cargoAcciones}>
-                  <BuscadorArticulo
-                    codProvee={codProvee}
-                    bloqueado={pendiente}
-                    etiqueta="Cambiar artículo"
-                    onElegir={(cod) => vincular(c.descripcion!, cod, true)}
-                  />
+                  <button
+                    type="button"
+                    className={styles.buscarArticulo}
+                    disabled={pendiente}
+                    onClick={() => setBuscandoPara(`cargo:${c.orden}`)}
+                  >
+                    Cambiar artículo
+                  </button>
+                  {buscandoPara === `cargo:${c.orden}` && (
+                    <BuscadorArticulos
+                      codProvee={codProvee}
+                      descripcionFactura={c.descripcion}
+                      onElegir={(cod) => vincular(c.descripcion!, cod, true)}
+                      onCerrar={() => setBuscandoPara(null)}
+                    />
+                  )}
                   <button
                     type="button"
                     className={styles.quitar}
@@ -407,15 +381,21 @@ export function SelectorOc({
                 y la cantidad se iba a una linea aparte. Todo eso vive ahora
                 en subfilas debajo. */}
             <div className={styles.faltanteFila}>
-              <span className={styles.codigo}>
-                {r.codigo || '(sin código)'}
-                {r.porDescripcion && (
-                  <span className={styles.reconocidoNota} title="Resuelto por la descripción que enseñó el operador">
-                    {' '}· por descripción
-                  </span>
-                )}
-              </span>
-              <span className={styles.desc}>
+              {/* Un renglon SIN codigo no tiene nada que poner en esa
+                  columna, y "(sin codigo)" era ruido: lo que el operador
+                  mira es la descripcion, que pasa a ocupar las dos celdas
+                  (2026-10-08, pedido del usuario). */}
+              {r.codigo && (
+                <span className={styles.codigo}>
+                  {r.codigo}
+                  {r.porDescripcion && (
+                    <span className={styles.reconocidoNota} title="Resuelto por la descripción que enseñó el operador">
+                      {' '}· por descripción
+                    </span>
+                  )}
+                </span>
+              )}
+              <span className={r.codigo ? styles.desc : styles.descAncha}>
                 {r.reconocidoComo ? (
                   <>
                     {/* El codigo solo se repite si es OTRO que el impreso:
@@ -456,34 +436,33 @@ export function SelectorOc({
                 y meterlos en una celda rompia la grilla. */}
             {puedeVincular && r.descripcion && (
               <div className={styles.faltanteAcciones}>
-                {/* El desplegable solo tiene articulos de las OC pendientes,
-                    asi que solo sirve cuando el renglon no trae codigo. */}
-                {!r.codigo && oferta && (
-                  <select
-                    className={styles.selectArticulo}
-                    defaultValue=""
-                    disabled={pendiente}
-                    onChange={(e) => {
-                      if (!e.target.value) return
-                      vincular(r.descripcion!, e.target.value, comoCargo.has(r.orden))
-                    }}
-                  >
-                    <option value="">¿A qué artículo corresponde?</option>
-                    {oferta.articulosDisponibles.map((a) => (
-                      <option key={a.codArticu} value={a.codArticu}>
-                        {a.codArticu} · {a.descripcion}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {/* Un cargo no esta en ninguna orden: se busca en el maestro
-                    completo. */}
-                <BuscadorArticulo
-                  codProvee={codProvee}
+                {/* El codigo de Tango se ESCRIBE (2026-10-08, pedido del
+                    usuario). Hasta ese dia habia un desplegable con los
+                    articulos de las ORDENES pendientes, que para un
+                    proveedor sin orden --justo el caso de los que no
+                    imprimen codigo-- venia vacio y no resolvia nada. Si no
+                    lo saben de memoria, el boton de al lado abre la
+                    ventana, que busca en todo el maestro. */}
+                <CampoCodigo
                   bloqueado={pendiente}
-                  etiqueta="Buscar en todo Tango…"
-                  onElegir={(cod) => vincular(r.descripcion!, cod, comoCargo.has(r.orden))}
+                  onResolver={(cod) => vincular(r.descripcion!, cod, comoCargo.has(r.orden))}
                 />
+                <button
+                  type="button"
+                  className={styles.buscarArticulo}
+                  disabled={pendiente}
+                  onClick={() => setBuscandoPara(`falta:${r.orden}`)}
+                >
+                  Buscar en Tango…
+                </button>
+                {buscandoPara === `falta:${r.orden}` && (
+                  <BuscadorArticulos
+                    codProvee={codProvee}
+                    descripcionFactura={r.descripcion}
+                    onElegir={(cod) => vincular(r.descripcion!, cod, comoCargo.has(r.orden))}
+                    onCerrar={() => setBuscandoPara(null)}
+                  />
+                )}
                 {/* Marcar un cargo SI cambia el comprobante --crea y borra
                     renglones--, asi que sigue atado a soloLectura. */}
                 {!soloLectura && (

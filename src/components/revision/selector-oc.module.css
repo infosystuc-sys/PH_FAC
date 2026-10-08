@@ -401,54 +401,6 @@
   cursor: default;
 }
 
-.buscador {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 3px;
-  padding: 6px;
-  border: 1px solid var(--borde);
-  border-radius: 6px;
-  background: var(--superficie);
-}
-
-.buscadorInput {
-  width: 100%;
-  padding: 4px 6px;
-  border: 1px solid var(--borde);
-  border-radius: 5px;
-  background: var(--fondo-app);
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--texto);
-}
-
-.buscadorNota {
-  margin: 0;
-  font-size: 10.5px;
-  color: var(--texto-4);
-}
-
-/* Cada resultado: el codigo en Mono --se coteja contra Tango-- y la
-   descripcion al lado, que es lo que el operador reconoce. */
-.buscadorFila {
-  display: grid;
-  grid-template-columns: 70px 1fr;
-  gap: 8px;
-  padding: 3px 4px;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  font-size: 11.5px;
-  color: var(--texto-2);
-  text-align: left;
-  cursor: pointer;
-}
-
-.buscadorFila:hover:not(:disabled) {
-  background: var(--fondo-app);
-}
-
 /* Las dos acciones de un cargo ya marcado: corregir el articulo o
    devolverlo a la orden de compra. */
 .cargoAcciones {
@@ -473,6 +425,80 @@
 }
 
 .equivalenciaFlecha {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* El campo donde el operador escribe el codigo de Tango, al lado de la
+   descripcion de la factura (2026-10-08). En Mono: es un codigo que se
+   coteja contra Tango. */
+.campoCodigo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.inputCodigo {
+  width: 160px;
+  height: 24px;
+  padding: 0 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde-input);
+  border-radius: 4px;
+}
+
+.inputCodigo:focus {
+  outline: none;
+  border-color: var(--acento);
+}
+
+.inputCodigo:disabled {
+  background: var(--fondo-panel);
+  color: var(--texto-4);
+}
+
+.vincularBoton {
+  height: 24px;
+  padding: 0 9px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--superficie);
+  background: var(--acento);
+  border: 1px solid var(--acento);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.vincularBoton:hover:not(:disabled) {
+  background: var(--acento-hover);
+  border-color: var(--acento-hover);
+}
+
+.vincularBoton:disabled {
+  background: var(--borde-input);
+  border-color: var(--borde-input);
+  color: var(--texto-4);
+  cursor: default;
+}
+
+/* El codigo tecleado no existe en el maestro. Se dice al lado y no se
+   vincula nada: un codigo mal escrito tiene que fallar, no resolver al
+   articulo mas parecido. */
+.errorCodigo {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: #b3261e;
+}
+
+/* La descripcion de un renglon SIN codigo: ocupa la celda del codigo y la
+   del articulo, porque no hay codigo que poner. En Mono, que es como se
+   coteja contra el papel. */
+.descAncha {
+  grid-column: 1 / 3;
   font-family: var(--mono);
   overflow-wrap: anywhere;
 }

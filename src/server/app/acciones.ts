@@ -391,6 +391,28 @@ export async function buscarArticulosTango(
 }
 
 /**
+ * Resuelve un codigo que el operador ESCRIBIO a mano, para el campo que
+ * tienen al lado de la descripcion (2026-10-08, pedido del usuario).
+ *
+ * Devuelve el articulo con el codigo TAL COMO ESTA en el maestro, que puede
+ * no ser lo tecleado: la comparacion ignora mayusculas, puntuacion, espacios
+ * interiores y ceros de adelante (ver normalizarCodigo), asi que quien
+ * escribe "26459 001 35" encuentra "26459  001 35". Lo que se graba es
+ * siempre el del maestro.
+ *
+ * `null` si no existe. No se adivina el mas parecido: un codigo tecleado
+ * mal tiene que fallar y no resolver a otro articulo.
+ */
+export async function buscarArticuloPorCodigo(
+  codigo: string,
+): Promise<ArticuloDescripto | null> {
+  const c = codigo.trim()
+  if (c === '') return null
+  const encontrados = await describirArticulos([c])
+  return encontrados.get(normalizarCodigo(c)) ?? null
+}
+
+/**
  * Le enseña a Tango cómo llama este proveedor a un artículo, escribiendo
  * `CPA15.COD_SINONI`. Es la única escritura de la app sobre datos maestros
  * del ERP: todo lo demás que escribe son comprobantes.
