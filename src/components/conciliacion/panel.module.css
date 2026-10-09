@@ -1,0 +1,195 @@
+/* La conciliación contra ARCA (2026-10-09). Mismas medidas y tokens que el
+   resto: sin Tailwind, sin media queries, pensado para >=1280px. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* La barra de arriba: qué archivo está cargado y el botón para cambiarlo. */
+.subir {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 13px 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 9px;
+}
+
+.subirTitulo {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--texto);
+}
+
+.subirNota {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--texto-3);
+}
+
+.subirAcciones {
+  flex: none;
+}
+
+/* El input real queda oculto: lo dispara el botón, que es lo que se ve. */
+.inputArchivo {
+  display: none;
+}
+
+.botonSubir {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--fondo-app);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--texto-2);
+  cursor: pointer;
+}
+
+.botonSubir:hover:not(:disabled) {
+  background: var(--superficie);
+}
+
+.botonSubir:disabled {
+  color: var(--texto-4);
+  cursor: default;
+}
+
+.error {
+  margin: 0;
+  padding: 10px 14px;
+  background: #fdf3f1;
+  border: 1px solid #f0d7d1;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #a03526;
+}
+
+.aviso {
+  margin: 0;
+  padding: 10px 14px;
+  background: #eef5f1;
+  border: 1px solid #d5e6dd;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #1c7355;
+}
+
+/* El recuento por estado, que además filtra la tabla. */
+.resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 7px;
+  background: var(--superficie);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--texto-2);
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--fondo-panel);
+}
+
+.chipActivo {
+  border-color: var(--texto);
+  color: var(--texto);
+}
+
+.chipNumero {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.nota {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--texto-3);
+}
+
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 9px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.tabla th {
+  background: var(--fondo-header-tabla);
+  border-bottom: 1px solid var(--borde);
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--texto-4);
+  white-space: nowrap;
+}
+
+.tabla td {
+  border-bottom: 1px solid var(--borde-sutil);
+  padding: 7px 12px;
+  color: var(--texto-2);
+  vertical-align: top;
+}
+
+/* Todo lo que se coteja contra un papel o contra Tango va en Mono: los
+   dígitos tienen que alinearse en columna. */
+.mono {
+  font-family: var(--mono);
+}
+
+.derecha {
+  text-align: right;
+}
+
+/* El estado de cada fila, con el mismo código de color que el panel de
+   validaciones de la revisión. */
+.punto {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.coincide {
+  background: #e3f1ea;
+  color: #1c7355;
+}
+
+.falta-en-tango {
+  background: #fae7e3;
+  color: #a03526;
+}
+
+.difiere {
+  background: #fbf0dc;
+  color: #8a5a00;
+}
+
+.falta-en-arca {
+  background: #eceaf6;
+  color: #4a3fa8;
+}

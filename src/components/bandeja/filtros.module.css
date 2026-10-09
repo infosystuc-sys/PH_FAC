@@ -60,3 +60,13 @@
   font-size: 13px;
   color: var(--texto);
 }
+
+/* Separa las pestanas de estado --que filtran la tabla-- de la de
+   conciliacion, que lleva a otra pantalla (2026-10-09). Sin esto parecia
+   un estado mas de los comprobantes. */
+.separadorTabs {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: var(--borde);
+}

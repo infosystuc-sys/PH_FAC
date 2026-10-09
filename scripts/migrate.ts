@@ -438,6 +438,65 @@ const DEFINICIONES: Definicion[] = [
     `,
   },
   {
+    tabla: 'PHF_ARCA_IMPORTACION',
+    // Cada archivo de "Mis Comprobantes" de ARCA que se sube (2026-10-09,
+    // pedido del usuario: verificar que lo cargado en Tango coincida con lo
+    // que ARCA informa). Se guarda la importacion aparte de las filas para
+    // poder re-subir el mismo periodo sin duplicar: la importacion nueva
+    // reemplaza a la anterior con sus filas (FK en cascada).
+    ddlTabla: `
+      CREATE TABLE PHF_ARCA_IMPORTACION (
+        ID              INT IDENTITY(1,1) NOT NULL,
+        ARCHIVO_NOMBRE  NVARCHAR(260)  NOT NULL,
+        -- El rango que el archivo REALMENTE cubre, calculado de las filas y
+        -- no pedido al operador: es lo que dice hasta donde la ausencia de
+        -- un comprobante en ARCA significa algo.
+        PERIODO_DESDE   DATE           NULL,
+        PERIODO_HASTA   DATE           NULL,
+        FILAS           INT            NOT NULL CONSTRAINT DF_PHF_ARCAIMP_FILAS DEFAULT 0,
+        FECHA_ALTA      DATETIME2      NOT NULL CONSTRAINT DF_PHF_ARCAIMP_ALTA DEFAULT SYSDATETIME(),
+        USUARIO         NVARCHAR(60)   NOT NULL,
+        CONSTRAINT PK_PHF_ARCA_IMPORTACION PRIMARY KEY (ID)
+      );
+    `,
+  },
+  {
+    tabla: 'PHF_ARCA_COMPROBANTE',
+    // Una fila por comprobante informado por ARCA. Los importes van en
+    // DECIMAL y no como texto: a diferencia de lo que lee la IA de un PDF
+    // --que se guarda crudo para que el operador lo coteje-- esto viene de
+    // un archivo oficial y ya esta normalizado.
+    ddlTabla: `
+      CREATE TABLE PHF_ARCA_COMPROBANTE (
+        ID              INT IDENTITY(1,1) NOT NULL,
+        IMPORTACION_ID  INT            NOT NULL,
+        FECHA_EMISION   DATE           NOT NULL,
+        -- El codigo numerico de ARCA (1 = Factura A, 6 = Factura B, ...) y
+        -- la letra deducida. Se guardan los dos: el codigo es el dato
+        -- oficial y la letra es con la que se arma N_COMP de Tango.
+        TIPO_CODIGO     INT            NOT NULL,
+        TIPO_LETRA      VARCHAR(2)     NULL,
+        PUNTO_VENTA     INT            NOT NULL,
+        NUMERO          BIGINT         NOT NULL,
+        CUIT_EMISOR     VARCHAR(15)    NOT NULL,
+        RAZON_EMISOR    NVARCHAR(200)  NULL,
+        IMPORTE_TOTAL   DECIMAL(19,4)  NOT NULL,
+        IMPORTE_NETO    DECIMAL(19,4)  NULL,
+        IMPORTE_IVA     DECIMAL(19,4)  NULL,
+        CONSTRAINT PK_PHF_ARCA_COMPROBANTE PRIMARY KEY (ID),
+        CONSTRAINT FK_PHF_ARCACOMP_IMP FOREIGN KEY (IMPORTACION_ID)
+          REFERENCES PHF_ARCA_IMPORTACION (ID) ON DELETE CASCADE
+      );
+    `,
+    indices: [
+      // Por esta clave se cruza contra Tango, y son miles de filas.
+      {
+        nombre: 'IX_PHF_ARCACOMP_CLAVE',
+        ddl: 'CREATE INDEX IX_PHF_ARCACOMP_CLAVE ON PHF_ARCA_COMPROBANTE (CUIT_EMISOR, PUNTO_VENTA, NUMERO)',
+      },
+    ],
+  },
+  {
     tabla: 'PHF_CONFIGURACION',
     // Una sola fila fija (ID=1) -- primera tabla de configuracion global de
     // la app (2026-08-26, importacion automatica desde carpetas). Todo lo

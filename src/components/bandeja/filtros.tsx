@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { ORDEN_TABS, type ClaveTab } from '@/lib/estados'
 import type { Conteos } from '@/server/app/comprobantes'
 import styles from './filtros.module.css'
@@ -70,6 +71,15 @@ export function Filtros({ filtro, query, conteos }: {
           </button>
         )
       })}
+
+      {/* La conciliacion contra ARCA no es un filtro de la bandeja: es otra
+          vista, con su propia ruta. Va separada de las pestanas de estado
+          --una barra en el medio-- para que no parezca un estado mas
+          (2026-10-09, pedido del usuario). */}
+      <span className={styles.separadorTabs} />
+      <Link href="/conciliacion" className={styles.tab}>
+        Conciliación ARCA
+      </Link>
 
       <div className={styles.buscador}>
         <span className={styles.lupa}>⌕</span>

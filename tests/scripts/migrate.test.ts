@@ -13,6 +13,8 @@ const TABLAS = [
   'PHF_ALICUOTA_PROVEEDOR',
   'PHF_ARTICULO_PROVEEDOR',
   'PHF_LECTURA_PROVEEDOR',
+  'PHF_ARCA_IMPORTACION',
+  'PHF_ARCA_COMPROBANTE',
   'PHF_CONFIGURACION',
 ]
 
@@ -93,7 +95,7 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
       const pool = await getPool()
       // Los hijos (FK con ON DELETE CASCADE) tienen que caer antes que
       // PHF_COMPROBANTE, que es la tabla referenciada.
-      const sufijosEnOrden = ['CAMPO', 'CARGO', 'RENGLON_PDF', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'ARTICULO_PROVEEDOR', 'LECTURA_PROVEEDOR', 'CONFIGURACION', 'ROTA']
+      const sufijosEnOrden = ['CAMPO', 'CARGO', 'RENGLON_PDF', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'ARTICULO_PROVEEDOR', 'LECTURA_PROVEEDOR', 'ARCA_COMPROBANTE', 'ARCA_IMPORTACION', 'CONFIGURACION', 'ROTA']
       for (const prefijo of prefijosUsados) {
         for (const sufijo of sufijosEnOrden) {
           const tabla = `${prefijo}${sufijo}`

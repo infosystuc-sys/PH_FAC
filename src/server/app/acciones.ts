@@ -35,6 +35,7 @@ import {
 import { equivalenciasPorTalle } from '@/lib/talles'
 import { parsearImporte } from '@/lib/formato'
 import { reglaDeProveedorEn } from './lecturaProveedor'
+import { importarArcaEn, type ResumenImportacion } from './arca'
 import { tipoPorContenido, NOMBRES_ADMITIDOS } from '@/lib/tipoArchivo'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import { aprenderArticuloEn, marcarSinOcEn } from './articulosProveedor'
@@ -1326,4 +1327,22 @@ export async function guardarConfiguracionCarpetas(
 /** Botón "Escanear ahora": dispara el escaneo sin esperar al ciclo. No espera el resultado. */
 export async function dispararEscaneoCarpetas(): Promise<void> {
   escanearCarpetasAhora()
+}
+
+/**
+ * Sube el archivo "Mis Comprobantes" de ARCA y lo deja listo para
+ * conciliar (2026-10-09, pedido del usuario).
+ *
+ * El archivo se lee en el cliente y llega como texto: son unas pocas
+ * decenas de KB y así no hace falta montar un endpoint de upload ni dejar
+ * el archivo en disco. Lo que se guarda es el contenido ya interpretado,
+ * no el archivo.
+ */
+export async function importarArcaDesdeTexto(
+  archivoNombre: string,
+  contenido: string,
+): Promise<ResumenImportacion> {
+  const resumen = await conTransaccion((tx) => importarArcaEn(tx, archivoNombre, contenido))
+  revalidatePath('/conciliacion')
+  return resumen
 }
