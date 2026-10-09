@@ -569,7 +569,21 @@ function mesPorNombre(texto: string): number | null {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-  return MESES[limpio] ?? null
+  if (MESES[limpio] !== undefined) return MESES[limpio]
+
+  // La abreviatura ("oct", "sept") vale, con una condición: que señale a UN
+  // solo mes. Con menos de tres letras nunca alcanza --"ma" son marzo y
+  // mayo-- y si quedara ambigua se devuelve null en vez de elegir: una
+  // fecha mal interpretada entra al asiento contable.
+  if (limpio.length < 3) return null
+  const candidatos = [
+    ...new Set(
+      Object.entries(MESES)
+        .filter(([nombre]) => nombre.startsWith(limpio))
+        .map(([, numero]) => numero),
+    ),
+  ]
+  return candidatos.length === 1 ? candidatos[0] : null
 }
 
 /**
@@ -587,14 +601,50 @@ function armarFecha(dia: number, mes: number, anioTexto: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/**
+ * Lo que un proveedor puede poner entre el día, el mes y el año: barra,
+ * punto, guion o espacios, en cualquier combinación.
+ *
+ * Nació aceptando solo `/.-` y tuvo que generalizarse: RED DEL INTERIOR
+ * imprime "07 10 26", separado por espacios (2026-10-09, reportado por el
+ * usuario). El separador no dice nada sobre la fecha -- es decoración del
+ * papel --, así que no hay motivo para que uno pase y otro no.
+ */
+const SEPARADOR = String.raw`[\s./-]+`
+
+/**
+ * La fecha de un comprobante, venga en el formato que venga.
+ *
+ * El orden por defecto es **día, mes, año**: es un comprobante argentino.
+ * La única forma que se lee al revés es la que no deja lugar a dudas, el
+ * año adelante con sus CUATRO dígitos ("2026-10-07"). Con dos dígitos
+ * adelante no se adivina: "26 10 07" es 26/10/2007 y nada más, porque
+ * leerlo como 07/10/2026 sería inventar una convención que el papel no
+ * declara, y una fecha mal interpretada entra al asiento contable.
+ */
 export function parsearFechaArg(f: string): Date | null {
   const t = f.trim()
 
-  const numerica = /^(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{2}|\d{4})$/.exec(t)
+  // Año adelante, en cuatro dígitos: "2026-10-07", "2026/10/07".
+  const iso = new RegExp(`^(\\d{4})${SEPARADOR}(\\d{1,2})${SEPARADOR}(\\d{1,2})$`).exec(t)
+  if (iso) return armarFecha(Number(iso[3]), Number(iso[2]), iso[1])
+
+  // Lo habitual: "07/10/2026", "30.07.2026", "01-06-2026", "07 10 26".
+  const numerica = new RegExp(
+    `^(\\d{1,2})${SEPARADOR}(\\d{1,2})${SEPARADOR}(\\d{2}|\\d{4})$`,
+  ).exec(t)
   if (numerica) return armarFecha(Number(numerica[1]), Number(numerica[2]), numerica[3])
 
-  // "18 de Septiembre de 2026", y también sin los "de": "18 Septiembre 2026".
-  const conLetras = /^(\d{1,2})\s+(?:de\s+)?([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s+(?:de\s+)?(\d{2}|\d{4})$/.exec(t)
+  // Sigue haciendo falta UN separador, el que sea. Sin ninguno
+  // ("16092026") no se sabe dónde termina el día, y adivinarlo manda una
+  // fecha inventada al asiento contable. Es una decisión anterior
+  // (2026-09-22) y esto no la cambia: lo que se amplió es qué cuenta como
+  // separador, no que pueda faltar.
+
+  // "18 de Septiembre de 2026", "18 Septiembre 2026", "07-oct-2026".
+  const conLetras = new RegExp(
+    `^(\\d{1,2})${SEPARADOR}(?:de${SEPARADOR})?([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)${SEPARADOR}(?:de${SEPARADOR})?(\\d{2}|\\d{4})$`,
+  ).exec(t)
   if (conLetras) {
     const mes = mesPorNombre(conLetras[2])
     return mes === null ? null : armarFecha(Number(conLetras[1]), mes, conLetras[3])

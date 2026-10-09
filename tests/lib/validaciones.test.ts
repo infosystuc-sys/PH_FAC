@@ -156,6 +156,34 @@ describe('parsearFechaArg', () => {
     expect(parsearFechaArg('30.07.2026')).toEqual(new Date(2026, 6, 30))
     expect(parsearFechaArg('30-07-2026')).toEqual(new Date(2026, 6, 30))
   })
+  it('acepta el espacio como separador', () => {
+    // RED DEL INTERIOR imprime "07 10 26" (2026-10-09, reportado por el
+    // usuario). El separador es decoracion del papel: no dice nada sobre la
+    // fecha, asi que no hay motivo para que la barra pase y el espacio no.
+    expect(parsearFechaArg('07 10 26')).toEqual(new Date(2026, 9, 7))
+    expect(parsearFechaArg('7 10 2026')).toEqual(new Date(2026, 9, 7))
+    expect(parsearFechaArg('30  07  2026')).toEqual(new Date(2026, 6, 30))
+  })
+  it('acepta el ano adelante cuando viene con sus cuatro digitos', () => {
+    expect(parsearFechaArg('2026-10-07')).toEqual(new Date(2026, 9, 7))
+    expect(parsearFechaArg('2026/10/07')).toEqual(new Date(2026, 9, 7))
+    expect(parsearFechaArg('2026 10 7')).toEqual(new Date(2026, 9, 7))
+  })
+  it('con el ano de DOS digitos adelante NO adivina: manda dia-mes-ano', () => {
+    // "26 10 07" es 26/10/2007 y nada mas. Leerlo como 07/10/2026 seria
+    // inventar una convencion que el papel no declara, y la diferencia son
+    // casi veinte anios en el asiento contable.
+    expect(parsearFechaArg('26 10 07')).toEqual(new Date(2007, 9, 26))
+  })
+  it('acepta el mes abreviado, si la abreviatura senala a un solo mes', () => {
+    expect(parsearFechaArg('07-oct-2026')).toEqual(new Date(2026, 9, 7))
+    expect(parsearFechaArg('07 Oct 26')).toEqual(new Date(2026, 9, 7))
+    expect(parsearFechaArg('1.ene.2026')).toEqual(new Date(2026, 0, 1))
+    // "ma" son marzo y mayo: ambigua, no se elige.
+    expect(parsearFechaArg('07 ma 2026')).toBeNull()
+    // Y una que no es ningun mes.
+    expect(parsearFechaArg('07 xyz 2026')).toBeNull()
+  })
   it('rechaza un mes o dia fuera de rango', () => {
     expect(parsearFechaArg('32/07/2026')).toBeNull()
     expect(parsearFechaArg('30/13/2026')).toBeNull()
@@ -222,10 +250,15 @@ describe('parsearFechaArg', () => {
     expect(parsearFechaArg('1 / 6 / 26')).toEqual(new Date(2026, 5, 1))
   })
   it('pero sigue exigiendo el separador', () => {
-    // Sin separador no se sabe donde termina el dia: "16092026" podria ser
-    // cualquier cosa, y adivinar ahi manda una fecha inventada a Tango.
+    // Sin NINGUN separador no se sabe donde termina el dia: "16092026"
+    // podria ser cualquier cosa, y adivinar ahi manda una fecha inventada a
+    // Tango. Sigue en pie desde el 2026-09-22.
+    //
+    // "16 09 2026" figuraba aca y ya no: desde el 2026-10-09 el espacio ES
+    // un separador valido (RED DEL INTERIOR imprime "07 10 26"). Lo que se
+    // amplio es QUE cuenta como separador, no que pueda faltar.
     expect(parsearFechaArg('16092026')).toBeNull()
-    expect(parsearFechaArg('16 09 2026')).toBeNull()
+    expect(parsearFechaArg('16-092026')).toBeNull()
   })
 })
 
