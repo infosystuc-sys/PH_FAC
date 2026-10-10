@@ -1340,9 +1340,13 @@ export async function dispararEscaneoCarpetas(): Promise<void> {
  */
 export async function importarArcaDesdeTexto(
   archivoNombre: string,
-  contenido: string,
+  contenidoBase64: string,
 ): Promise<ResumenImportacion> {
-  const resumen = await conTransaccion((tx) => importarArcaEn(tx, archivoNombre, contenido))
+  // Llega en base64 y no como texto porque el XLSX es binario (2026-10-10).
+  // Un server action puede recibir bytes, pero base64 evita depender de
+  // como serializa cada version los tipados de array.
+  const datos = Buffer.from(contenidoBase64, 'base64')
+  const resumen = await conTransaccion((tx) => importarArcaEn(tx, archivoNombre, datos))
   revalidatePath('/conciliacion')
   return resumen
 }

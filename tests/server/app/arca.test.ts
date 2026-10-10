@@ -129,11 +129,33 @@ describe('importarArcaEn', () => {
         csv([
           fila({ fecha: '01/09/2026', tipo: 1, pv: 1, nro: 1, cuit: '30500525327', total: 100 }),
           'fecha mala;1;1;2;2;x;80;30500525327;X;0,00;0,00;100,00',
+        ]),
+      )
+      expect(r.filas).toBe(1)
+      expect(r.ignoradas).toBe(1)
+    })
+  })
+
+  it('una fila ENTERAMENTE vacia no cuenta como ilegible', async () => {
+    // Hasta el 2026-10-10 una fila de puros separadores (";;;;;") se
+    // contaba como "no se pudo interpretar". Al pasar el lector a trabajar
+    // sobre celdas --para que XLSX y CSV compartan camino-- se descarta
+    // antes de contar, y esta bien: las planillas de Excel traen filas
+    // vacias al final, y contarlas como errores seria ruido alarmante
+    // sobre un archivo que esta perfecto. Lo que se sigue contando es la
+    // fila que TIENE datos y no se entienden.
+    await conRollback(async (tx) => {
+      const r = await importarArcaEn(
+        tx,
+        'con-vacias.csv',
+        csv([
+          fila({ fecha: '01/09/2026', tipo: 1, pv: 1, nro: 1, cuit: '30500525327', total: 100 }),
+          ';;;;;;;;;;;',
           ';;;;;;;;;;;',
         ]),
       )
       expect(r.filas).toBe(1)
-      expect(r.ignoradas).toBe(2)
+      expect(r.ignoradas).toBe(0)
     })
   })
 })
@@ -211,6 +233,81 @@ describe('conciliarEn', () => {
       const suyo = r.filas.find((f) => f.arca?.numero === t.numero)
       expect(suyo?.estado).toBe('difiere')
       expect(suyo?.diferencia).toContain('ARCA informa')
+    })
+  })
+})
+
+describe('archivo XLSX', () => {
+  // ARCA exporta "Mis Comprobantes" en Excel (2026-10-10). La planilla se
+  // genera en el propio test: asi no hace falta un archivo binario en el
+  // repo y se prueba el camino entero, de celdas a comprobantes.
+  async function planilla(filas: (string | number | Date)[][]): Promise<Buffer> {
+    const ExcelJS = (await import('exceljs')).default
+    const libro = new ExcelJS.Workbook()
+    const hoja = libro.addWorksheet('Hoja1')
+    for (const f of filas) hoja.addRow(f)
+    return Buffer.from(await libro.xlsx.writeBuffer())
+  }
+
+  const CABECERA = [
+    'Fecha', 'Tipo', 'Punto de Venta', 'Número Desde', 'Número Hasta',
+    'Cód. Autorización', 'Tipo Doc. Emisor', 'Nro. Doc. Emisor',
+    'Denominación Emisor', 'Neto Gravado Total', 'Total IVA', 'Imp. Total',
+  ]
+
+  it('lee la planilla igual que el CSV', async () => {
+    const datos = await planilla([
+      CABECERA,
+      ['01/09/2026', '1 - Factura A', 7, 2723, 2723, '8635', 'CUIT', '30687799042',
+        'ELECTROCLICK S.A.', 23908444.4, 5020773.32, 28929217.72],
+    ])
+    await conRollback(async (tx) => {
+      const r = await importarArcaEn(tx, 'arca.xlsx', datos)
+      expect(r.filas).toBe(1)
+      expect(r.ignoradas).toBe(0)
+
+      const f = await tx.request().query<Record<string, unknown>>(
+        'SELECT TOP 1 * FROM PHF_ARCA_COMPROBANTE ORDER BY ID DESC',
+      )
+      const x = f.recordset[0]
+      expect(Number(x.PUNTO_VENTA)).toBe(7)
+      expect(Number(x.NUMERO)).toBe(2723)
+      expect(String(x.CUIT_EMISOR)).toBe('30687799042')
+      expect(Number(x.IMPORTE_TOTAL)).toBeCloseTo(28929217.72, 2)
+      expect(Number(x.TIPO_CODIGO)).toBe(1)
+    })
+  })
+
+  it('interpreta la fecha que Excel guarda como fecha, no como texto', async () => {
+    const datos = await planilla([
+      CABECERA,
+      [new Date(2026, 8, 15), '1 - Factura A', 7, 1, 1, 'x', 'CUIT', '30687799042',
+        'X', 100, 21, 121],
+    ])
+    await conRollback(async (tx) => {
+      const r = await importarArcaEn(tx, 'arca.xlsx', datos)
+      expect(r.filas).toBe(1)
+      expect(r.desde).toEqual(new Date(2026, 8, 15))
+    })
+  })
+
+  it('el formato lo decide el CONTENIDO, no la extension', async () => {
+    // Un XLSX renombrado a .csv tiene que leerse igual: los XLSX son ZIP y
+    // empiezan con "PK".
+    const datos = await planilla([
+      CABECERA,
+      ['01/09/2026', '1 - Factura A', 7, 55, 55, 'x', 'CUIT', '30687799042', 'X', 100, 21, 121],
+    ])
+    await conRollback(async (tx) => {
+      const r = await importarArcaEn(tx, 'disfrazado.csv', datos)
+      expect(r.filas).toBe(1)
+    })
+  })
+
+  it('una planilla que no es la de ARCA se rechaza diciendo que encontro', async () => {
+    const datos = await planilla([['Columna A', 'Columna B'], [1, 2]])
+    await conRollback(async (tx) => {
+      await expect(importarArcaEn(tx, 'otra.xlsx', datos)).rejects.toThrow(/No se reconoce el formato/)
     })
   })
 })

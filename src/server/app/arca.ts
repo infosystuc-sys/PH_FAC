@@ -1,6 +1,7 @@
 import sql from 'mssql'
 import { usuarioActual } from '@/lib/usuario'
-import { leerArchivoArca, tipoArca, type ComprobanteArca } from '@/lib/arca'
+import { leerArchivoArca, interpretarFilas, tipoArca, type ComprobanteArca } from '@/lib/arca'
+import { filasDesdeXlsx } from './arcaXlsx'
 import {
   conciliar,
   resumir,
@@ -36,6 +37,18 @@ export type ResumenImportacion = {
  */
 const POR_LOTE = 150
 
+/** Un XLSX es un ZIP: los dos primeros bytes son "PK". */
+function esZip(b: Buffer): boolean {
+  return b.length > 1 && b[0] === 0x50 && b[1] === 0x4b
+}
+
+/** Convierte la hoja a filas, o lanza con el motivo. */
+async function filasOExplotar(datos: Buffer): Promise<string[][]> {
+  const r = await filasDesdeXlsx(datos)
+  if (!r.ok) throw new Error(r.error)
+  return r.filas
+}
+
 /**
  * Guarda el archivo. REEMPLAZA lo anterior: la conciliación se mira contra
  * una sola foto de ARCA, y acumular importaciones dejaría el mismo
@@ -45,9 +58,15 @@ const POR_LOTE = 150
 export async function importarArcaEn(
   e: Ejecutor,
   archivoNombre: string,
-  contenido: string,
+  contenido: string | Buffer,
 ): Promise<ResumenImportacion> {
-  const leido = leerArchivoArca(contenido)
+  // XLSX o CSV: lo decide el CONTENIDO, no la extension. Un archivo que
+  // alguien renombro a .csv pero sigue siendo un Excel tiene que leerse
+  // igual, y uno que es texto no gana nada pasando por exceljs. Los XLSX
+  // son ZIP, asi que empiezan con "PK".
+  const leido = Buffer.isBuffer(contenido) && esZip(contenido)
+    ? interpretarFilas(await filasOExplotar(contenido))
+    : leerArchivoArca(contenido.toString())
   if (!leido.ok) throw new Error(leido.error)
 
   const fechas = leido.comprobantes.map((c) => c.fechaEmision.getTime())

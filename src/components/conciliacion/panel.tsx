@@ -68,8 +68,15 @@ export function PanelConciliacion({
     setAviso(null)
     arrancar(async () => {
       try {
-        const contenido = await f.text()
-        const r = await importarArcaDesdeTexto(f.name, contenido)
+        // Se manda en base64 y no como texto: el XLSX es binario y .text()
+        // lo destruiria. Para el CSV da lo mismo, asi que no se bifurca.
+        const bytes = new Uint8Array(await f.arrayBuffer())
+        let binario = ''
+        const TROZO = 8192
+        for (let i = 0; i < bytes.length; i += TROZO) {
+          binario += String.fromCharCode(...bytes.subarray(i, i + TROZO))
+        }
+        const r = await importarArcaDesdeTexto(f.name, btoa(binario))
         setAviso(
           `${r.filas} comprobante(s) importado(s)` +
             (r.ignoradas > 0 ? ` · ${r.ignoradas} fila(s) no se pudieron interpretar` : ''),
@@ -99,7 +106,7 @@ export function PanelConciliacion({
           ) : (
             <p className={styles.subirNota}>
               Todavía no se subió ninguno. Descargá de ARCA &quot;Mis Comprobantes — Recibidos&quot;
-              en CSV y subilo acá.
+              y subilo acá, en Excel (.xlsx) o en CSV.
             </p>
           )}
         </div>
@@ -107,7 +114,7 @@ export function PanelConciliacion({
           <input
             ref={archivo}
             type="file"
-            accept=".csv,.txt,text/csv,text/plain"
+            accept=".csv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className={styles.inputArchivo}
             onChange={(e) => {
               const f = e.target.files?.[0]

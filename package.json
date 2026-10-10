@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.115.0",
     "@fontsource/ibm-plex-mono": "^5.1.0",
     "@fontsource/ibm-plex-sans": "^5.1.0",
+    "exceljs": "^4.4.0",
     "mssql": "^11.0.1",
     "next": "^15.1.0",
     "pdfjs-dist": "^6.2.108",

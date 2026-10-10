@@ -88,7 +88,9 @@ const COLUMNAS = {
   razonEmisor: /denominacion emisor|razon social emisor/,
   total: /^imp\.? ?total$|^importe total$|^total$/,
   neto: /neto gravado/,
-  iva: /^iva$|^imp\.? ?iva$/,
+  // "Total IVA" es como lo titula la exportación real (verificado contra un
+  // archivo de ARCA, 2026-10-10). Las otras formas quedan por si cambia.
+  iva: /^total iva$|^iva$|^imp\.? ?iva$/,
 } as const
 
 type Columna = keyof typeof COLUMNAS
@@ -196,22 +198,38 @@ export function leerArchivoArca(contenido: string): ResultadoLectura {
     .filter((l) => l !== '')
   if (lineas.length === 0) return { ok: false, error: 'El archivo está vacío.' }
 
-  // El encabezado no siempre es la primera línea: hay exportaciones que
+  // El CSV se parte acá --hay que deducir el separador línea por línea-- y
+  // de ahí en más sigue el mismo camino que el XLSX, que ya llega partido
+  // en celdas.
+  return interpretarFilas(lineas.map((l) => separarLinea(l, detectarSeparador(l))))
+}
+
+/**
+ * El cuerpo compartido: recibe las filas ya partidas en celdas, vengan de
+ * un CSV o de una hoja de Excel (2026-10-10: ARCA exporta "Mis
+ * Comprobantes" en XLSX y el operador no tiene por qué convertirlo).
+ *
+ * Todo lo que decide --dónde está el encabezado, qué columna es cuál, qué
+ * fila se descarta-- vive acá y no se duplica por formato. Duplicado, un
+ * arreglo en uno dejaría el otro atrás.
+ */
+export function interpretarFilas(filas: string[][]): ResultadoLectura {
+  const lineas = filas.filter((f) => f.some((c) => (c ?? '').trim() !== ''))
+  if (lineas.length === 0) return { ok: false, error: 'El archivo está vacío.' }
+
+  // El encabezado no siempre es la primera fila: hay exportaciones que
   // arrancan con un título o con el CUIT del contribuyente. Se busca la
   // primera que tenga todas las columnas obligatorias.
   let fila = -1
-  let separador = ';'
   let indices: Partial<Record<Columna, number>> = {}
   let faltanEnLaMejor: Columna[] = []
   let encabezadosDeLaMejor: string[] = []
 
   for (let i = 0; i < Math.min(lineas.length, 20); i += 1) {
-    const sep = detectarSeparador(lineas[i])
-    const encabezados = separarLinea(lineas[i], sep)
+    const encabezados = lineas[i]
     const m = mapearColumnas(encabezados)
     if (m.faltan.length === 0) {
       fila = i
-      separador = sep
       indices = m.indices
       break
     }
@@ -238,10 +256,10 @@ export function leerArchivoArca(contenido: string): ResultadoLectura {
   const primerNumero = (texto: string): number => Number((texto.match(/\d+/) ?? [])[0])
 
   for (let i = fila + 1; i < lineas.length; i += 1) {
-    const c = separarLinea(lineas[i], separador)
+    const c = lineas[i]
     const en = (campo: Columna): string => {
       const j = indices[campo]
-      return j === undefined ? '' : (c[j] ?? '')
+      return j === undefined ? '' : (c[j] ?? '').trim()
     }
 
     const fecha = parsearFechaArg(en('fecha'))
