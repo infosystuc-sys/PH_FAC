@@ -39,13 +39,33 @@ REM para el otro sin avisar. Si el 3013 esta tomado preferimos frenar y
 REM decirlo, en vez de abrir la app en una direccion distinta.
 netstat -ano | findstr ":%PUERTO% " | findstr "LISTENING" >nul
 if not errorlevel 1 (
+  REM Ocupado no siempre es un problema: lo normal es que sea la propia app
+  REM ya levantada --otra ventana de este mismo .bat, o un servidor que
+  REM quedo corriendo--. En ese caso lo util es abrir el navegador y no
+  REM mandar al operador a averiguar que paso. Se distingue preguntandole
+  REM al puerto: si contesta nuestra URL, es la app (2026-10-10).
+  curl -s -o nul --max-time 5 %URL%
+  if not errorlevel 1 (
+    echo.
+    echo   LA APP YA ESTA CORRIENDO en %URL%
+    echo.
+    echo   Se abre el navegador. Esta ventana se puede cerrar: el servidor
+    echo   lo levanto otra, y cerrar esta no lo corta.
+    echo.
+    start "" %URL%
+    REM El 2^>nul es para cuando se corre con la entrada redirigida (un
+    REM script, no un doble clic): ahi timeout no puede esperar y escribe
+    REM un error que no significa nada. Con doble clic espera normal.
+    timeout /t 4 /nobreak >nul 2>nul
+    exit /b 0
+  )
   echo.
-  echo   EL PUERTO %PUERTO% YA ESTA OCUPADO
+  echo   EL PUERTO %PUERTO% ESTA OCUPADO POR OTRO PROGRAMA
   echo.
-  echo   Puede ser que la app ya este corriendo en otra ventana. Para
-  echo   comprobarlo, entrar a %URL%
+  echo   Algo esta escuchando en el %PUERTO% pero no es PH_FAC: no
+  echo   contesta en %URL%
   echo.
-  echo   Si es otro programa, cerrarlo o cambiar la variable PUERTO en la
+  echo   Hay que cerrar ese programa, o cambiar la variable PUERTO en la
   echo   linea 14 de este archivo.
   echo.
   pause
