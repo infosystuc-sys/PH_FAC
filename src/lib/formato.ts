@@ -65,8 +65,27 @@ export function formatCuit(c: string | null | undefined): string {
  *   llamador pueda distinguir "no se pudo leer" de "el importe es cero".
  */
 function normalizarImporte(v: string): number | null {
-  const t = v.trim()
-  if (t === '') return null
+  const crudo = v.trim()
+  if (crudo === '') return null
+
+  // El símbolo de moneda y los espacios se sacan antes de mirar los
+  // separadores: AMX (Claro) imprime "$534.043,77" y hasta el 2026-10-10
+  // eso daba NaN -> 0, así que el total y los tres importes de IVA del
+  // comprobante quedaban en cero y la pantalla no reconocía ningún
+  // impuesto.
+  //
+  // Los tokens de varios caracteres van primero porque contienen el signo:
+  // sacar el "$" de "U$S 1.234" dejaría "US1.234", que ya no es un número.
+  const t = crudo
+    .replace(/u\$s|us\$|ar\$|usd|ars|eur/gi, '')
+    .replace(/[$€ ]/g, '')
+    .replace(/\s/g, '')
+
+  // Y después se exige que lo que quedó TENGA forma de número. Sin esto,
+  // quitar lo que no sea dígito convertiría cualquier texto en una cifra
+  // --"Iva Percepción 3%" en 3, "Factura 1234" en 1234-- que es peor que
+  // no leerlo: un importe inventado entra al asiento sin que nadie lo note.
+  if (!/^-?\d[\d.,]*$/.test(t)) return null
 
   const tienePunto = t.includes('.')
   const tieneComa = t.includes(',')

@@ -88,6 +88,38 @@ describe('parsearImporte', () => {
     expect(parsearImporte('186623.75')).toBeCloseTo(186623.75, 2)
   })
 
+  it('ignora el simbolo de moneda', () => {
+    // AMX (Claro) imprime "$534.043,77". Hasta el 2026-10-10 eso daba NaN y
+    // caia a 0: el total del comprobante y sus tres importes de IVA
+    // quedaban en cero, y la pantalla no reconocia ningun impuesto.
+    expect(parsearImporte('$534.043,77')).toBeCloseTo(534043.77, 2)
+    expect(parsearImporte('$ 26.605,85')).toBeCloseTo(26605.85, 2)
+  })
+
+  it('ignora tambien los simbolos de varios caracteres', () => {
+    // Van antes que el "$" al limpiar: sacarle el signo a "U$S 1.234"
+    // dejaria "US1.234", que ya no es un numero.
+    expect(parsearImporte('U$S 1.234,56')).toBeCloseTo(1234.56, 2)
+    expect(parsearImporte('USD 1.234,56')).toBeCloseTo(1234.56, 2)
+    expect(parsearImporte('1.234,56 ARS')).toBeCloseTo(1234.56, 2)
+  })
+
+  it('conserva el signo negativo aunque venga con moneda', () => {
+    // SPRINGWALL factura la bonificacion en negativo.
+    expect(parsearImporte('-108.805,79')).toBeCloseTo(-108805.79, 2)
+    expect(parsearImporte('$-108.805,79')).toBeCloseTo(-108805.79, 2)
+  })
+
+  it('NO saca un numero de un texto cualquiera', () => {
+    // Es el limite de lo anterior: si se quitara todo lo que no es digito,
+    // "Iva Percepcion 3%" daria 3 y "Factura 1234" daria 1234. Un importe
+    // inventado entra al asiento sin que nadie lo note, asi que lo que no
+    // tiene forma de numero se declara ilegible.
+    expect(parsearImporteONulo('Iva Percepción 3%')).toBeNull()
+    expect(parsearImporteONulo('Factura 1234')).toBeNull()
+    expect(parsearImporteONulo('abc')).toBeNull()
+  })
+
   it('formato argentino: punto de miles, coma decimal', () => {
     expect(parsearImporte('39.190,99')).toBeCloseTo(39190.99, 2)
   })
