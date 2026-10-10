@@ -146,6 +146,7 @@ export function Formulario({
   onEnfocar,
   soloLectura = false,
   ocultarVacios = false,
+  permitirAprender = false,
   condicionesCompra,
   codigosImpuesto,
   alicuotasIva,
@@ -164,6 +165,19 @@ export function Formulario({
    * vista; se guarda en localStorage y vale para todos los comprobantes.
    */
   ocultarVacios?: boolean
+  /**
+   * Deja corregir a qué impuesto de Tango va una alícuota, una percepción
+   * o una condición de compra aunque el comprobante esté cerrado
+   * (2026-10-10, decisión del usuario; mismo criterio que `permitirVincular`
+   * en el selector de OC).
+   *
+   * Lo que se guarda en ese caso es SOLO la equivalencia del PROVEEDOR,
+   * que vale para las facturas que vengan. El comprobante registrado no se
+   * toca: ya está en Tango y corregirle un campo acá no lo cambiaría allá.
+   * Sin esto, una equivalencia mal aprendida se repetía en cada factura y
+   * no había dónde arreglarla.
+   */
+  permitirAprender?: boolean
   // El comprobante está en estado `registrado`: terminal e inmutable
   // (mismo criterio que ya aplica BarraAcciones deshabilitando el botón
   // primario con title="Ver asiento en Tango"). El backend ya bloquea la
@@ -203,12 +217,18 @@ export function Formulario({
     (clave: string) => {
       setValores((prev) => {
         if (!prev[clave]) return prev
-        void guardarCampo(comprobanteId, clave, '')
+        if (!soloLectura) void guardarCampo(comprobanteId, clave, '')
         return { ...prev, [clave]: '' }
       })
     },
-    [comprobanteId],
+    [comprobanteId, soloLectura],
   )
+
+  // Los desplegables de "En Tango" se habilitan aunque el comprobante este
+  // cerrado: lo que guardan es la equivalencia DEL PROVEEDOR, no un dato de
+  // este comprobante (ver permitirAprender). Los campos de datos --importes,
+  // fechas, numero-- siguen bloqueados: esos si son del comprobante.
+  const bloquearEquivalencia = soloLectura && !permitirAprender
 
   const cambiar = useCallback(
     (clave: string, v: string) => {
@@ -283,14 +303,29 @@ export function Formulario({
 
       }
 
-      void guardarCampo(comprobanteId, clave, v)
+      // Un comprobante cerrado no se modifica: lo de arriba --la
+      // equivalencia del proveedor-- vale para las facturas que vengan,
+      // pero este comprobante ya esta en Tango. El backend igual lo
+      // bloquea con un no-op silencioso (ver guardarCampoEn); no llamarlo
+      // deja claro de este lado que no se intenta.
+      if (!soloLectura) void guardarCampo(comprobanteId, clave, v)
     },
-    [comprobanteId, limpiarCorreccion, valores],
+    [comprobanteId, limpiarCorreccion, valores, soloLectura],
   )
 
   return (
     <div className={styles.panel}>
       <div className={styles.contenido}>
+        {/* Sin esto la pantalla mentiria: el operador cambia el
+            desplegable, ve el cambio, recarga y vuelve el valor viejo
+            --porque el comprobante no se toca-- y no entiende por que. */}
+        {soloLectura && permitirAprender && (
+          <p className={styles.avisoAprender}>
+            Este comprobante ya está cerrado y no se modifica. Lo que cambies en
+            &quot;En Tango&quot; se guarda como la equivalencia de este proveedor y se aplica a
+            las facturas que vengan.
+          </p>
+        )}
         {GRUPOS.map((g) => (
           <section key={g.clave} className={styles.tarjeta}>
             <h3 className={styles.tituloGrupo}>{g.titulo}</h3>
@@ -365,7 +400,7 @@ export function Formulario({
                       correccion={valores[correccion] ?? ''}
                       alicuotas={alicuotasIva}
                       aprendidos={aprendidosIva}
-                      bloqueado={soloLectura}
+                      bloqueado={bloquearEquivalencia}
                       onCambio={(v) => cambiar(correccion, v)}
                     />,
                   ]
@@ -384,7 +419,7 @@ export function Formulario({
                       tipoFactura={valores.tipoFactura ?? ''}
                       codigos={codigosImpuesto}
                       aprendidos={aprendidosPercepcion}
-                      bloqueado={soloLectura}
+                      bloqueado={bloquearEquivalencia}
                       onCambio={(v) => cambiar(correccion, v)}
                     />,
                   ]
@@ -402,7 +437,7 @@ export function Formulario({
                       correccion={valores[correccion] ?? ''}
                       codigos={codigosImpuesto}
                       aprendidos={aprendidosVarios}
-                      bloqueado={soloLectura}
+                      bloqueado={bloquearEquivalencia}
                       onCambio={(v) => cambiar(correccion, v)}
                     />,
                   ]

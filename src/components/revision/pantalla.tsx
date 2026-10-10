@@ -273,6 +273,12 @@ export function Pantalla({
           aprendidosPercepcion={aprendidosPercepcion}
           aprendidosVarios={aprendidosVarios}
           ocultarVacios={ocultarEnOrden}
+          // Corregir a que impuesto de Tango va una alicuota o una
+          // percepcion se permite siempre: lo que se guarda es la
+          // equivalencia del proveedor, que sirve para las facturas que
+          // vengan, no un dato de este comprobante (2026-10-10, decision
+          // del usuario). Mismo criterio que permitirVincular.
+          permitirAprender
         />
           </div>
           <div className={styles.columna}>

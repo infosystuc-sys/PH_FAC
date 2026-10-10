@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest'
 import { conRollback } from '@/server/db/tx'
 import { cerrarPool } from '@/server/db/pool'
 import { aprenderImpuestoEn, cargarAprendidosEn } from '@/server/app/aprendizajeImpuestos'
+import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 
 afterAll(async () => {
   await cerrarPool()
@@ -105,4 +106,40 @@ describe('aprenderImpuestoEn / cargarAprendidosEn', () => {
     })
   })
 
+})
+
+describe('corregir la equivalencia desde un comprobante cerrado', () => {
+  // 2026-10-10, decision del usuario. La equivalencia se aprende por
+  // PROVEEDOR, asi que una mal aprendida se repite en cada factura. Si solo
+  // se pudiera corregir en un comprobante abierto, un proveedor cuyas
+  // facturas se registran enseguida --o que ya estan todas en Tango-- no
+  // tendria nunca donde arreglarla. Lo destapo AMX.
+  it('la regla del proveedor se guarda aunque el comprobante este registrado', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'registrado' })
+      const prov = `T${Math.floor(Math.random() * 100000000)}`
+
+      await aprenderImpuestoEn(tx, prov, 'percepcion', 'tucuman', '63')
+
+      const aprendidos = await cargarAprendidosEn(tx, prov, 'percepcion')
+      expect(aprendidos.tucuman).toBe('63')
+      // Y el comprobante cerrado sigue sin tocarse: lo unico que recibe es
+      // la linea de auditoria, que es un registro y no un cambio de dato.
+      const campos = await tx
+        .request()
+        .input('id', id)
+        .query<{ n: number }>('SELECT COUNT(*) AS n FROM PHF_CAMPO WHERE COMPROBANTE_ID = @id')
+      expect(campos.recordset[0].n).toBe(0)
+    })
+  })
+
+  it('corregirla reemplaza la anterior, no acumula', async () => {
+    await conRollback(async (tx) => {
+      const prov = `T${Math.floor(Math.random() * 100000000)}`
+      await aprenderImpuestoEn(tx, prov, 'percepcion', 'tucuman', '40')
+      await aprenderImpuestoEn(tx, prov, 'percepcion', 'tucuman', '63')
+      const aprendidos = await cargarAprendidosEn(tx, prov, 'percepcion')
+      expect(aprendidos.tucuman).toBe('63')
+    })
+  })
 })
