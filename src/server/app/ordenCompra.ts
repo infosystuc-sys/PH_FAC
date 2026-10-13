@@ -13,6 +13,7 @@ import {
   type LineaPdfResuelta,
 } from '@/lib/matchOc'
 import { articulosPorDescripcionEn } from './articulosProveedor'
+import { reglaDeProveedorEn } from './lecturaProveedor'
 import type { Detalle } from './detalle'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import { parsearImporte } from '@/lib/formato'
@@ -130,9 +131,13 @@ export async function agregarOcEn(
   // renglón de OC: se abre acá, contra los códigos de ESTA orden, antes de
   // emparejar (2026-09-24, reportado por el usuario con TOPPER). Una línea
   // sin desglose pasa tal cual.
+  // El proveedor que ya se sabe que desglosa habilita el renglon de un solo
+  // talle: TOPPER parte una linea impresa en varios y a alguno le toca uno.
+  const desglosa = (await reglaDeProveedorEn(e, codProvee))?.escala === 'desglose-talle'
   const abiertas = abrirPorTalle(
     lineas,
     oc.renglones.map((r) => r.codArticu),
+    desglosa,
   )
 
   // Los cargos quedan afuera del emparejamiento: no consumen pendiente de
@@ -282,7 +287,8 @@ export async function renglonesSinOcEn(
   // talles estan todos imputados no es un faltante, aunque su codigo pelado
   // no figure en ninguna orden. Es justo el caso que el operador veia en
   // rojo con TOPPER.
-  const abiertas = abrirPorTalle(lineas, [...imputados])
+  const desglosa = (await reglaDeProveedorEn(e, codProvee))?.escala === 'desglose-talle'
+  const abiertas = abrirPorTalle(lineas, [...imputados], desglosa)
 
   // Los cargos del proveedor no van contra ninguna orden: no son un
   // faltante, son otra cosa (ver SIN_OC en migrate.ts).

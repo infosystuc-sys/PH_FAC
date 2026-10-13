@@ -384,3 +384,64 @@ describe('parsearDesgloseTalles con minimoPares', () => {
     expect(parsearDesgloseTalles('HELADERA MIDEA 340LT INVER', 1)).toEqual([])
   })
 })
+
+describe('talles con decimales (TOPPER, 2026-10-13)', () => {
+  // Tango guarda los talles de calzado con decimales y la factura los
+  // imprime en décimos. Normalizados, "41.5" queda "415" --idéntico al
+  // impreso-- mientras "38" queda "38" contra "380": no hay UN factor que
+  // explique los dos si se mira la clave normalizada. Hay que mirar el
+  // sufijo crudo, con su punto.
+  const OC_1696 = [
+    '52701  001 36.5',
+    '52701  001 38',
+    '52701  001 39',
+    '52701  001 40',
+    '52701  001 41.5',
+    '52701  001 43',
+    '52701  001 44',
+  ]
+
+  it('empareja los siete talles de la factura real', () => {
+    const talles = parsearDesgloseTalles(
+      'WAVE Negro Monocromo 26 001 IC04 189424 A 365: 2 380: 4 390: 6 400: 12 415: 12 430: 8 440: 2',
+    )
+    expect(totalDesglosado(talles)).toBe(46)
+
+    const m = articulosPorTalle('052701 001', talles, OC_1696)
+    expect(m).not.toBeNull()
+    // Los dos con decimales y dos enteros, que son los que no cerraban con
+    // un unico factor mirando la clave normalizada.
+    expect(m!.get('365')).toBe('52701  001 36.5')
+    expect(m!.get('415')).toBe('52701  001 41.5')
+    expect(m!.get('380')).toBe('52701  001 38')
+    expect(m!.get('440')).toBe('52701  001 44')
+    expect(new Set(m!.values()).size).toBe(7)
+  })
+
+  it('el renglón que mezcla enteros y decimales resuelve entero', () => {
+    // Es el que se quedaba sin resolver: 415 -> 41.5 fallaba porque la
+    // clave normalizada del artículo decia "415".
+    const talles = parsearDesgloseTalles('WAVE 380: 4  390: 6  400: 12  415: 12  430: 8')
+    const m = articulosPorTalle('052701 001', talles, OC_1696)
+    expect(m).not.toBeNull()
+    expect(m!.size).toBe(5)
+    expect(m!.get('415')).toBe('52701  001 41.5')
+  })
+
+  it('el código impreso con cero adelante empareja con el de Tango sin él', () => {
+    const m = articulosPorTalle('052701 001', [{ talle: '365', cantidad: 2 }], OC_1696)
+    expect(m!.get('365')).toBe('52701  001 36.5')
+  })
+
+  it('sigue sin resolver a medias si un talle no existe', () => {
+    const m = articulosPorTalle(
+      '052701 001',
+      [
+        { talle: '380', cantidad: 4 },
+        { talle: '999', cantidad: 1 },
+      ],
+      OC_1696,
+    )
+    expect(m).toBeNull()
+  })
+})

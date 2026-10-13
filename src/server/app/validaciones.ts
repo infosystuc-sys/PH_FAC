@@ -38,6 +38,7 @@ import { resolverDescuentoDeDetalle, netosPorOrden } from '@/lib/descuentoGlobal
 import { articulosPorSinonimo } from '@/server/tango/articulos'
 import { lineasPdfResueltasEn } from './ordenCompra'
 import { lineasContraOc, abrirPorTalle } from '@/lib/matchOc'
+import { reglaDeProveedorEn } from './lecturaProveedor'
 import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 
@@ -275,6 +276,7 @@ export async function validarListoParaRegistrarEn(
       abrirPorTalle(
         await lineasPdfResueltasEn(e, detalle, codProvee),
         conOc.map((r) => (r.codigoFinal ?? r.codigo ?? '').trim()),
+        (await reglaDeProveedorEn(e, codProvee))?.escala === 'desglose-talle',
       ),
     )
     const codigos = lineas

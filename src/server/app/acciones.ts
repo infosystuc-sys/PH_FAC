@@ -833,6 +833,7 @@ export async function listarOcParaComprobante(
   const abiertas = abrirPorTalle(
     lineas,
     todas.flatMap((oc) => oc.renglones.map((r) => r.codArticu)),
+    regla?.escala === 'desglose-talle',
   )
 
   const codigos = abiertas.map((r) => r.codigo)

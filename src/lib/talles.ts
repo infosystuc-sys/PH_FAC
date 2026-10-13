@@ -238,6 +238,36 @@ export function articulosPorTalle(
   return porEscalaNumerica(talles, conPrefijo, prefijo)
 }
 
+/** Un talle o un sufijo como número: tolera la coma como decimal. */
+function aNumero(texto: string): number {
+  return Number(texto.trim().replace(',', '.'))
+}
+
+/**
+ * El sufijo de un código, CON su puntuación.
+ *
+ * `normalizarCodigo` sirve para comparar pero pierde el punto decimal, y
+ * el talle lo necesita: en "52701  001 41.5" el sufijo es "41.5" y no
+ * "415". Se recorre el código original contando caracteres alfanuméricos
+ * hasta consumir el prefijo, y lo que sigue --sin los separadores de
+ * adelante-- es el sufijo.
+ *
+ * Así no hay que suponer dónde termina el prefijo en el texto: el relleno
+ * de espacios cambia de proveedor en proveedor.
+ */
+function sufijoCrudo(codigo: string, largoPrefijo: number): string | null {
+  let alfanumericos = 0
+  for (let i = 0; i < codigo.length; i += 1) {
+    if (!/[A-Za-z0-9]/.test(codigo[i])) continue
+    alfanumericos += 1
+    if (alfanumericos === largoPrefijo) {
+      const resto = codigo.slice(i + 1).replace(/^[^A-Za-z0-9]+/, '').trim()
+      return resto === '' ? null : resto
+    }
+  }
+  return null
+}
+
 /**
  * La correspondencia talle → artículo cuando los dos están en escalas
  * numéricas distintas, o `null` si no hay un factor que explique todo el
@@ -250,14 +280,27 @@ function porEscalaNumerica(
 ): Map<string, string> | null {
   const restos = new Map<string, string>()
   for (const c of conPrefijo) {
-    const resto = c.clave.slice(prefijo.length)
+    // El sufijo se saca del código CRUDO y no de la clave normalizada,
+    // porque la clave le borra el punto decimal y ahí se pierde el dato.
+    //
+    // TOPPER lo deja a la vista: Tango guarda los talles "36.5", "38",
+    // "41.5", "43" y la factura los imprime en décimos --365, 380, 415,
+    // 430--. Normalizados, "41.5" queda "415", idéntico al impreso,
+    // mientras "38" queda "38" contra "380": no existe UN factor que
+    // explique los dos, y el renglón entero se quedaba sin resolver.
+    // Con el punto puesto, dividir por diez explica los siete talles
+    // (2026-10-13, reportado por el usuario).
+    const resto = sufijoCrudo(c.codigo, prefijo.length)
+    if (resto === null) return null
     // Dos artículos con el mismo resto no puede pasar --serían el mismo
     // código-- pero si pasara, no hay forma de elegir.
     if (restos.has(resto)) return null
     restos.set(resto, c.codigo)
   }
 
-  const esNumero = (s: string) => /^\d+$/.test(s)
+  // Se comparan como NÚMEROS: "41.5" y "41.50" son el mismo talle, y la
+  // igualdad de texto diría que no.
+  const esNumero = (s: string) => /^\d+(?:[.,]\d+)?$/.test(s)
   if (!talles.every((t) => esNumero(t.talle.trim()))) return null
   if (![...restos.keys()].every(esNumero)) return null
 
@@ -275,20 +318,21 @@ function porEscalaNumerica(
     let sirve = true
 
     for (const { talle } of talles) {
-      const n = Number(talle.trim())
-      if (dividir && n % k !== 0) {
-        sirve = false
-        break
-      }
-      const buscado = String(dividir ? n / k : n * k)
-      const codigo = restos.get(buscado)
+      const n = aNumero(talle)
+      const buscado = dividir ? n / k : n * k
+      // Por VALOR y no por texto: el talle guardado puede ser "41.5",
+      // "41,5" o "41.50" y los tres son el mismo. Se compara con una
+      // tolerancia chica porque dividir por diez da coma flotante.
+      const entrada = [...restos.entries()].find(
+        ([resto]) => Math.abs(aNumero(resto) - buscado) < 0.0001,
+      )
       // Uno a uno: un artículo no puede quedar asignado a dos talles.
-      if (!codigo || usados.has(buscado)) {
+      if (!entrada || usados.has(entrada[0])) {
         sirve = false
         break
       }
-      usados.add(buscado)
-      salida.set(talle, codigo)
+      usados.add(entrada[0])
+      salida.set(talle, entrada[1])
     }
 
     if (sirve && salida.size === talles.length) return salida

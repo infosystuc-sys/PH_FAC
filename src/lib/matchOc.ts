@@ -297,6 +297,7 @@ export type LineaPdfAbierta = LineaPdfResuelta & {
 export function abrirPorTalle(
   lineas: LineaPdfResuelta[],
   candidatos: string[],
+  unTalle = false,
 ): LineaPdfAbierta[] {
   const salida: LineaPdfAbierta[] = []
   for (const linea of lineas) {
@@ -314,7 +315,11 @@ export function abrirPorTalle(
       continue
     }
 
-    const talles = parsearDesgloseTalles(linea.descripcion)
+    // Con UN solo par ("440: 2") hace falta el antecedente del proveedor:
+    // sin el, cualquier "Lote : 3" pasaria por talle. TOPPER parte una
+    // linea impresa en varios renglones y a alguno le toca un solo talle,
+    // asi que sin esto esos renglones no se abrian (2026-10-13).
+    const talles = parsearDesgloseTalles(linea.descripcion, unTalle ? 1 : undefined)
     if (talles.length === 0) {
       salida.push(cerrada)
       continue
