@@ -10,6 +10,7 @@ import {
   articulosPorDescripcionEn,
 } from '@/server/app/articulosProveedor'
 import { vincularDescripcionArticuloEn, comprobanteCerradoEn } from '@/server/app/acciones'
+import { guardarReglaEn } from '@/server/app/lecturaProveedor'
 import { normalizarDescripcionArticulo } from '@/lib/matchOc'
 import {
   agregarOcEn,
@@ -503,6 +504,54 @@ describe('ensenar una descripcion en un comprobante cerrado', () => {
       const lineas = await lineasPdfResueltasEn(tx, detalle, p!.codProvee)
       expect(lineas[0].codigo).toBe('106999')
       expect(lineas[0].porDescripcion).toBe(true)
+    })
+  })
+})
+
+describe('no aprender una descripcion desglosada por talle', () => {
+  // 2026-10-13, reportado por el usuario. El recuadro rojo ofrecia el campo
+  // de codigo en un renglon desglosado, y quedo guardada la descripcion
+  // entera --"wave negro monocromo ... 380: 4 390: 6 400: 12 415: 12
+  // 430: 8"-- apuntando a UN articulo. Esa linea son cinco, y ademas la
+  // clave lleva las cantidades adentro, asi que no volveria a emparejar.
+  const DESGLOSADA = 'WAVE Negro Monocromo 26 001 IC04 189424 A 380: 4 390: 6 400: 12 415: 12 430: 8'
+
+  it('se rechaza, y no queda nada guardado', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const prov = `T${Math.floor(Math.random() * 100000000)}`
+      await guardarReglaEn(tx, prov, 'desglose-talle')
+
+      await expect(
+        vincularDescripcionArticuloEn(tx, id, prov, DESGLOSADA, '106999', false),
+      ).rejects.toThrow(/desglosado por talle/)
+
+      const aprendidas = await articulosPorDescripcionEn(tx, prov)
+      expect(Object.keys(aprendidas)).toHaveLength(0)
+    })
+  })
+
+  it('una descripcion SIN desglose se sigue aprendiendo igual', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const prov = `T${Math.floor(Math.random() * 100000000)}`
+      await guardarReglaEn(tx, prov, 'desglose-talle')
+
+      await vincularDescripcionArticuloEn(tx, id, prov, 'SEGURO Y FLETES', '106999', true)
+      const aprendidas = await articulosPorDescripcionEn(tx, prov)
+      expect(aprendidas[normalizarDescripcionArticulo('SEGURO Y FLETES')]?.codArticu).toBe('106999')
+    })
+  })
+
+  it('sin el antecedente del proveedor no se rechaza de mas', async () => {
+    // Un "Lote : 3" suelto en la descripcion de otro proveedor no puede
+    // bloquear un vinculo legitimo.
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const prov = `T${Math.floor(Math.random() * 100000000)}`
+      await vincularDescripcionArticuloEn(tx, id, prov, DESGLOSADA, '106999', false)
+      const aprendidas = await articulosPorDescripcionEn(tx, prov)
+      expect(Object.keys(aprendidas)).toHaveLength(1)
     })
   })
 })

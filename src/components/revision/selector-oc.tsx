@@ -434,7 +434,15 @@ export function SelectorOc({
             {/* Los controles para resolverlo. Debajo y no en la fila: son
                 de alto variable --un desplegable, un buscador, un tilde--
                 y meterlos en una celda rompia la grilla. */}
-            {puedeVincular && r.descripcion && (
+            {/* Un renglon DESGLOSADO no se vincula a un articulo: son
+                varios. La linea de TOPPER "WAVE ... 380: 4 390: 6 400: 12
+                415: 12 430: 8" son cinco articulos distintos, y el campo
+                de codigo invitaba a mandarlos a uno solo -- paso, y quedo
+                guardada la descripcion entera, WAVE incluido, apuntando a
+                un unico articulo (2026-10-13, reportado por el usuario).
+                Lo que corresponde ahi es imputar la orden, que es lo que
+                reparte el renglon talle por talle. */}
+            {puedeVincular && r.descripcion && r.equivalencias.length === 0 && (
               <div className={styles.faltanteAcciones}>
                 {/* El codigo de Tango se ESCRIBE (2026-10-08, pedido del
                     usuario). Hasta ese dia habia un desplegable con los
@@ -491,6 +499,12 @@ export function SelectorOc({
                 "26459  001 35" (2026-10-05, pedido del usuario). Es solo
                 informacion -- lo que decide que se registra sigue siendo la
                 orden imputada. */}
+            {r.equivalencias.length > 0 && (
+              <p className={styles.faltanteNota}>
+                Son {r.equivalencias.length} artículos, uno por talle: se resuelven imputando la
+                orden de compra, no vinculando el renglón a un artículo.
+              </p>
+            )}
             {r.equivalencias.map((e) => (
               <div key={e.codArticu} className={styles.equivalencia}>
                 <span className={styles.codigo}>{e.codigoFactura}</span>

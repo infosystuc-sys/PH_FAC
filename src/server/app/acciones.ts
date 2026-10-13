@@ -36,6 +36,7 @@ import { equivalenciasPorTalle } from '@/lib/talles'
 import { parsearImporte } from '@/lib/formato'
 import { reglaDeProveedorEn } from './lecturaProveedor'
 import { importarArcaEn, type ResumenImportacion } from './arca'
+import { parsearDesgloseTalles } from '@/lib/talles'
 import { tipoPorContenido, NOMBRES_ADMITIDOS } from '@/lib/tipoArchivo'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import { aprenderArticuloEn, marcarSinOcEn } from './articulosProveedor'
@@ -504,6 +505,26 @@ export async function vincularDescripcionArticuloEn(
   sinOc: boolean,
 ): Promise<number> {
   {
+    // Una descripcion con desglose de talles NO se aprende. Dos motivos, y
+    // los dos se vieron en la misma linea de TOPPER (2026-10-13):
+    //
+    // 1. Son VARIOS articulos. "WAVE ... 380: 4 390: 6 400: 12 415: 12
+    //    430: 8" son cinco, y quedo guardada la descripcion entera --WAVE
+    //    incluido-- apuntando a uno solo.
+    // 2. El desglose lleva las CANTIDADES adentro, que cambian de factura
+    //    en factura, asi que esa clave no volveria a emparejar nunca.
+    //
+    // Se exige el antecedente del proveedor para no rechazar de mas: sin
+    // el, un "Lote : 3" suelto en una descripcion cualquiera bloquearia un
+    // vinculo legitimo.
+    const reglaProv = await reglaDeProveedorEn(tx, codProvee)
+    if (reglaProv?.escala === 'desglose-talle' && parsearDesgloseTalles(desc, 1).length > 0) {
+      throw new Error(
+        'Ese renglón viene desglosado por talle: son varios artículos, no uno. ' +
+          'Se resuelven imputando la orden de compra.',
+      )
+    }
+
     await aprenderArticuloEn(tx, codProvee, desc, art, sinOc)
     await auditarEn(
       tx,
