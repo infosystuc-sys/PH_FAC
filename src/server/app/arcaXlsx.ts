@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs'
+import type ExcelJS from 'exceljs'
 
 /**
  * Convierte una hoja de Excel en filas de celdas de texto, para que el
@@ -56,7 +56,15 @@ export async function filasDesdeXlsx(
   datos: Buffer,
 ): Promise<{ ok: true; filas: string[][] } | { ok: false; error: string }> {
   try {
-    const libro = new ExcelJS.Workbook()
+    // `exceljs` se carga ACÁ y no arriba a propósito: son 23 MB de árbol de
+    // dependencias, y con el import estático entraban en el grafo de la
+    // pantalla de conciliación, que lo único que hace es mostrar el cruce.
+    // La pantalla pasó a tardar minutos en responder --el trabajo contra la
+    // base son 120 ms-- hasta que se midió (2026-10-13). Leer un XLSX es lo
+    // único que lo necesita, y es una acción explícita del operador.
+    const { default: ExcelJSRuntime } = await import('exceljs')
+
+    const libro = new ExcelJSRuntime.Workbook()
     await libro.xlsx.load(datos as unknown as ArrayBuffer)
 
     const hoja = libro.worksheets[0]

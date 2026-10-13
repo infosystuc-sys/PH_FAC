@@ -246,7 +246,14 @@ export async function buscarRemitoPorNumero(
   // "R0502610530766", identico salvo ese primer digito del numero. Se
   // busca con ese digito como comodin y, si hay mas de un match, se
   // prefiere el exacto.
-  const patron = `R${partido.ptovta}_${partido.numero.slice(1)}`
+  //
+  // Y el PRIMER caracter tampoco: la mayoria de los remitos lo tienen en
+  // "R", pero no todos --"00000900075507" existe en la base, sin letra, con
+  // el punto de venta ocupando seis digitos-- y con la "R" fija esos no se
+  // encontraban nunca. Es el mismo hallazgo que en CPA04: estas columnas de
+  // numero no tienen un formato unico (2026-10-13). Va como comodin, que
+  // cubre las dos formas sin suponer cual es.
+  const patron = `_${partido.ptovta}_${partido.numero.slice(1)}`
 
   const pool = await getPool()
   const r = await pool

@@ -202,8 +202,23 @@ describe('buscarRemitoPorNumero', () => {
     const p = await unoPendiente()
     if (!p) return
 
-    // Se le pasa como lo imprimiria un proveedor, con guion y sin la R.
-    const impreso = `${String(p.nComp).slice(1, 6)}-${String(p.nComp).slice(6)}`
+    // Se le pasa como lo imprimiria un proveedor, con guion y sin la letra.
+    //
+    // Se lee DESDE ATRAS y no por posiciones fijas: N_COMP no tiene un
+    // formato unico. Hasta el 2026-10-13 esto hacia slice(1, 6) dando por
+    // sentado que el primer caracter era la "R", y el test empezo a fallar
+    // solo cuando el remito pendiente mas nuevo resulto ser
+    // "00000900075507", sin letra. Es el mismo hallazgo que en CPA04 (ver
+    // partirNComp en lib/conciliacion.ts): los ultimos ocho son el numero
+    // y los digitos de adelante el punto de venta.
+    const crudo = String(p.nComp).trim()
+    const numero = crudo.slice(-8)
+    // Sin los ceros de relleno: el punto de venta son cuatro o cinco
+    // digitos en el papel, y normalizarNumeroRemito rechaza uno de mas de
+    // cinco en vez de recortarlo. En "00000900075507" lo de adelante del
+    // numero son SEIS caracteres, asi que hay que quitarselos.
+    const puntoVenta = String(Number(crudo.slice(0, -8).replace(/\D/g, '') || '0'))
+    const impreso = `${puntoVenta}-${numero}`
     const r = await buscarRemitoPorNumero(String(p.prov), impreso)
 
     expect(r.estado).toBe('encontrado')

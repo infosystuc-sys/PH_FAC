@@ -215,10 +215,15 @@ export async function conciliarEn(e: Ejecutor): Promise<ResultadoConciliacion> {
     }
   }
 
-  const [arca, tango] = await Promise.all([
-    filasArcaEn(e, importacion.id),
-    comprobantesParaConciliar(),
-  ])
+  // Los de Tango se piden DESPUES de tener los de ARCA: el alcance sale de
+  // los numeros que informa el archivo, que es lo que acota el volumen sin
+  // cambiar ningun resultado (ver AlcanceConciliacion).
+  const arca = await filasArcaEn(e, importacion.id)
+  const tango = await comprobantesParaConciliar({
+    numeros: arca.map((a) => a.numero),
+    desde: importacion.desde,
+    hasta: importacion.hasta,
+  })
 
   const filas = conciliar(arca, tango, { desde: importacion.desde, hasta: importacion.hasta })
   return { importacion, filas, resumen: resumir(filas) }
