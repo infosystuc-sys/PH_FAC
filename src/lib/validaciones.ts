@@ -4,6 +4,7 @@ import type { LineaPercepcion, LineaVarios } from './percepciones'
 import { describirCotejo, type ResultadoCotejoOc } from './cotejoOc'
 import { describirDescuento, type ResultadoDescuento } from './descuentoGlobal'
 import { LARGO_LEYENDA_COMPROBANTE } from './campos'
+import { vaContraOc } from './tipoFactura'
 
 export { LARGO_LEYENDA_COMPROBANTE }
 
@@ -102,6 +103,10 @@ export function validarTotales(
   valores: Record<string, string | null | undefined>,
   tipoFactura?: string | null,
 ): ResultadoValidacion {
+  if (tipoFactura === 'remito') {
+    return { estado: 'ok', mensaje: 'No aplica: un remito no tiene importes.' }
+  }
+
   const imputado = totalImputado(valores)
   const fmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -241,16 +246,30 @@ export function validarNetoContraIva(
  * Sin OC imputada también bloquea: toda factura de artículos se imputa a
  * una, así que no tenerla no es un caso válido sino un paso que falta.
  */
+/**
+ * Cómo se nombra el comprobante y qué consume de la orden, para que los
+ * mensajes del cotejo digan lo mismo en una factura y en un remito. El
+ * remito se imputa contra lo pendiente de RECIBIR (ver `CriterioOc`).
+ */
+function palabrasOc(tipoFactura: string | null | undefined) {
+  return tipoFactura === 'remito'
+    ? { comprobante: 'el remito', Comprobante: 'El remito', consume: 'recibe', pendiente: 'recibir' }
+    : { comprobante: 'la factura', Comprobante: 'La factura', consume: 'factura', pendiente: 'facturar' }
+}
+
+const NO_APLICA_OC = 'No aplica: solo las facturas de artículos y los remitos se imputan a una orden de compra.'
+
 export function validarCotejoOc(
   tipoFactura: string | null | undefined,
   tieneOc: boolean,
   cotejo: ResultadoCotejoOc | null,
 ): ResultadoValidacion {
-  if (tipoFactura !== 'articulos') {
-    return { estado: 'ok', mensaje: 'No aplica: solo las facturas de artículos se imputan a una orden de compra.' }
+  if (!vaContraOc(tipoFactura)) {
+    return { estado: 'ok', mensaje: NO_APLICA_OC }
   }
+  const p = palabrasOc(tipoFactura)
   if (!tieneOc) {
-    return { estado: 'error', mensaje: 'Falta imputar la factura a una orden de compra.' }
+    return { estado: 'error', mensaje: `Falta imputar ${p.comprobante} a una orden de compra.` }
   }
   if (!cotejo || cotejo.problemas.length === 0) {
     const sinFacturar = cotejo?.noFacturados.length ?? 0
@@ -258,13 +277,13 @@ export function validarCotejoOc(
       estado: 'ok',
       mensaje:
         sinFacturar > 0
-          ? `La factura coincide con la orden de compra. Quedan ${sinFacturar} renglón(es) sin facturar en la orden.`
-          : 'La factura coincide con la orden de compra.',
+          ? `${p.Comprobante} coincide con la orden de compra. Quedan ${sinFacturar} renglón(es) sin ${p.pendiente} en la orden.`
+          : `${p.Comprobante} coincide con la orden de compra.`,
     }
   }
   return {
     estado: 'error',
-    mensaje: `La factura no coincide con la orden de compra: ${describirCotejo(cotejo)}.`,
+    mensaje: `${p.Comprobante} no coincide con la orden de compra: ${describirCotejo(cotejo)}.`,
   }
 }
 
@@ -299,9 +318,10 @@ export function validarCantidadesOc(
   tipoFactura: string | null | undefined,
   renglones: RenglonContraOc[],
 ): ResultadoValidacion {
-  if (tipoFactura !== 'articulos') {
-    return { estado: 'ok', mensaje: 'No aplica: solo las facturas de artículos se imputan a una orden de compra.' }
+  if (!vaContraOc(tipoFactura)) {
+    return { estado: 'ok', mensaje: NO_APLICA_OC }
   }
+  const p = palabrasOc(tipoFactura)
 
   const fmt = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 })
   const excedidos = renglones.filter(
@@ -314,13 +334,13 @@ export function validarCantidadesOc(
   const detalle = excedidos
     .map(
       (r) =>
-        `${(r.codigo ?? '').trim() || 'un renglón'} factura ${fmt.format(r.cantidad)} y quedan ` +
+        `${(r.codigo ?? '').trim() || 'un renglón'} ${p.consume} ${fmt.format(r.cantidad)} y quedan ` +
         `${fmt.format(r.pendiente!)}`,
     )
     .join('; ')
   return {
     estado: 'error',
-    mensaje: `Hay renglones que facturan más de lo que la orden tiene pendiente: ${detalle}.`,
+    mensaje: `Hay renglones que ${p.consume === 'recibe' ? 'reciben' : 'facturan'} más de lo que la orden tiene pendiente de ${p.pendiente}: ${detalle}.`,
   }
 }
 
@@ -341,6 +361,9 @@ export function validarRenglonesContraNeto(
   tipoFactura: string | null | undefined,
   resultado: ResultadoDescuento | null,
 ): ResultadoValidacion {
+  if (tipoFactura === 'remito') {
+    return { estado: 'ok', mensaje: 'No aplica: un remito no tiene importes.' }
+  }
   if (tipoFactura !== 'articulos') {
     return { estado: 'ok', mensaje: 'No aplica: solo las facturas de artículos tienen renglones.' }
   }

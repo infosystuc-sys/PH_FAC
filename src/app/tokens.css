@@ -1,0 +1,137 @@
+/* Rivai ERP — Tokens globales + reset + utilidades
+   Basado en Dirección A (Clarity) + paleta de marca RivAI. */
+
+:root {
+  /* — superficies / neutros — */
+  --bg:          #F4F6F8;
+  --bg-sunken:   #ECEFF3;
+  --surface:     #FFFFFF;
+  --surface-alt: #FAFBFC;
+  --border:      #D8DEE5;
+  --border-strong: #BAC3CE;
+  --divider:     #E8ECF1;
+
+  /* — texto — */
+  --text:        #1A2331;
+  --text-muted:  #5A6676;
+  --text-subtle: #8994A2;
+  --text-inverse:#FFFFFF;
+
+  /* — marca RivAI: azul→violeta — */
+  --brand-cyan:    #2B7FE8;   /* azul claro (parte izq del cerebro) */
+  --brand-blue:    #1E4FD0;   /* azul medio */
+  --brand-blue-dk: #1E3A82;   /* azul profundo = primario ERP */
+  --brand-violet:  #5B3FB8;   /* violeta desat. = acento secundario */
+  --brand-magenta: #8B3FC9;   /* violeta más claro, solo logo */
+  --brand-dark:    #0E1220;   /* fondo topbar */
+  --brand-dark-2:  #161B2E;   /* gradiente topbar */
+
+  /* — primario de acción (ERP) — */
+  --primary:        var(--brand-blue-dk);
+  --primary-hover:  #172F6B;
+  --primary-active: #11244F;
+  --primary-soft:   #E6ECF6;
+  --primary-soft-2: #D1DBED;
+
+  /* — acento AI (secundario) — */
+  --ai:        var(--brand-violet);
+  --ai-hover:  #4B3399;
+  --ai-soft:   #ECE7F7;
+
+  /* — estados semánticos (sobrios) — */
+  --success:       #1F6E43;
+  --success-soft:  #E4F1E8;
+  --warning:       #8A5A00;
+  --warning-soft:  #FBF0D8;
+  --danger:        #A32020;
+  --danger-soft:   #FBE4E4;
+  --info:          #1E4FD0;
+  --info-soft:     #E3ECFA;
+
+  /* — tipografía — */
+  --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --fs-11: 11px; --fs-12: 12px; --fs-13: 13px;
+  --fs-14: 14px; --fs-16: 16px; --fs-18: 18px;
+  --fs-22: 22px; --fs-28: 28px;
+
+  /* — geometría — */
+  --radius-sm: 2px;
+  --radius:    3px;
+  --radius-lg: 6px;
+  --row-h:     38px;
+  --field-h:   30px;
+  --btn-h:     30px;
+
+  /* — sombras (muy sutiles) — */
+  --shadow-xs: 0 1px 0 rgba(21, 30, 50, 0.04);
+  --shadow-sm: 0 1px 2px rgba(21, 30, 50, 0.06);
+  --shadow-md: 0 4px 12px rgba(21, 30, 50, 0.08);
+  --shadow-lg: 0 8px 28px rgba(21, 30, 50, 0.14);
+
+  /* — z-index — */
+  --z-dropdown: 30;
+  --z-modal: 60;
+  --z-tooltip: 70;
+  --z-toast: 80;
+
+  /* — gradientes de marca (solo logo/topbar) — */
+  --grad-brand: linear-gradient(90deg, #2B7FE8 0%, #1E4FD0 35%, #5B3FB8 70%, #8B3FC9 100%);
+  --grad-brand-soft: linear-gradient(90deg, #1E3A82 0%, #3A3592 45%, #5B3FB8 100%);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-13);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+}
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button { font-family: inherit; }
+
+/* — scrollbars discretas — */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 5px;
+  border: 2px solid var(--bg);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-subtle); }
+
+/* — selección — */
+::selection { background: var(--primary-soft-2); color: var(--text); }
+
+/* — foco visible — */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* — mono para números — */
+.mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* — utilidades rápidas — */
+.caps { text-transform: uppercase; letter-spacing: 0.6px; font-family: var(--font-mono); font-size: 10px; }
+.muted { color: var(--text-muted); }
+.subtle { color: var(--text-subtle); }
+.hr { height: 1px; background: var(--border); border: none; margin: 0; }
+
+/* — logo animado de marca — */
+.brand-grad-text {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}

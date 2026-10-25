@@ -24,6 +24,7 @@ import { resolverDescuentoDeDetalle, netosPorOrden, describirDescuento } from '@
 import { repartirNetoEntreHermanos } from '@/lib/talles'
 import { cierreContable } from './parametros'
 import { actualizarPrecioUltimaCompraEn } from './preciosCompra'
+import { registrarRemitoEn } from './remitosCompra'
 
 export type ComprobanteCpa04 = {
   nComp: string
@@ -197,6 +198,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const detalle = await obtenerDetalleEn(tx, id)
   const valores: Record<string, string | null | undefined> = {}
   for (const c of detalle.campos) valores[c.clave] = c.valorFinal
+
+  // Un remito de proveedor no pasa por Compras: es un movimiento de Stock,
+  // con sus propias tablas. Ver remitosCompra.ts.
+  if (valores.tipoFactura === 'remito') return registrarRemitoEn(tx, id)
 
   const codProvee = (valores.codprovee ?? '').trim()
   const proveedorRow = await tx.request().input('cod', sql.VarChar(6), codProvee).query(`

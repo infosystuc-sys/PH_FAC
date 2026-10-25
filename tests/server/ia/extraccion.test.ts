@@ -151,7 +151,8 @@ describe('parsearRespuesta por tipo de comprobante', () => {
       }
       // Los que si se piden siguen llegando.
       expect(e.campos.cuit).toBeDefined()
-      expect(e.campos.total).toBeDefined()
+      // Un remito no tiene importes: el total no se le pide.
+      if (tipo !== 'remito') expect(e.campos.total).toBeDefined()
     },
   )
 })

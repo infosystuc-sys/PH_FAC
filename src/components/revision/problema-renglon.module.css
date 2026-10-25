@@ -1,0 +1,153 @@
+/* Lo que le pasa a un renglon y como se arregla, debajo de la fila en la
+   tabla de renglones (2026-10-14). Ocupa desde la columna de descripcion
+   hasta el final, asi se lee como parte de ese renglon. */
+.problema {
+  grid-column: 3 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--alerta-borde);
+  background: var(--alerta-hover);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 11.5px;
+}
+
+/* No es un problema: un cargo, o la salida de marcarlo como tal. */
+.problemaInfo {
+  border-left-color: var(--borde);
+  background: var(--fondo-panel);
+}
+
+.problemaTexto {
+  color: var(--texto-2);
+  line-height: 1.4;
+}
+
+.quitar {
+  padding: 1px 7px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radius);
+  background: var(--fondo-app);
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--texto-4);
+  cursor: pointer;
+}
+
+.quitar:hover:not(:disabled) {
+  color: var(--error-texto, var(--texto));
+  border-color: var(--error-borde, var(--borde));
+}
+
+.selectArticulo {
+  max-width: 320px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radius);
+  background: var(--fondo-app);
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--texto);
+}
+
+/* La opcion de marcar un renglon como cargo, debajo del desplegable. */
+.cargoOpcion {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--texto-3);
+  cursor: pointer;
+}
+
+/* Buscar un articulo en TODO el maestro de Tango. El desplegable de al lado
+   solo tiene los de las OC pendientes, y un cargo no esta en ninguna. */
+.buscarArticulo {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--acento);
+  cursor: pointer;
+}
+
+.buscarArticulo:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.buscarArticulo:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* El campo donde el operador escribe el codigo de Tango, al lado de la
+   descripcion de la factura (2026-10-08). En Mono: es un codigo que se
+   coteja contra Tango. */
+.campoCodigo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.inputCodigo {
+  width: 160px;
+  height: 24px;
+  padding: 0 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde-input);
+  border-radius: var(--radius);
+}
+
+.inputCodigo:focus {
+  outline: none;
+  border-color: var(--acento);
+}
+
+.inputCodigo:disabled {
+  background: var(--fondo-panel);
+  color: var(--texto-4);
+}
+
+.vincularBoton {
+  height: 24px;
+  padding: 0 9px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--superficie);
+  background: var(--acento);
+  border: 1px solid var(--acento);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.vincularBoton:hover:not(:disabled) {
+  background: var(--acento-hover);
+  border-color: var(--acento-hover);
+}
+
+.vincularBoton:disabled {
+  background: var(--borde-input);
+  border-color: var(--borde-input);
+  color: var(--texto-4);
+  cursor: default;
+}
+
+/* El codigo tecleado no existe en el maestro. Se dice al lado y no se
+   vincula nada: un codigo mal escrito tiene que fallar, no resolver al
+   articulo mas parecido. */
+.errorCodigo {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--danger);
+}

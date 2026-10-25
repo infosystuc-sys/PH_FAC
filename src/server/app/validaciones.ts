@@ -3,6 +3,7 @@ import { getPool } from '../db/pool'
 import { obtenerDetalleEn, type Detalle } from './detalle'
 import { buscarProveedoresPorCuit, type Proveedor } from '@/server/tango/proveedores'
 import { buscarFacturaEnCpa04 } from '@/server/tango/comprobantes'
+import { buscarRemitoEnSta14 } from '@/server/tango/remitosCompra'
 import {
   letraComprobante,
   nComp as armarNComp,
@@ -39,7 +40,7 @@ import { articulosPorSinonimo } from '@/server/tango/articulos'
 import { lineasPdfResueltasEn } from './ordenCompra'
 import { lineasContraOc, abrirPorTalle } from '@/lib/matchOc'
 import { reglaDeProveedorEn } from './lecturaProveedor'
-import { analizaCampo, tipoFacturaODefault } from '@/lib/tipoFactura'
+import { analizaCampo, tipoFacturaODefault, vaContraOc } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 
 type Ejecutor = { request(): sql.Request }
@@ -114,18 +115,26 @@ export async function validarComprobanteEn(
   let referenciaDuplicado: string | null = null
   let duplicadoNoVerificado: string | null = null
 
+  const esRemito = valores.tipoFactura === 'remito'
+
   if (codProveeParaDuplicado) {
-    const letra = letraComprobante(valores.tipo ?? '')
+    // Un remito no lleva letra: su numero se arma siempre con R y se busca en
+    // Stock (STA14), no en Compras.
+    const letra = esRemito ? 'R' : letraComprobante(valores.tipo ?? '')
     const ptovta = valores.ptovta ?? ''
     const nro = valores.nro ?? ''
 
     if (letra && ptovta && nro) {
       const candidato = armarNComp(letra, ptovta, nro)
 
-      const enTango = await buscarFacturaEnCpa04(codProveeParaDuplicado, candidato)
+      const enTango = esRemito
+        ? await buscarRemitoEnSta14(codProveeParaDuplicado, candidato)
+        : await buscarFacturaEnCpa04(codProveeParaDuplicado, candidato)
       if (enTango) {
         hayDuplicado = true
-        referenciaDuplicado = `factura ${enTango.nComp} ya registrada en Tango`
+        referenciaDuplicado = esRemito
+          ? `remito ${enTango.nComp} ya registrado en Tango`
+          : `factura ${enTango.nComp} ya registrada en Tango`
       } else {
         const enApp = await e
           .request()
@@ -239,7 +248,12 @@ export async function validarListoParaRegistrarEn(
   const aprendidosIva = await cargarAprendidosEn(e, codProvee, 'iva')
   const aprendidosPercep = await cargarAprendidosEn(e, codProvee, 'percepcion')
 
-  const condCompra = validarCondCompra(valores.condcompra)
+  const esRemito = valores.tipoFactura === 'remito'
+  // Un remito no tiene condicion de compra: no genera deuda, la genera la
+  // factura que lo consume.
+  const condCompra: ResultadoValidacion = esRemito
+    ? { estado: 'ok', mensaje: 'No aplica: un remito no tiene condición de compra.' }
+    : validarCondCompra(valores.condcompra)
   const codigosImpuesto = await listarCodigosImpuesto()
   const lineasPercep = resolverPercepciones(
     valores,
@@ -263,7 +277,7 @@ export async function validarListoParaRegistrarEn(
   // CPA15 que en conceptos y tarjeta no tendria a quien servir.
   const conOc = detalle.renglones.filter((r) => r.ocNOrdenCo)
   let cotejoOc: ResultadoCotejoOc | null = null
-  if (valores.tipoFactura === 'articulos' && conOc.length > 0) {
+  if (vaContraOc(valores.tipoFactura) && conOc.length > 0) {
     // Con el codigo aprendido por descripcion ya aplicado: un renglon que el
     // operador vinculo tiene que cotejar igual que uno con codigo impreso.
     // Los cargos del proveedor no se cotejan contra la orden: no van contra
@@ -399,6 +413,22 @@ export async function validarListoParaRegistrarEn(
   // entera conviene verlo antes de registrar y no despues, en Tango.
   const leyenda = validarLeyenda(valores.leyendaAsiento)
 
+  // Un remito sin renglones no tiene nada que entrar a stock, y uno sin
+  // articulo no se puede grabar en STA20. En una factura de articulos lo
+  // mismo lo cubren el cotejo contra la orden y los renglones contra el neto;
+  // el remito no tiene neto, asi que se pide aca.
+  const sinArticulo = detalle.renglones.filter((r) => !(r.codigoFinal ?? r.codigo ?? '').trim())
+  const renglonesRemito: ResultadoValidacion | null = !esRemito
+    ? null
+    : detalle.renglones.length === 0
+      ? { estado: 'error', mensaje: 'El remito no tiene renglones para registrar: imputale la orden de compra.' }
+      : sinArticulo.length > 0
+        ? { estado: 'error', mensaje: `Hay ${sinArticulo.length} renglón(es) sin artículo de Tango.` }
+        : {
+            estado: 'ok',
+            mensaje: `${detalle.renglones.length} renglón(es) entran al depósito 01.`,
+          }
+
   const bloqueante = [
     condCompra,
     percepcionIibb,
@@ -412,6 +442,7 @@ export async function validarListoParaRegistrarEn(
     ordenCompra,
     cantidadesOc,
     renglonesNeto,
+    ...(renglonesRemito ? [renglonesRemito] : []),
   ].some((v) => v.estado === 'error')
 
   return {
@@ -424,9 +455,11 @@ export async function validarListoParaRegistrarEn(
     concepto,
     alicuotas,
     netoIva,
+    // En un remito, el item de renglones ocupa el lugar del de importes: es
+    // lo unico que tiene para cerrar.
     ordenCompra,
     cantidadesOc,
-    renglonesNeto,
+    renglonesNeto: renglonesRemito ?? renglonesNeto,
     preciosOc,
     codigosRepetidos,
     leyenda,

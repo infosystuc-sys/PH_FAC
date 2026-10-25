@@ -14,7 +14,7 @@ import {
 } from './cola'
 import { usuarioActual } from '@/lib/usuario'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
-import { esTipoFactura } from '@/lib/tipoFactura'
+import { esTipoFactura, criterioOcDe, type CriterioOc } from '@/lib/tipoFactura'
 import { campoPorClave } from '@/lib/campos'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
@@ -26,7 +26,7 @@ import {
   describirArticulos,
   type ArticuloTango,
 } from '@/server/tango/articulos'
-import { emparejarOcs, resolverCodigoArticulo, lineasCargo, abrirPorTalle } from '@/lib/matchOc'
+import { emparejarOcs, resolverCodigoArticulo, lineasCargo, lineasContraOc, abrirPorTalle } from '@/lib/matchOc'
 import {
   variantesPendientesDeBase,
   variantesDeEscala,
@@ -54,6 +54,7 @@ import {
   lineasPdfResueltasEn,
   recalcularAVincularEn,
   sincronizarCargosEn,
+  quitarOcDeRenglonEn,
 } from './ordenCompra'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
@@ -720,6 +721,12 @@ export async function listarOcDelProveedor(codProvee: string): Promise<OrdenComp
   return buscarOcPendientes(codProvee)
 }
 
+/** El tipo que vale es el del campo: el operador lo puede cambiar en la revisión. */
+async function criterioOcDelComprobante(comprobanteId: number): Promise<CriterioOc> {
+  const detalle = await obtenerDetalleEn(await getPool(), comprobanteId)
+  return criterioOcDe(detalle.campos.find((c) => c.clave === 'tipoFactura')?.valorFinal ?? null)
+}
+
 export type OcOfrecida = OrdenCompra & {
   /** Los códigos nuestros de esta OC que la factura cobra. Vacío si no se filtró. */
   articulosQueCoinciden: string[]
@@ -803,6 +810,18 @@ export type OfertaOc = {
    * desmarcarlos.
    */
   cargos: { orden: number; descripcion: string | null; codigo: string; cantidad: string | null }[]
+  /**
+   * Todas las órdenes del proveedor con pendiente, sin filtrar: el
+   * desplegable de cada renglón tiene que poder mostrar también la orden que
+   * ya está imputada, que `ocs` deja afuera una vez que cubrió lo suyo.
+   */
+  todas: { nOrdenCo: string; fechaEmision: Date | null; total: number }[]
+  /**
+   * Por renglón del PDF (su ORDEN), las órdenes que tienen pendiente su
+   * artículo. Es lo que ofrece el desplegable de OC de cada renglón
+   * (2026-10-14, pedido del usuario).
+   */
+  candidatasPorRenglon: Record<number, string[]>
 }
 
 /**
@@ -822,7 +841,9 @@ export async function listarOcParaComprobante(
   comprobanteId: number,
   codProvee: string,
 ): Promise<OfertaOc> {
-  const todas = await buscarOcPendientes(codProvee)
+  // Un remito se imputa contra lo pendiente de RECIBIR, no de facturar.
+  const criterio = await criterioOcDelComprobante(comprobanteId)
+  const todas = await buscarOcPendientes(codProvee, criterio)
   const articulosDisponibles = [
     ...new Map(
       todas.flatMap((oc) =>
@@ -909,7 +930,7 @@ export async function listarOcParaComprobante(
   // existe (2026-09-30, reportado por el usuario con DASS).
   const bases = [...reconocidos.values()].filter((a) => a.escala === 'base')
   const variantes = bases.length > 0
-    ? await variantesPendientesDeBase(codProvee, bases.map((a) => a.codArticu))
+    ? await variantesPendientesDeBase(codProvee, bases.map((a) => a.codArticu), criterio)
     : new Map<string, ArticuloDescripto[]>()
 
   // Un renglon sin orden imputada no es necesariamente un problema: si
@@ -936,9 +957,29 @@ export async function listarOcParaComprobante(
       .map((a) => [a.codArticu, a.descripcion] as const),
   )
 
+  // Que ordenes pueden cubrir cada renglon del PDF. Un renglon desglosado
+  // por talle se abrio en varios, todos con el mismo ORDEN: basta que la
+  // orden tenga uno de sus talles para ofrecerla.
+  const candidatasPorRenglon: Record<number, string[]> = {}
+  for (const oc of todas) {
+    const nuestros = new Set(oc.renglones.map((r) => normalizarCodigo(r.codArticu)))
+    for (const linea of lineasContraOc(abiertas)) {
+      if (resolverCodigoArticulo(linea.codigo, nuestros, sinonimos) === null) continue
+      const lista = (candidatasPorRenglon[linea.orden] ??= [])
+      if (!lista.includes(oc.nOrdenCo)) lista.push(oc.nOrdenCo)
+    }
+  }
+
   const sinOrdenAnotado = sinOrden.map((r) => ({
     ...r,
-    hayCandidata: resolverCodigoArticulo(r.codigo, enAlgunaOc, sinonimos) !== null,
+    // Con el renglon ya abierto por talle: el codigo pelado de una linea
+    // desglosada ("052701 001") no esta en ninguna orden, pero sus talles si.
+    // Mirando el codigo pelado, la linea de TOPPER decia que ninguna orden
+    // la tenia mientras el desplegable de al lado ofrecia la que la cubre
+    // entera (2026-10-14).
+    hayCandidata:
+      (candidatasPorRenglon[r.orden]?.length ?? 0) > 0 ||
+      resolverCodigoArticulo(r.codigo, enAlgunaOc, sinonimos) !== null,
     reconocidoComo: reconocidos.get(normalizarCodigo(r.codigo)) ?? null,
     // Las variantes de escala pendientes, cuando el codigo es un base.
     variantesEscala:
@@ -963,6 +1004,12 @@ export async function listarOcParaComprobante(
   }
 
   const base = {
+    todas: todas.map((oc) => ({
+      nOrdenCo: oc.nOrdenCo,
+      fechaEmision: oc.fechaEmision,
+      total: oc.total,
+    })),
+    candidatasPorRenglon,
     sinResolver,
     articulosDisponibles,
     imputadas,
@@ -1011,6 +1058,34 @@ export async function imputarOrdenCompra(
   const r = await conTransaccion((tx) => agregarOcEn(tx, comprobanteId, nOrdenCo, codProvee))
   revalidatePath(`/comprobantes/${comprobanteId}`)
   return { renglones: r.agregados, sinEmparejar: r.sinEmparejar }
+}
+
+/**
+ * Imputa una orden de compra a UN renglón de la factura (2026-10-14,
+ * pedido del usuario): la revisión elige la OC en cada renglón. Reemplaza
+ * la que ese renglón tuviera.
+ */
+export async function imputarOcARenglon(
+  comprobanteId: number,
+  pdfOrden: number,
+  nOrdenCo: string,
+  codProvee: string | null,
+): Promise<{ renglones: number }> {
+  const r = await conTransaccion((tx) =>
+    agregarOcEn(tx, comprobanteId, nOrdenCo, codProvee, pdfOrden),
+  )
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  return { renglones: r.agregados }
+}
+
+/** Le saca a UN renglón de la factura la orden de compra que tenía. */
+export async function quitarOcDeRenglon(
+  comprobanteId: number,
+  pdfOrden: number,
+): Promise<{ renglones: number }> {
+  const renglones = await conTransaccion((tx) => quitarOcDeRenglonEn(tx, comprobanteId, pdfOrden))
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  return { renglones }
 }
 
 /** Saca una orden de compra del comprobante, con los renglones que trajo. */

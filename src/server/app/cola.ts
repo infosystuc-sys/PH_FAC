@@ -2,6 +2,7 @@ import sql from 'mssql'
 import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
 import { extraerDePdf, type Extraccion } from '../ia/extraccion'
+import { buscarRemitoEnSta14, nCompRemito } from '../tango/remitosCompra'
 import { buscarProveedoresPorCuit } from '../tango/proveedores'
 import { buscarConceptoProveedor } from '../tango/conceptos'
 import { sinonimosDelProveedor } from '../tango/articulos'
@@ -20,6 +21,7 @@ import {
   CLAVES_REMITO,
   TIPOS_FACTURA,
   TIPO_FACTURA_DEFAULT,
+  vaContraOc,
   type TipoFactura,
 } from '@/lib/tipoFactura'
 import { planificarPercepcionIva } from '@/lib/percepcionIva'
@@ -711,6 +713,25 @@ export async function marcarExistenteEnTangoEn(
 ): Promise<boolean> {
   if (!codProvee) return false
 
+  // Un remito se busca en Stock (STA14), no en Compras: ver remitosCompra.ts.
+  if (valores.tipoFactura === 'remito') {
+    const ptovtaR = (valores.ptovta ?? '').trim()
+    const nroR = (valores.nro ?? '').trim()
+    if (!ptovtaR || !nroR) return false
+    const remito = await buscarRemitoEnSta14(codProvee, nCompRemito(ptovtaR, nroR))
+    if (!remito) return false
+    await e
+      .request()
+      .input('id', sql.Int, id)
+      .query(`UPDATE PHF_COMPROBANTE SET ESTADO = 'existente', FECHA_MODIF = SYSDATETIME() WHERE ID = @id`)
+    await auditarEn(
+      e,
+      id,
+      `Ya existe en Tango: remito ${remito.nComp} (interno RP ${remito.ncompInS}) — no se puede volver a registrar`,
+    )
+    return true
+  }
+
   const letra = letraComprobante(valores.tipo ?? '')
   const ptovta = (valores.ptovta ?? '').trim()
   const nro = (valores.nro ?? '').trim()
@@ -1101,11 +1122,11 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // descuento general, lo reemplaza por la base real que confirma el IVA.
       await corregirNetoTrasDescuentoEn(tx, id, cod, tipoFactura)
 
-      // Solo articulos: cuantos renglones vienen sin codigo y sin una
-      // descripcion aprendida para este proveedor. Es lo que manda el
+      // Solo articulos y remitos: cuantos renglones vienen sin codigo y sin
+      // una descripcion aprendida para este proveedor. Es lo que manda el
       // comprobante a la pestaña "A vincular". Va despues de resolver el
       // proveedor, porque lo aprendido es por proveedor.
-      if (tipoFactura === 'articulos') {
+      if (vaContraOc(tipoFactura)) {
         await aprenderLecturaEn(tx, id, cod)
         const aVincular = await recalcularAVincularEn(tx, id, cod)
         if (aVincular > 0) {
@@ -1131,7 +1152,8 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // La fecha con la que el comprobante entra a la contabilidad. Depende
       // de la de emision y del cierre de Tango, asi que va despues de
       // guardarExtraccionEn, que es quien escribe `fecha`.
-      await calcularFechaContableEn(tx, id, fechaCanonica ?? fechaLeida)
+      // Un remito no entra a la contabilidad: no tiene fecha contable.
+      if (tipoFactura !== 'remito') await calcularFechaContableEn(tx, id, fechaCanonica ?? fechaLeida)
 
       // Va despues de resolverProveedorEn porque el punto de venta se
       // aprende por proveedor: sin `cod` no hay a quien preguntarle.
@@ -1168,7 +1190,7 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
       // Si ya existe en Tango no hay nada mas que evaluar: ni concepto, ni
       // remitos, ni la segunda pasada de renglones de abajo -- por eso el
       // corte temprano, no solo el cambio de estado.
-      const existe = await marcarExistenteEnTangoEn(tx, id, cod, valores)
+      const existe = await marcarExistenteEnTangoEn(tx, id, cod, { ...valores, tipoFactura })
       if (!existe) await observarSinConceptoEn(tx, id, tipoFactura, cod)
       return { codProvee: cod, yaExisteEnTango: existe }
     })

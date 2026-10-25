@@ -3,19 +3,20 @@
   margin: 0 auto 16px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   padding: 0 15px;
 }
 
 .titulo {
-  font-size: 11.5px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.6px;
   color: var(--texto-4);
   padding: 13px 0 10px;
   border-bottom: 1px solid var(--borde-sutil-3);
   margin: 0;
   font-weight: 600;
+  font-family: var(--font-mono);
 }
 
 .lista {
@@ -42,26 +43,20 @@
   flex: none;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .punto.ok {
-  background: var(--exito-fondo);
   color: var(--exito);
 }
 
 .punto.advertencia {
-  background: var(--alerta-fondo);
   color: var(--alerta);
 }
 
 .punto.error {
-  background: var(--error-fondo);
   color: var(--error);
 }
 

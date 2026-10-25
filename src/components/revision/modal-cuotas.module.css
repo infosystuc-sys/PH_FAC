@@ -1,7 +1,7 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(23, 25, 29, 0.45);
+  background: rgba(14, 18, 32, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -13,7 +13,7 @@
   max-height: 80vh;
   overflow-y: auto;
   background: var(--superficie);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 24px;
   animation: riseIn 0.18s ease-out;
 }
@@ -67,10 +67,11 @@
 .header {
   padding: 8px 0;
   border-bottom: 1px solid var(--borde-sutil-3);
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.6px;
   color: var(--texto-4);
+  font-family: var(--font-mono);
 }
 
 .fila {
@@ -99,7 +100,7 @@
   padding: 8px 10px;
   background: var(--error-fondo);
   border: 1px solid var(--error-borde);
-  border-radius: 6px;
+  border-radius: var(--radius);
   color: var(--error);
   font-size: 12.5px;
 }
@@ -111,12 +112,12 @@
 }
 
 .cerrar {
-  height: 36px;
+  height: var(--field-h);
   padding: 0 15px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   font-size: 13px;
   border: 1px solid var(--borde);
   background: var(--fondo-app);
-  color: #4a4e56;
+  color: var(--text-muted);
   cursor: pointer;
 }

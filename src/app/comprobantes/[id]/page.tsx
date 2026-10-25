@@ -97,7 +97,9 @@ export default async function RevisionPage({
   const codProveeCampo = detalle.campos.find((c) => c.clave === 'codprovee')?.valorFinal ?? null
   const tipoFacturaValor = detalle.campos.find((c) => c.clave === 'tipoFactura')?.valorFinal ?? null
   // 'conceptos' y 'tarjeta' no se atan a un remito -- ver validarTipoFactura.
-  const sinRemito = tipoFacturaValor === 'conceptos' || tipoFacturaValor === 'tarjeta'
+  // Un remito tampoco: es el que entra, no el que se factura.
+  const sinRemito =
+    tipoFacturaValor === 'conceptos' || tipoFacturaValor === 'tarjeta' || tipoFacturaValor === 'remito'
   const remitosPendientes =
     !sinRemito && codProveeCampo && detalle.renglones.length > 0
       ? await buscarRemitosPendientes(codProveeCampo)
@@ -140,6 +142,7 @@ export default async function RevisionPage({
         sinConexion={!conexion.ok}
         bloqueanteRegistro={listoParaRegistrar?.bloqueante ?? false}
         tangoNComp={encabezado.tangoNComp}
+        sinImportes={tipoFacturaValor === 'remito'}
         anteriorHref={anteriorHref}
         siguienteHref={siguienteHref}
       />

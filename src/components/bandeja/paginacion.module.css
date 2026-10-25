@@ -19,7 +19,7 @@
 .boton {
   height: 31px;
   padding: 0 12px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   border: 1px solid var(--borde);
   background: var(--superficie);
   color: var(--texto-2);

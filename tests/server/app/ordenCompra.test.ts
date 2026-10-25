@@ -15,6 +15,7 @@ import { normalizarDescripcionArticulo } from '@/lib/matchOc'
 import {
   agregarOcEn,
   quitarOcEn,
+  quitarOcDeRenglonEn,
   ocsDelComprobanteEn,
   renglonesSinOcEn,
   recalcularAVincularEn,
@@ -110,7 +111,7 @@ describe('agregarOcEn', () => {
       // El precio si sale de la OC, que es el pactado, y lo pendiente se
       // congela para poder mostrarlo despues.
       expect(Number(d.renglones[0].precioUnitario)).toBeCloseTo(uno.precio, 2)
-      expect(Number(d.renglones[0].ocPendiente)).toBeCloseTo(uno.pendienteFacturar, 2)
+      expect(Number(d.renglones[0].ocPendiente)).toBeCloseTo(uno.pendiente, 2)
     })
   })
 
@@ -217,6 +218,92 @@ describe('agregarOcEn', () => {
 
       const d = await obtenerDetalleEn(tx, id)
       expect(d.auditoria.some((a) => a.texto.includes(oc.nOrdenCo.trim()))).toBe(true)
+    })
+  })
+})
+
+describe('agregarOcEn a un solo renglon', () => {
+  it('imputa SOLO ese renglon, aunque la orden tenga el articulo de otros', async () => {
+    // La OC se elige renglon por renglon (2026-10-14): elegirla en uno no
+    // puede arrastrar a los demas, eso lo decide la pregunta "¿va para el
+    // resto?".
+    const p = await unProveedorConOc()
+    const oc = p!.ocs.find((o) => o.renglones.length > 1) ?? p!.ocs[0]
+    const uno = primerRenglon(oc)
+    const otro = oc.renglones[1] ?? uno
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonesPdf(tx, id, [
+        { codigo: uno.codArticu, cantidad: '1' },
+        { codigo: otro.codArticu, cantidad: '1' },
+      ])
+
+      const r = await agregarOcEn(tx, id, oc.nOrdenCo, p!.codProvee, 2)
+      expect(r.agregados).toBe(1)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones).toHaveLength(1)
+      expect(d.renglones[0].pdfOrden).toBe(2)
+      expect(d.renglones[0].ocNOrdenCo).toBe(oc.nOrdenCo)
+    })
+  })
+
+  it('no toca lo que la misma orden ya trajo para otros renglones', async () => {
+    const p = await unProveedorConOc()
+    const oc = p!.ocs.find((o) => o.renglones.length > 1) ?? p!.ocs[0]
+    const uno = primerRenglon(oc)
+    const otro = oc.renglones[1] ?? uno
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonesPdf(tx, id, [
+        { codigo: uno.codArticu, cantidad: '1' },
+        { codigo: otro.codArticu, cantidad: '1' },
+      ])
+      await agregarOcEn(tx, id, oc.nOrdenCo, p!.codProvee)
+      // Volver a elegir la misma orden en un renglon lo rehace a el solo.
+      await agregarOcEn(tx, id, oc.nOrdenCo, p!.codProvee, 1)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones).toHaveLength(2)
+      expect(new Set(d.renglones.map((r) => r.pdfOrden))).toEqual(new Set([1, 2]))
+    })
+  })
+
+  it('falla, sin borrar nada, si la orden no tiene el articulo de ese renglon', async () => {
+    const p = await unProveedorConOc()
+    const oc = p!.ocs[0]
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonesPdf(tx, id, [
+        { codigo: primerRenglon(oc).codArticu, cantidad: '1' },
+        { codigo: 'NO-ESTA-EN-NINGUNA-OC', cantidad: '5' },
+      ])
+      await expect(agregarOcEn(tx, id, oc.nOrdenCo, p!.codProvee, 2)).rejects.toThrow(
+        /no tiene pendiente/,
+      )
+    })
+  })
+
+  it('quitarOcDeRenglonEn saca la orden de ese renglon y deja la del resto', async () => {
+    const p = await unProveedorConOc()
+    const oc = p!.ocs.find((o) => o.renglones.length > 1) ?? p!.ocs[0]
+    const uno = primerRenglon(oc)
+    const otro = oc.renglones[1] ?? uno
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await renglonesPdf(tx, id, [
+        { codigo: uno.codArticu, cantidad: '1' },
+        { codigo: otro.codArticu, cantidad: '1' },
+      ])
+      await agregarOcEn(tx, id, oc.nOrdenCo, p!.codProvee)
+
+      expect(await quitarOcDeRenglonEn(tx, id, 1)).toBe(1)
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.renglones.map((r) => r.pdfOrden)).toEqual([2])
     })
   })
 })

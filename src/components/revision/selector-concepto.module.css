@@ -8,7 +8,7 @@
 .buscador {
   height: 32px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--borde-input);
   font-size: 12.5px;
   outline: none;
@@ -16,7 +16,7 @@
 
 .buscador:focus {
   border-color: var(--acento);
-  box-shadow: 0 0 0 3px rgba(43, 79, 208, 0.12);
+  box-shadow: 0 0 0 3px rgba(30, 58, 130, 0.14);
 }
 
 .candidatos {
@@ -39,7 +39,7 @@
   text-align: left;
   padding: 6px 9px;
   border: 1px solid var(--borde);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--superficie);
   cursor: pointer;
 }

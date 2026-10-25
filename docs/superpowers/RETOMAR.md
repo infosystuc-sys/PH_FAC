@@ -1,5 +1,17 @@
 # Estado del proyecto
 
+## Remitos de proveedor (2026-10-25)
+
+Cuarto tipo de comprobante, **"Remito de proveedor"** (`tipoFactura = 'remito'`), pedido del usuario: la IA lee el remito con el mismo método que las facturas de artículos (cabecera + array `renglonesPdf`, prompt propio en `SEGUN_TIPO.remito`, sin las reglas de IVA ni percepciones) y la app lo registra en Tango como movimiento de Stock. Decisiones del usuario: **mueve stock**, **entra siempre al depósito 01**, y **se imputa a la orden de compra** contra lo pendiente de RECIBIR (`CPA36.CAN_PENDIE`), no de facturar.
+
+- Registro: `src/server/tango/remitosCompra.ts` (`registrarRemitoEn`, llamado desde `registrarComprobanteEn` cuando el tipo es remito). Escribe `STA14`/`STA20` con el patrón de los 4.092 remitos `RP` reales, `STA19` (stock del 01 y `CANT_PEND`), `CPA36`/`CPA35` (recepción y estado Cumplida) y avanza `CPA56.PROXIMO` del talonario tipo R. Rechaza artículos sin stock, con serie, con partidas o base de escala, y más cantidad que lo pendiente de recibir.
+- Revisión: reusa la tabla de renglones de artículos (`RenglonesFactura` con `esRemito`), sin importes; el panel "Listo para registrar" muestra solo los controles que aplican. `buscarOcPendientes`/`buscarOcPorNumero` reciben un `CriterioOc` (`'facturar'`/`'recibir'`).
+- Duplicados: contra `STA14` (`buscarRemitoEnSta14`), tanto al leer (estado `existente`) como en la validación.
+- Pendiente conocido: la factura de artículos que después cobra ese remito se imputa a la OC, no al remito, así que el remito queda en `ESTADO_MOV='P'` con `CANT_PEND` hasta que alguien lo vincule desde Tango. Es el mismo comportamiento que ya tenían los remitos cargados a mano en Tango.
+
+La app volvió a apuntar a `PUNTO_HOGAR_1` en `INFOSYS01\AXSQLSERVER` (pedido del usuario). `CENTRAL` (Tango de versión anterior, sin remitos `RP`) quedó con sus tablas `PHF_` y los 39 comprobantes de prueba; la capa `src/server/tango/` detecta el esquema (`esquema.ts`) para la lectura, pero registrar en `CENTRAL` no está adaptado.
+
+
 ## Para retomar ahora (2026-09-04)
 
 **La app se mudó de servidor (2026-08-31).** Ya no corre contra `INFOSYS01\AXSQLSERVER`: la base productiva es `PUNTO_HOGAR_1` en `SERVIDORT\AXSQLEXPRESS` (SQL Server 2019 Express, Windows 11 Pro), con la app en `C:\APP\PH_FAC`. **Este servidor no tiene unidad `D:`**, que es justo adonde apuntaba `PHF_STORAGE_DIR` en el `.env.local` heredado -- con esa ruta, guardar un PDF fallaba al crear el directorio. `CLAUDE.md` y `.env.local.example` ya dicen `SERVIDORT`. Lo que hubo que hacer para dejarla andando, nada de lo cual se deduce del código: instalar `pnpm` (no estaba instalado, así que `iniciar-app.bat` moría en la primera línea útil), reinstalar `node_modules` desde el lockfile (el que vino copiado no coincidía y `pnpm` abortaba por falta de TTY) y aprobar los build scripts de `esbuild`/`sharp` (queda asentado en `pnpm-workspace.yaml`, ahora trackeado), corregir `PHF_STORAGE_DIR` a `C:\APP\PH_FAC\storage`, y correr `pnpm migrate` -- **la base restaurada no tenía ninguna tabla `PHF_*`**, se crearon las 6 de cero. `pnpm` quedó instalado bajo el perfil del usuario `servidort\administrador` (`npm install -g`, prefijo en su `AppData`): si algún día el `.bat` lo corre otra cuenta de Windows, esa cuenta lo va a necesitar en su propio PATH.
@@ -24,6 +36,12 @@ No hay ninguna rama propia ni worktree pendiente de mergear — todo el trabajo 
 **Fase 2:** completa e integrada. Se mergeó a `master` (fast-forward, sin conflictos) el 2026-08-06; la rama `fase-2-importacion-extraccion-revision` ya no existe (se borró después del merge). Ver la sección "Fase 2" más abajo para el detalle.
 
 ---
+
+## La OC se elige renglón por renglón (2026-10-14)
+
+Pedido del usuario con una captura marcada. La revisión quedó así: las cuatro tarjetas de datos en dos columnas adentro de `Formulario` (Comprobante y Proveedor a la izquierda, Imputación en Tango e Importes a la derecha), y debajo, a todo el ancho, una sola tabla de renglones (`renglones-factura.tsx`) para las facturas de artículos: lo que leyó la IA (código, descripción, cantidad, precio, importe con el descuento general prorrateado), el artículo de Tango con el renglón de la OC y su precio, y en la última columna un desplegable con las OC que tienen pendiente el artículo de ESE renglón. Al elegir la OC del primer renglón pregunta si va para todos: "Sí" imputa la orden entera con `agregarOcEn` de siempre (no pisa renglones que ya tienen otra orden); "Solo a este renglón" usa `agregarOcEn(..., soloPdfOrden)`, que rehace solo ese renglón y falla si la orden no tiene su artículo. Elegir la opción vacía saca la OC del renglón (`quitarOcDeRenglonEn`).
+
+La tarjeta "Orden de compra" (`selector-oc.tsx`) desapareció: lo que resolvía (vincular renglones sin código, enseñar sinónimos, marcar o desmarcar cargos, la equivalencia por talle, el artículo base) pasó a `problema-renglon.tsx`, que se dibuja DEBAJO de cada fila de la tabla, solo cuando ese renglón tiene algo. La columna de Tango dice qué pasa; la fila de abajo, qué hacer, sin repetir el diagnóstico (pedido del usuario: la tarjeta aparte era redundante). Los avisos que valen para toda la factura (sin proveedor, sin órdenes, error al buscarlas) van arriba de la tabla. `listarOcParaComprobante` devuelve además `todas` y `candidatasPorRenglon`. Las facturas que quedaron en el circuito de remito siguen con la tarjeta `Renglones` vieja.
 
 ## Importación automática desde carpetas
 

@@ -1,5 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { tieneColumna } from './esquema'
 import { obtenerDetalleEn, type RenglonGuardado } from '@/server/app/detalle'
 import { resolverAlicuotas } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
@@ -95,6 +96,12 @@ export async function cuentaDelConcepto(codConcepto: string): Promise<CuentaCont
   if (!cod) return null
 
   const pool = await getPool()
+  // Las bases mas viejas no tienen ID_CPA45 en CONCEPTO_CP: ahi el enlace es
+  // por codigo (COD_CPA45). Las dos columnas tienen collations distintas, de
+  // ahi el COLLATE.
+  const unir = (await tieneColumna('CONCEPTO_CP', 'ID_CPA45'))
+    ? 'cc.ID_CPA45 = cp45.ID_CPA45'
+    : 'LTRIM(RTRIM(cc.COD_CPA45)) COLLATE DATABASE_DEFAULT = LTRIM(RTRIM(cp45.COD_CONCEP)) COLLATE DATABASE_DEFAULT'
   const r = await pool
     .request()
     .input('cod', sql.VarChar(3), cod)
@@ -102,7 +109,7 @@ export async function cuentaDelConcepto(codConcepto: string): Promise<CuentaCont
       SELECT c.ID_CUENTA AS idCuenta, c.COD_CUENTA AS codCuenta,
              LTRIM(RTRIM(ISNULL(c.DESC_CUENTA,''))) AS descCuenta
       FROM CPA45 cp45
-      JOIN CONCEPTO_CP cc ON cc.ID_CPA45 = cp45.ID_CPA45
+      JOIN CONCEPTO_CP cc ON ${unir}
       JOIN CUENTA c ON c.ID_CUENTA = cc.ID_CUENTA
       WHERE LTRIM(RTRIM(cp45.COD_CONCEP)) = @cod
     `)

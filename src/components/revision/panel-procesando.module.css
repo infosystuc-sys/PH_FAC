@@ -19,7 +19,7 @@
   width: 40px;
   height: 40px;
   margin: 0 auto 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--ia-fondo);
   color: var(--ia);
   font-size: 18px;

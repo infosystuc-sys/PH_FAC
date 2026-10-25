@@ -1,7 +1,7 @@
 .contenedor {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   overflow-x: auto;
 }
 
@@ -18,14 +18,15 @@
 }
 
 .header {
-  height: 38px;
-  background: var(--fondo-header-tabla);
-  border-bottom: 1px solid var(--borde);
-  font-size: 11px;
+  height: 32px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--texto-4);
-  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-family: var(--font-mono);
 }
 
 .fila {
@@ -61,7 +62,7 @@
 }
 
 .fila:hover {
-  background: var(--fondo-panel);
+  background: var(--primary-soft);
 }
 
 /* El checkbox de seleccion, a diferencia de `.accion`, va siempre visible:
@@ -104,7 +105,7 @@
 .cancelarSeleccion {
   height: 26px;
   padding: 0 12px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -113,7 +114,7 @@
 .eliminarSeleccion {
   border: none;
   background: var(--error);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .eliminarSeleccion:hover {
@@ -132,7 +133,7 @@
 
 .tipo {
   font-size: 13px;
-  color: #4a4e56;
+  color: var(--text-muted);
 }
 
 .mono {
@@ -173,7 +174,7 @@
 
 .chevron {
   font-size: 15px;
-  color: #b0b4bb;
+  color: var(--text-subtle);
   text-align: right;
 }
 

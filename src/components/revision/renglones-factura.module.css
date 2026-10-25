@@ -1,0 +1,369 @@
+/* La tabla de renglones de una factura de artículos, a todo el ancho del
+   panel (2026-10-14). Mismo margen y mismo tope de ancho que las tarjetas
+   de arriba, así los bordes alinean. */
+.tarjeta {
+  /* Sin tope con el PDF incrustado: es la tarjeta con más columnas y usa
+     todo el ancho del panel. Con el PDF oculto se alinea con las de arriba. */
+  max-width: var(--ancho-renglones, none);
+  margin: 0 24px 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radius-lg);
+  padding: 0 18px;
+}
+
+.encabezado {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 0 10px;
+  border-bottom: 1px solid var(--borde-sutil-3);
+}
+
+.titulo {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--texto-4);
+  font-family: var(--font-mono);
+}
+
+.resumen {
+  font-size: 11.5px;
+  color: var(--texto-3);
+}
+
+/* Un aviso que vale para toda la tabla: sin proveedor, sin ordenes, o la
+   busqueda que fallo. */
+.avisoTabla {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--alerta-fondo);
+  font-size: 12px;
+  color: var(--alerta);
+}
+
+.avisoError {
+  background: var(--error-fondo);
+  color: var(--error);
+}
+
+.vacio {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 12.5px;
+  color: var(--texto-3);
+}
+
+/* Nueve columnas: seis de la factura (#, código, descripción, cantidad,
+   precio, importe), dos de Tango (artículo, precio de la OC) y la OC. Las
+   dos descripciones son las únicas que se estiran; los importes llevan
+   ~100px para seis cifras con separadores en Mono. */
+/* Las descripciones tienen un ancho mínimo para que nunca se partan letra
+   por letra: si el panel no da, la tabla se desplaza en horizontal en vez
+   de aplastarlas (2026-10-14, reportado por el usuario con el PDF
+   incrustado). */
+.tabla {
+  overflow-x: auto;
+}
+
+.fila {
+  display: grid;
+  grid-template-columns: 24px 96px minmax(240px, 1.2fr) 52px 104px 112px minmax(220px, 1fr) 76px 118px 172px;
+  column-gap: 10px;
+  align-items: baseline;
+  min-width: 1310px;
+}
+
+/* Sobre qué columnas habla cada grupo. Sin esto, cinco columnas de
+   importes seguidas no se distinguen. */
+.grupos {
+  padding: 10px 0 0;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--texto-4);
+  font-family: var(--font-mono);
+}
+
+.grupoFactura,
+.grupoTango,
+.grupoOc {
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--borde-sutil-2);
+}
+
+.grupoFactura {
+  grid-column: 1 / span 6;
+}
+
+.grupoTango {
+  grid-column: 7 / span 3;
+}
+
+.grupoOc {
+  grid-column: 10;
+  padding-left: 10px;
+}
+
+.header {
+  padding: 6px 0 8px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--texto-4);
+  font-family: var(--font-mono);
+}
+
+.renglon {
+  padding: 8px 0;
+  border-top: 1px solid var(--borde-sutil-2);
+  font-size: 12.5px;
+  align-items: start;
+}
+
+.der {
+  text-align: right;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.codigo {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.descripcion {
+  overflow-wrap: anywhere;
+}
+
+.fuerte {
+  font-weight: 500;
+}
+
+.tenue {
+  color: var(--texto-3);
+}
+
+.descuento {
+  display: block;
+  font-size: 10.5px;
+  color: var(--alerta);
+}
+
+/* El artículo de Tango: código arriba, descripción al lado, y el renglón
+   de la OC en gris. Un renglón desglosado por talle trae varios. */
+/* Artículo, cantidad pendiente y precio de la OC: tres columnas de la tabla
+   que se reparten en subgrid, una fila por artículo de Tango. */
+.tango {
+  grid-column: 7 / span 3;
+  display: grid;
+  grid-template-columns: subgrid;
+  row-gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* Una nota que vale para todos los artículos de la celda. */
+.anchoTango {
+  grid-column: 1 / -1;
+}
+
+.articulo {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  line-height: 18px;
+  min-width: 0;
+}
+
+
+.articuloDesc {
+  color: var(--texto-2);
+  overflow-wrap: anywhere;
+}
+
+.alerta {
+  color: var(--alerta);
+}
+
+/* Reconocido, pero ninguna orden lo tiene con saldo: por eso no hay OC
+   que elegir en la columna de al lado. */
+.alertaNota {
+  font-size: 10.5px;
+  color: var(--alerta);
+}
+
+.difiere {
+  color: var(--alerta);
+  font-weight: 600;
+}
+
+.coincide {
+  color: var(--exito);
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.marca {
+  margin-left: 5px;
+  font-family: var(--sans);
+  font-size: 11px;
+}
+
+/* La columna de la OC: separada con un filete para que se lea como el paso
+   que el operador da en cada renglón, no como un dato más. */
+.celdaOc {
+  align-self: stretch;
+  padding-left: 10px;
+  border-left: 1px solid var(--borde-sutil-3);
+}
+
+.selectOc {
+  width: 100%;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--borde-input);
+  border-radius: var(--radius);
+  background: var(--superficie);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--texto);
+}
+
+.selectOc:focus {
+  border-color: var(--acento);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(30, 58, 130, 0.14);
+}
+
+/* Sin OC todavía: ámbar, que es lo que falta hacer. */
+.selectVacio {
+  border-color: var(--alerta-borde);
+  background: var(--alerta-hover);
+  font-family: var(--sans);
+  color: var(--alerta);
+}
+
+.selectOc:disabled {
+  background: var(--fondo-panel);
+  border-color: var(--borde-input);
+  color: var(--texto-5);
+}
+
+.cargo {
+  display: inline-block;
+  padding: 5px 0;
+  font-size: 11.5px;
+  color: var(--texto-3);
+}
+
+.total {
+  padding: 10px 0;
+  border-top: 1px solid var(--borde-sutil-3);
+  font-size: 12.5px;
+}
+
+.totalEtiqueta {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--texto-4);
+  font-family: var(--font-mono);
+}
+
+.explicacion {
+  margin: 0;
+  padding: 0 0 13px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--texto-3);
+}
+
+.explicacionError {
+  color: var(--error);
+}
+
+/* La pregunta de "¿va para todos los renglones?". Mismo overlay que el
+   resto de los modales de la revisión. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(14, 18, 32, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.caja {
+  width: 460px;
+  background: var(--superficie);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+}
+
+.cajaTitulo {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cajaTexto {
+  margin: 0 0 18px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--texto-3);
+}
+
+.cajaBotones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.primario,
+.secundario {
+  height: var(--field-h);
+  padding: 0 14px;
+  border-radius: var(--radius);
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.primario {
+  border: 1px solid var(--acento);
+  background: var(--acento);
+  color: var(--text-inverse);
+}
+
+.primario:hover {
+  background: var(--acento-hover);
+}
+
+.secundario {
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  color: var(--texto-2);
+}
+
+.secundario:hover {
+  background: var(--fondo-app);
+}
+
+/* El total con su tilde no entra en la columna de importes: se deja que
+   desborde hacia la izquierda, que en esa fila está vacía, antes que
+   partirlo en dos líneas. */
+.total .der {
+  white-space: nowrap;
+}

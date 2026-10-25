@@ -30,6 +30,17 @@ export type ValorInicial = { valor: string; confianza: number | null }
 const MAX_SLOTS_ALICUOTA = 5
 
 /**
+ * Las cuatro tarjetas en dos columnas (2026-10-14, pedido del usuario): a la
+ * izquierda lo que identifica el papel, a la derecha cómo se imputa y con
+ * qué importes. Cada columna es su propia pila, así una tarjeta alta
+ * --Importes crece con cada alícuota-- no estira a la de al lado.
+ */
+const COLUMNAS: GrupoCampo[][] = [
+  ['comprobante', 'proveedor'],
+  ['imputacion', 'importes'],
+]
+
+/**
  * Sobre 15.625 facturas reales: el slot 2 de alícuota se usa en el 19% de
  * los casos, el 3 en el 3,3%, el 4 en el 0,4%, y el 5 nunca. Mostrar los
  * cinco slots siempre seria ruido permanente en la pantalla donde el
@@ -326,7 +337,16 @@ export function Formulario({
             las facturas que vengan.
           </p>
         )}
-        {GRUPOS.map((g) => (
+        <div className={styles.columnas}>
+        {COLUMNAS.map((columna) => (
+          <div key={columna.join('-')} className={styles.pila}>
+        {GRUPOS.filter((g) => columna.includes(g.clave))
+          // Un grupo sin ningun campo visible no se pinta: en un remito el de
+          // Importes queda vacio, y una tarjeta con solo el titulo parece un
+          // error de carga.
+          .filter((g) => camposVisibles(g.clave, slots, valores, ocultarVacios).length > 0)
+          .sort((a, b) => columna.indexOf(a.clave) - columna.indexOf(b.clave))
+          .map((g) => (
           <section key={g.clave} className={styles.tarjeta}>
             <h3 className={styles.tituloGrupo}>{g.titulo}</h3>
             <div className={styles.grilla}>
@@ -448,6 +468,9 @@ export function Formulario({
             </div>
           </section>
         ))}
+          </div>
+        ))}
+        </div>
       </div>
     </div>
   )

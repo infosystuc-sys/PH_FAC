@@ -1,6 +1,7 @@
 import sql from 'mssql'
 import { auditarEn, obtenerDetalleEn } from './detalle'
 import { buscarOcPorNumero } from '@/server/tango/ordenesCompra'
+import { criterioOcDe } from '@/lib/tipoFactura'
 import { articulosPorSinonimo } from '@/server/tango/articulos'
 import {
   emparejarRenglones,
@@ -86,18 +87,30 @@ export async function recalcularAVincularEn(
   return cantidad
 }
 
+/**
+ * `soloPdfOrden` imputa la orden a UN renglón del PDF y no a toda la factura
+ * (2026-10-14, pedido del usuario): la revisión elige la OC renglón por
+ * renglón, y solo al elegirla en el primero pregunta si va para el resto.
+ * En ese modo lo que se rehace es lo de ESE renglón --tuviera la orden que
+ * tuviera--, no lo de la orden, y si la orden no tiene su artículo se corta
+ * con error en vez de dejarlo sin nada: el operador eligió explícitamente.
+ */
 export async function agregarOcEn(
   e: Ejecutor,
   comprobanteId: number,
   nOrdenCo: string,
   codProvee: string | null,
+  soloPdfOrden: number | null = null,
 ): Promise<{ agregados: number; sinEmparejar: number }> {
-  const oc = await buscarOcPorNumero(nOrdenCo)
+  const detalle = await obtenerDetalleEn(e, comprobanteId)
+  // Una factura consume lo pendiente de facturar y un remito lo pendiente de
+  // recibir: son dos saldos distintos de la misma orden.
+  const tipo = detalle.campos.find((c) => c.clave === 'tipoFactura')?.valorFinal ?? null
+  const oc = await buscarOcPorNumero(nOrdenCo, criterioOcDe(tipo))
   if (!oc) {
     throw new Error(`La orden de compra ${nOrdenCo.trim()} no existe o ya no tiene nada pendiente.`)
   }
 
-  const detalle = await obtenerDetalleEn(e, comprobanteId)
   if (detalle.renglonesPdf.length === 0) {
     throw new Error(
       'No se leyeron los renglones de la factura, así que no hay con qué emparejar la orden de ' +
@@ -106,19 +119,40 @@ export async function agregarOcEn(
   }
 
   // Lo ya imputado desde OTRAS ordenes no se toca; lo de esta se rehace.
-  await e
-    .request()
-    .input('id', sql.Int, comprobanteId)
-    .input('oc', sql.VarChar(14), oc.nOrdenCo)
-    .query('DELETE FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id AND OC_N_ORDEN_CO = @oc')
+  // Con un solo renglon, lo que se rehace es lo de ese renglon.
+  if (soloPdfOrden === null) {
+    await e
+      .request()
+      .input('id', sql.Int, comprobanteId)
+      .input('oc', sql.VarChar(14), oc.nOrdenCo)
+      .query('DELETE FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id AND OC_N_ORDEN_CO = @oc')
+  } else {
+    await e
+      .request()
+      .input('id', sql.Int, comprobanteId)
+      .input('pdf', sql.Int, soloPdfOrden)
+      .query(
+        'DELETE FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id AND PDF_ORDEN = @pdf AND OC_N_ORDEN_CO IS NOT NULL',
+      )
+  }
 
   const yaCubiertos = new Set(
     detalle.renglones
-      .filter((r) => r.ocNOrdenCo && r.ocNOrdenCo !== oc.nOrdenCo)
+      .filter(
+        (r) =>
+          r.ocNOrdenCo &&
+          r.ocNOrdenCo !== oc.nOrdenCo &&
+          (soloPdfOrden === null || r.pdfOrden !== soloPdfOrden),
+      )
       .map((r) => normalizarCodigo(r.codigoFinal ?? r.codigo ?? '')),
   )
 
-  const lineas = await lineasPdfResueltasEn(e, detalle, codProvee)
+  const todasLasLineas = await lineasPdfResueltasEn(e, detalle, codProvee)
+  const lineas =
+    soloPdfOrden === null ? todasLasLineas : todasLasLineas.filter((l) => l.orden === soloPdfOrden)
+  if (lineas.length === 0) {
+    throw new Error(`El renglón ${soloPdfOrden} no existe en la factura.`)
+  }
   const sinonimos = codProvee
     ? await articulosPorSinonimo(
         codProvee,
@@ -168,7 +202,7 @@ export async function agregarOcEn(
     // La cantidad que factura el proveedor. Si el PDF no la trajo se cae a
     // lo pendiente de la orden, que es la lectura más probable, y el
     // operador la corrige.
-    const cantidad = parsearImporte(linea.cantidad) || enOc.pendienteFacturar
+    const cantidad = parsearImporte(linea.cantidad) || enOc.pendiente
     orden += 1
     agregados += 1
 
@@ -194,7 +228,7 @@ export async function agregarOcEn(
       .input('oc', sql.VarChar(14), oc.nOrdenCo)
       .input('tal', sql.Int, oc.talonario)
       .input('nr', sql.Int, enOc.nRenglOc)
-      .input('pend', sql.Decimal(19, 4), enOc.pendienteFacturar)
+      .input('pend', sql.Decimal(19, 4), enOc.pendiente)
       // El renglon del PDF del que salio: es lo que despues permite ponerle
       // al lado el subtotal impreso y derivar el precio neto que se graba.
       .input('pdfOrden', sql.Int, linea.orden)
@@ -205,6 +239,25 @@ export async function agregarOcEn(
            OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN)
         VALUES (@id, @orden, @codigo, @desc, @cant, @pu, @imp, @oc, @tal, @nr, @pend, @pdfOrden)
       `)
+  }
+
+  if (soloPdfOrden !== null) {
+    // El operador eligio esta orden para este renglon: si no lo puede
+    // cubrir, se dice por que en vez de dejarlo vacio sin explicacion. El
+    // throw deshace tambien el DELETE de arriba.
+    if (agregados === 0) {
+      throw new Error(
+        sinEmparejar > 0
+          ? `La orden ${oc.nOrdenCo.trim()} no tiene pendiente el artículo del renglón ${soloPdfOrden}.`
+          : `El artículo del renglón ${soloPdfOrden} ya lo trae otra orden imputada.`,
+      )
+    }
+    await auditarEn(
+      e,
+      comprobanteId,
+      `Orden de compra ${oc.nOrdenCo.trim()} imputada al renglón ${soloPdfOrden} de la factura`,
+    )
+    return { agregados, sinEmparejar }
   }
 
   const nota =
@@ -238,6 +291,31 @@ export async function quitarOcEn(
       comprobanteId,
       `Orden de compra ${nOrdenCo.trim()} quitada — ${borrados} renglón(es)`,
     )
+  }
+  return borrados
+}
+
+/**
+ * Saca la orden de compra de UN renglón del PDF, con todo lo que trajo
+ * (un renglón desglosado por talle trae varios). Los cargos no se tocan:
+ * no tienen orden.
+ */
+export async function quitarOcDeRenglonEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  pdfOrden: number,
+): Promise<number> {
+  const r = await e
+    .request()
+    .input('id', sql.Int, comprobanteId)
+    .input('pdf', sql.Int, pdfOrden)
+    .query(
+      'DELETE FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id AND PDF_ORDEN = @pdf AND OC_N_ORDEN_CO IS NOT NULL',
+    )
+
+  const borrados = r.rowsAffected[0] ?? 0
+  if (borrados > 0) {
+    await auditarEn(e, comprobanteId, `Orden de compra quitada del renglón ${pdfOrden} de la factura`)
   }
   return borrados
 }
@@ -288,7 +366,15 @@ export async function renglonesSinOcEn(
   // no figure en ninguna orden. Es justo el caso que el operador veia en
   // rojo con TOPPER.
   const desglosa = (await reglaDeProveedorEn(e, codProvee))?.escala === 'desglose-talle'
-  const abiertas = abrirPorTalle(lineas, [...imputados], desglosa)
+  // Los codigos TAL CUAL, no normalizados: el talle con decimales ("41.5"
+  // contra el "415" impreso) se reconoce por el punto, y normalizar lo
+  // borra. Con los normalizados, la linea de cinco talles de TOPPER quedaba
+  // "sin orden" aunque la orden imputada los cubria todos (2026-10-14).
+  const abiertas = abrirPorTalle(
+    lineas,
+    detalle.renglones.filter((r) => r.ocNOrdenCo).map((r) => (r.codigoFinal ?? r.codigo ?? '').trim()),
+    desglosa,
+  )
 
   // Los cargos del proveedor no van contra ninguna orden: no son un
   // faltante, son otra cosa (ver SIN_OC en migrate.ts).

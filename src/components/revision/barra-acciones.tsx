@@ -90,6 +90,7 @@ export function BarraAcciones({
   sinConexion,
   bloqueanteRegistro,
   tangoNComp,
+  sinImportes = false,
   anteriorHref,
   siguienteHref,
 }: {
@@ -102,6 +103,8 @@ export function BarraAcciones({
   bloqueanteRegistro: boolean
   /** El asiento en Tango, para advertir al eliminar uno ya registrado. */
   tangoNComp: string | null
+  /** Un remito: sin asiento ni cuotas que previsualizar. */
+  sinImportes?: boolean
   anteriorHref: string | null
   siguienteHref: string | null
 }) {
@@ -115,7 +118,8 @@ export function BarraAcciones({
   const puedeObservar = estado === 'leido' || estado === 'observacion'
   const puedeConfirmar = puedeObservar && !bloqueante
   const puedeRegistrar = estado === 'confirmado' && !sinConexion && !bloqueanteRegistro
-  const puedeVerPrevias = estado === 'leido' || estado === 'observacion' || estado === 'confirmado'
+  const puedeVerPrevias =
+    !sinImportes && (estado === 'leido' || estado === 'observacion' || estado === 'confirmado')
 
   function confirmar() {
     if (!puedeConfirmar || pendiente) return

@@ -25,7 +25,7 @@ if not exist ".env.local" (
   echo.
   echo   FALTA EL ARCHIVO .env.local
   echo.
-  echo   Sin el, la app no puede conectarse a la base PUNTO_HOGAR_1.
+  echo   Sin el, la app no puede conectarse a la base de datos.
   echo   Hay que copiar .env.local.example como .env.local y cargar
   echo   ahi las credenciales de SQL Server.
   echo.
@@ -75,7 +75,9 @@ if not errorlevel 1 (
 echo.
 echo   Levantando PH_FAC en %URL%
 echo.
-echo   La primera compilacion tarda entre 20 y 40 segundos. El navegador
+echo   Corre la version compilada (produccion): cada pantalla abre al
+echo   instante. Si no hay compilacion previa, o se pidio recompilar, la
+echo   compilacion tarda uno o dos minutos antes de levantar. El navegador
 echo   se abre solo cuando la app esta lista.
 echo.
 echo   Para cerrarla: Ctrl+C en esta ventana, o cerrar la ventana.
@@ -83,7 +85,28 @@ echo.
 
 start "PH_FAC navegador" /min "%~f0" --abrir-navegador
 
-call pnpm dev -p %PUERTO%
+REM Produccion en vez de `pnpm dev`: el modo desarrollo compila cada pantalla
+REM la primera vez que se entra (unos 5 segundos por pantalla) y otra vez
+REM despues de cada reinicio. Compilado, todas abren sin esa espera.
+REM
+REM Se compila solo si no hay una compilacion previa o si se ejecuta este
+REM archivo con --recompilar. Despues de actualizar el codigo hay que usar
+REM --recompilar: sin eso arranca la version anterior.
+set COMPILAR=0
+if not exist ".next\BUILD_ID" set COMPILAR=1
+if "%~1"=="--recompilar" set COMPILAR=1
+if "%COMPILAR%"=="1" (
+  echo   Compilando...
+  call pnpm build
+  if errorlevel 1 (
+    echo.
+    echo   LA COMPILACION FALLO. Mas arriba esta el detalle.
+    pause
+    exit /b 1
+  )
+)
+
+call pnpm start -p %PUERTO%
 
 REM Solo se llega aca si pnpm termino. Con Ctrl+C es lo esperado; si fue un
 REM error de arranque, la pausa deja leer el mensaje antes de que la

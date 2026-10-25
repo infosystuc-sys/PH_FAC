@@ -67,9 +67,12 @@
    el comprobante original: el operador la acomoda en su monitor y la deja
    abierta mientras revisa. */
 .verPdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 4px 10px;
   border: 1px solid var(--borde);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--fondo-app);
   font-family: var(--sans);
   font-size: 11.5px;
@@ -90,27 +93,10 @@
   align-items: start;
 }
 
-/* El cuerpo en dos columnas por tema: a la izquierda lo que dice el papel,
-   a la derecha lo que se imputa en Tango. auto-fit y no dos columnas fijas
-   para que con el PDF incrustado --donde queda la mitad del ancho-- caiga
-   a una sola sin necesidad de media queries. */
-.columnas {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
-  gap: 0 16px;
-  align-items: start;
-}
-
-/* Cada columna es su propia pila de tarjetas. min-width 0 para que una
-   tabla ancha adentro no estire la columna y desarme la grilla. */
-.columna {
-  min-width: 0;
-}
-
 .alternarPdf {
   padding: 4px 10px;
   border: 1px solid var(--borde);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--superficie);
   font-family: var(--sans);
   font-size: 11.5px;

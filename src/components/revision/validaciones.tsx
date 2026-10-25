@@ -1,8 +1,10 @@
 import type { Validaciones } from '@/server/app/validaciones'
 import { SelectorProveedor } from './selector-proveedor'
 import styles from './validaciones.module.css'
+import { Icono } from '@/components/icono'
 
-const GLIFO = { ok: '✓', advertencia: '!', error: '✕' } as const
+// Los iconos de estado del sistema visual: ok, warn y error (seccion 6).
+const GLIFO = { ok: 'ok', advertencia: 'warn', error: 'error' } as const
 
 function Item({
   estado,
@@ -16,7 +18,9 @@ function Item({
   return (
     <div className={styles.item}>
       <div className={styles.fila}>
-        <span className={`${styles.punto} ${styles[estado]}`}>{GLIFO[estado]}</span>
+        <span className={`${styles.punto} ${styles[estado]}`}>
+          <Icono nombre={GLIFO[estado]} size={15} />
+        </span>
         <span className={styles.mensaje}>{mensaje}</span>
       </div>
       {extra}

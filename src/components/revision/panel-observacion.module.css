@@ -8,7 +8,7 @@
   gap: 12px;
   background: var(--alerta-fondo);
   border: 1px solid var(--alerta-borde);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   padding: 12px 15px;
 }
 
@@ -19,9 +19,9 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--alerta);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 14px;
   font-weight: 700;
 }

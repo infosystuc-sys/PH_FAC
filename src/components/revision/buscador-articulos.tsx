@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { buscarArticulosTango } from '@/server/app/acciones'
 import type { ArticuloTango } from '@/server/tango/articulos'
 import styles from './buscador-articulos.module.css'
+import { Icono } from '@/components/icono'
 
 /**
  * La ventana para buscar un artículo en Tango (2026-10-08, pedido del
@@ -99,7 +100,7 @@ export function BuscadorArticulos({
             </p>
           </div>
           <button type="button" className={styles.cerrar} onClick={onCerrar} aria-label="Cerrar">
-            ✕
+            <Icono nombre="x" size={15} />
           </button>
         </div>
 

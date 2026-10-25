@@ -356,13 +356,14 @@ export function CeldaConcepto({
   bloqueado: boolean
   onCambio: (v: string) => void
 }) {
-  // Los articulos no llevan concepto: es informativo, no un faltante.
-  if (tipoFactura === 'articulos') {
+  // Los articulos y los remitos no llevan concepto: es informativo, no un
+  // faltante.
+  if (tipoFactura === 'articulos' || tipoFactura === 'remito') {
     return (
       <div className={styles.campo} style={{ gridColumn: 'span 3' }}>
         <span className={styles.label}>Concepto en Tango</span>
         <div className={`${styles.derivado} ${clasePorTono('vacio')}`}>
-          No aplica para facturas de artículos
+          {tipoFactura === 'remito' ? 'No aplica para remitos' : 'No aplica para facturas de artículos'}
         </div>
       </div>
     )

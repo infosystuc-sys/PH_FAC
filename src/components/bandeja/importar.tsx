@@ -7,6 +7,7 @@ import { useToast } from '@/components/toast/toast-provider'
 import { TIPOS_FACTURA, TIPO_FACTURA_DEFAULT, type TipoFactura } from '@/lib/tipoFactura'
 import { ACCEPT_ARCHIVOS, NOMBRES_ADMITIDOS, tipoPorMime, tipoPorNombre } from '@/lib/tipoArchivo'
 import styles from './importar.module.css'
+import { Icono } from '@/components/icono'
 
 export function BotonImportar() {
   const [abierto, setAbierto] = useState(false)
@@ -69,7 +70,7 @@ function ModalImportar({ onCerrar }: { onCerrar: () => void }) {
         <div className={styles.encabezado}>
           <h2 className={styles.titulo}>Importar comprobantes</h2>
           <button type="button" className={styles.cerrar} onClick={onCerrar} aria-label="Cerrar">
-            ✕
+            <Icono nombre="x" size={15} />
           </button>
         </div>
 

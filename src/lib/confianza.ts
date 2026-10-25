@@ -3,9 +3,9 @@ export type NivelConfianza = {
   texto: string
 }
 
-const BAJO: NivelConfianza = { fondo: '#fae7e3', texto: '#a03526' }
-const MEDIO: NivelConfianza = { fondo: '#fbf0dc', texto: '#8a5a00' }
-const ALTO: NivelConfianza = { fondo: '#eef0f2', texto: '#6b7078' }
+const BAJO: NivelConfianza = { fondo: 'var(--danger-soft)', texto: 'var(--danger)' }
+const MEDIO: NivelConfianza = { fondo: 'var(--warning-soft)', texto: 'var(--warning)' }
+const ALTO: NivelConfianza = { fondo: 'var(--bg-sunken)', texto: 'var(--text-muted)' }
 
 /**
  * Determina el nivel visual del chip de confianza según el valor (0..1).

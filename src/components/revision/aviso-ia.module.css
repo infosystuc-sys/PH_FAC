@@ -6,7 +6,7 @@
   gap: 12px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   padding: 12px 15px;
 }
 
@@ -17,7 +17,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--ia-fondo);
   color: var(--ia);
   font-size: 13px;
@@ -45,13 +45,13 @@
   padding: 0 12px;
   background: var(--fondo-app);
   border: 1px solid var(--borde);
-  border-radius: 6px;
+  border-radius: var(--radius);
   font-size: 12px;
-  color: #4a4e56;
+  color: var(--text-muted);
 }
 
 .reprocesar:hover:not(:disabled) {
-  background: #e9e7e2;
+  background: var(--bg-sunken);
 }
 
 .reprocesar:disabled {

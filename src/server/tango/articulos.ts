@@ -1,5 +1,7 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { tieneColumna } from './esquema'
+import type { CriterioOc } from '@/lib/tipoFactura'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 
 export type ArticuloTango = {
@@ -140,6 +142,14 @@ export async function asociarArticuloProveedor(
   if (!prov || !art || !sinonimo) return
 
   const pool = await getPool()
+  // Las bases mas viejas no tienen ID_STA11 / ID_CPA01 en CPA15.
+  const conIds = await tieneColumna('CPA15', 'ID_STA11')
+  const columnasIds = conIds ? 'ID_STA11, ID_CPA01, ' : ''
+  const valoresIds = conIds
+    ? `(SELECT ID_STA11 FROM STA11 WHERE COD_ARTICU = @art),
+          (SELECT ID_CPA01 FROM CPA01 WHERE COD_PROVEE = @prov),
+          `
+    : ''
   await pool
     .request()
     .input('prov', sql.VarChar(6), prov)
@@ -153,14 +163,11 @@ export async function asociarArticuloProveedor(
       WHEN MATCHED THEN
         UPDATE SET COD_SINONI = @sin
       WHEN NOT MATCHED THEN
-        INSERT (COD_ARTICU, COD_PROVEE, COD_SINONI, USA_ESC, ID_STA11, ID_CPA01,
-                COD_CPA01_PROVEEDOR)
+        INSERT (COD_ARTICU, COD_PROVEE, COD_SINONI, USA_ESC, ${columnasIds}COD_CPA01_PROVEEDOR)
         VALUES (
           @art, @prov, @sin,
           ISNULL((SELECT LTRIM(RTRIM(ISNULL(USA_ESC,'N'))) FROM STA11 WHERE COD_ARTICU = @art), 'N'),
-          (SELECT ID_STA11 FROM STA11 WHERE COD_ARTICU = @art),
-          (SELECT ID_CPA01 FROM CPA01 WHERE COD_PROVEE = @prov),
-          @prov
+          ${valoresIds}@prov
         );
     `)
 }
@@ -381,6 +388,7 @@ export async function variantesDeEscala(
 export async function variantesPendientesDeBase(
   codProvee: string,
   bases: string[],
+  criterio: CriterioOc = 'facturar',
 ): Promise<Map<string, ArticuloDescripto[]>> {
   const salida = new Map<string, ArticuloDescripto[]>()
   const prov = codProvee.trim()
@@ -406,7 +414,7 @@ export async function variantesPendientesDeBase(
     JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
     JOIN STA11 a ON a.COD_ARTICU = r.COD_ARTICU
     WHERE LTRIM(RTRIM(h.COD_PROVEE)) = @prov
-      AND ISNULL(r.PENDIENTE_FACTURAR, 0) > 0
+      AND ISNULL(${criterio === 'recibir' ? 'r.CAN_PENDIE' : 'r.PENDIENTE_FACTURAR'}, 0) > 0
     ORDER BY b.base, LTRIM(RTRIM(a.COD_ARTICU))
   `)
 

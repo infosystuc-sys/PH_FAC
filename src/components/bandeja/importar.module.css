@@ -1,12 +1,12 @@
 .primario {
   height: 38px;
   padding: 0 17px;
-  background: var(--oscuro);
-  color: #fff;
+  background: var(--primary);
+  color: var(--text-inverse);
   font-size: 13.5px;
   font-weight: 500;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius);
 }
 
 .primario:hover:not(:disabled) {
@@ -21,7 +21,7 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(23, 25, 29, 0.45);
+  background: rgba(14, 18, 32, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -31,7 +31,7 @@
 .caja {
   width: 620px;
   background: var(--superficie);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -71,7 +71,7 @@
   justify-content: center;
   background: var(--fondo-app);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius);
   color: var(--texto-2);
   font-size: 13px;
 }
@@ -83,7 +83,7 @@
      <div> dentro de un <label> es HTML invalido. */
   display: block;
   border: 1.5px dashed var(--borde-dashed);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 34px;
   text-align: center;
   background: var(--fondo-header-tabla);
@@ -98,7 +98,7 @@
 .icono {
   display: block;
   font-size: 26px;
-  color: #b0b4bb;
+  color: var(--text-subtle);
 }
 
 .dzTitulo {
@@ -129,14 +129,14 @@
   align-items: center;
   gap: 10px;
   border: 1px solid var(--borde);
-  border-radius: 7px;
+  border-radius: var(--radius);
   padding: 9px 12px;
 }
 
 .etiqueta {
   font-size: 12px;
   font-weight: 600;
-  color: #b03a2b;
+  color: var(--danger);
 }
 
 .nombre {
@@ -167,11 +167,11 @@
 }
 
 .secundario {
-  height: 36px;
+  height: var(--field-h);
   padding: 0 15px;
   background: var(--fondo-app);
   border: 1px solid var(--borde);
-  border-radius: 7px;
+  border-radius: var(--radius);
   color: var(--texto);
   font-size: 13px;
 }
@@ -186,7 +186,7 @@
 }
 
 .acciones .primario {
-  height: 36px;
+  height: var(--field-h);
 }
 
 /* Selector de tipo de comprobante. Va arriba del dropzone porque decide
@@ -199,11 +199,12 @@
 }
 
 .tiposTitulo {
-  font-size: 11.5px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.6px;
   color: var(--texto-4);
   font-weight: 600;
+  font-family: var(--font-mono);
 }
 
 .tiposAclaracion {
@@ -220,7 +221,7 @@
   text-align: left;
   padding: 10px 13px;
   border: 1px solid var(--borde);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--superficie);
   cursor: pointer;
 }
@@ -270,5 +271,5 @@
 /* El input no se ve, asi que el foco de teclado se dibuja en el label. */
 .inputArchivo:focus-visible + .dropzone {
   border-color: var(--acento);
-  box-shadow: 0 0 0 3px rgba(43, 79, 208, 0.12);
+  box-shadow: 0 0 0 3px rgba(30, 58, 130, 0.14);
 }

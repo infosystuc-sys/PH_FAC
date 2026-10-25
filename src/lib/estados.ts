@@ -7,14 +7,20 @@ export type Estado =
   | 'error'
   | 'existente'
 
+/**
+ * Colores de los EstadoPill del sistema visual Rivai ERP (2026-10-17): fondo
+ * "soft" y texto del tono. Confirmado va en primario --es el paso previo a
+ * registrar--, registrado en exito, y existente (terminal, no lo hizo esta
+ * app) apagado.
+ */
 export const ESTADOS: Record<Estado, { label: string; fondo: string; texto: string }> = {
-  procesando:  { label: 'Procesando IA',          fondo: '#eceaf6', texto: '#4a3fa8' },
-  leido:       { label: 'Pendiente de revisión',  fondo: '#e7eef9', texto: '#2b4fd0' },
-  observacion: { label: 'En observación',         fondo: '#fbf0dc', texto: '#8a5a00' },
-  confirmado:  { label: 'Confirmado',             fondo: '#e3f1ea', texto: '#1c7355' },
-  registrado:  { label: 'Registrado en Tango',    fondo: '#17191d', texto: '#ffffff' },
-  error:       { label: 'Error de lectura',       fondo: '#fae7e3', texto: '#a03526' },
-  existente:   { label: 'Comprobante existente',  fondo: '#e8e6e1', texto: '#5a5347' },
+  procesando:  { label: 'Procesando IA',          fondo: 'var(--ai-soft)',      texto: 'var(--ai)' },
+  leido:       { label: 'Pendiente de revisión',  fondo: 'var(--info-soft)',    texto: 'var(--info)' },
+  observacion: { label: 'En observación',         fondo: 'var(--warning-soft)', texto: 'var(--warning)' },
+  confirmado:  { label: 'Confirmado',             fondo: 'var(--primary-soft)', texto: 'var(--primary)' },
+  registrado:  { label: 'Registrado en Tango',    fondo: 'var(--success-soft)', texto: 'var(--success)' },
+  error:       { label: 'Error de lectura',       fondo: 'var(--danger-soft)',  texto: 'var(--danger)' },
+  existente:   { label: 'Comprobante existente',  fondo: 'var(--bg-sunken)',    texto: 'var(--text-muted)' },
 }
 
 /**

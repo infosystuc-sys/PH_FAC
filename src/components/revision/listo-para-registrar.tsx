@@ -2,8 +2,10 @@ import type { ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import { SelectorConcepto } from './selector-concepto'
 import { AplicarNetoIva } from './aplicar-neto-iva'
 import styles from './listo-para-registrar.module.css'
+import { Icono } from '@/components/icono'
 
-const GLIFO = { ok: '✓', advertencia: '!', error: '✕' } as const
+// Los iconos de estado del sistema visual: ok, warn y error (seccion 6).
+const GLIFO = { ok: 'ok', advertencia: 'warn', error: 'error' } as const
 
 function Item({
   estado,
@@ -17,7 +19,9 @@ function Item({
   return (
     <div className={styles.item}>
       <div className={styles.fila}>
-        <span className={`${styles.punto} ${styles[estado]}`}>{GLIFO[estado]}</span>
+        <span className={`${styles.punto} ${styles[estado]}`}>
+          <Icono nombre={GLIFO[estado]} size={15} />
+        </span>
         <span className={styles.mensaje}>{mensaje}</span>
       </div>
       {extra}
@@ -47,7 +51,20 @@ export function ListoParaRegistrar({
    */
   ocultarOk?: boolean
 }) {
-  const items = [
+  // Un remito no tiene importes, impuestos, condición de compra ni concepto:
+  // de la lista quedan solo los controles que le aplican, en vez de una
+  // decena de "No aplica" que el operador tendría que saltear.
+  const items = tipoFactura === 'remito'
+    ? [
+        resultado.leyenda,
+        resultado.formatoComp,
+        resultado.fecha,
+        resultado.tipoFactura,
+        resultado.ordenCompra,
+        resultado.cantidadesOc,
+        resultado.renglonesNeto,
+      ]
+    : [
     resultado.condCompra,
     resultado.alicuotas,
     // Va pegado a las alícuotas porque es su contracara: aquéllas dicen a
@@ -76,7 +93,7 @@ export function ListoParaRegistrar({
     resultado.renglonesNeto,
     // Y esos precios contra los de la orden. Solo advierte: la factura manda.
     resultado.preciosOc,
-  ]
+      ]
 
   const visibles = ocultarOk ? items.filter((r) => r.estado !== 'ok') : items
   const enOrden = items.length - visibles.length

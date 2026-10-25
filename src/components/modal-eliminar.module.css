@@ -7,7 +7,7 @@
      sale de la fila para ir hacia el. `position: fixed` saca del flujo,
      no de la herencia de visibility. */
   visibility: visible;
-  background: rgba(23, 25, 29, 0.45);
+  background: rgba(14, 18, 32, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -17,7 +17,7 @@
 .caja {
   width: 520px;
   background: var(--superficie);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 24px;
   animation: riseIn 0.18s ease-out;
 }
@@ -43,7 +43,7 @@
    poder confirmar que es el que quiere y no el de al lado. */
 .identidad {
   border: 1px solid var(--borde);
-  border-radius: 7px;
+  border-radius: var(--radius);
   padding: 11px 13px;
   margin-bottom: 14px;
   font-size: 13px;
@@ -63,7 +63,7 @@
 .advertencia {
   border: 1px solid var(--error-borde);
   background: var(--error-fondo);
-  border-radius: 7px;
+  border-radius: var(--radius);
   padding: 11px 13px;
   margin-bottom: 16px;
   font-size: 13px;
@@ -91,9 +91,9 @@
 }
 
 .acciones button {
-  height: 36px;
+  height: var(--field-h);
   padding: 0 15px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   font-size: 13px;
   border: none;
   cursor: pointer;
@@ -102,12 +102,12 @@
 .cancelar {
   background: var(--fondo-app);
   border: 1px solid var(--borde) !important;
-  color: #4a4e56;
+  color: var(--text-muted);
 }
 
 .eliminar {
   background: var(--error);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .eliminar:disabled {

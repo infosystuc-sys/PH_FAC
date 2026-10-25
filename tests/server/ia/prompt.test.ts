@@ -4,6 +4,10 @@ import { TIPOS_FACTURA, CAMPOS_NO_ANALIZADOS } from '@/lib/tipoFactura'
 import { camposIaPara } from '@/lib/campos'
 import { JURISDICCIONES_IIBB } from '@/lib/percepcionIibb'
 
+// Los tipos que se imputan con importes: el remito no tiene impuestos, así
+// que las reglas de IVA y percepciones no van en su prompt.
+const CON_IMPUESTOS = TIPOS_FACTURA.filter((t) => t.clave !== 'remito')
+
 describe('PROMPTS_EXTRACCION', () => {
   it('tiene un prompt por cada tipo de factura del catalogo', () => {
     for (const t of TIPOS_FACTURA) {
@@ -109,7 +113,7 @@ describe('PROMPTS_EXTRACCION', () => {
     // lo que decide que vaya en percepN y no en variosN. El codigo lo
     // resuelve la app despues (ver resolverPercepcionIibb): pedirselo al
     // modelo seria pedirle que memorice un maestro de Tango.
-    for (const t of TIPOS_FACTURA) {
+    for (const t of CON_IMPUESTOS) {
       const p = PROMPTS_EXTRACCION[t.clave]
       for (const j of JURISDICCIONES_IIBB) {
         expect(p, `${t.clave} no explica cuando es ${j.jurisdiccion}`).toContain(j.criterio)
@@ -122,7 +126,7 @@ describe('PROMPTS_EXTRACCION', () => {
     // dice "Retencion Ingresos Brutos" mostraba "Bancarias" en pantalla, una
     // etiqueta que no esta en el comprobante y que el operador no tiene
     // contra que cotejar.
-    for (const t of TIPOS_FACTURA) {
+    for (const t of CON_IMPUESTOS) {
       const p = PROMPTS_EXTRACCION[t.clave]
       expect(p, `${t.clave} no pide el rotulo`).toContain('percepN es el RÓTULO de esa línea')
       // La frase corta en el medio: se busca un tramo que no cruce el salto.
@@ -133,11 +137,19 @@ describe('PROMPTS_EXTRACCION', () => {
   })
 
   it('los tres explican los pares de percepcion y de impuestos varios', () => {
-    for (const t of TIPOS_FACTURA) {
+    for (const t of CON_IMPUESTOS) {
       const p = PROMPTS_EXTRACCION[t.clave]
       expect(p, `${t.clave} no explica percepN/imppercepN`).toContain('percepN/imppercepN')
       expect(p, `${t.clave} no explica variosN/impvariosN`).toContain('variosN/impvariosN')
     }
+  })
+
+  it('el del remito no trae las reglas de impuestos y pide la cantidad entregada', () => {
+    const p = PROMPTS_EXTRACCION.remito
+    expect(p).toContain('REMITO')
+    expect(p).toContain('ENTREGADA')
+    expect(p).not.toContain('percepN/imppercepN')
+    expect(p).not.toContain('porcivaN/impivaN')
   })
 
   it('numera las reglas de corrido, sin saltos ni repetidos', () => {

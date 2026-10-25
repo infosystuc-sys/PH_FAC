@@ -36,7 +36,7 @@ describe('buscarOcPendientes', () => {
       expect(oc.codProvee).toBe(prov)
       expect(oc.renglones.length).toBeGreaterThan(0)
       // El filtro es por renglon: no puede colarse uno ya facturado entero.
-      for (const r of oc.renglones) expect(r.pendienteFacturar).toBeGreaterThan(0)
+      for (const r of oc.renglones) expect(r.pendiente).toBeGreaterThan(0)
     }
   })
 
@@ -53,7 +53,7 @@ describe('buscarOcPendientes', () => {
     const prov = await proveedorConOc()
     for (const oc of await buscarOcPendientes(prov!)) {
       for (const r of oc.renglones) {
-        expect(r.pendienteFacturar).toBeLessThanOrEqual(r.cantidadPedida)
+        expect(r.pendiente).toBeLessThanOrEqual(r.cantidadPedida)
         // Es <= y no ==. Medido el 2026-09-11 sobre los 170 renglones con
         // pendiente: los 170 cumplen esta desigualdad, y 168 cumplen ademas
         // la igualdad. Los dos que no son renglones ya recibidos en parte,
@@ -61,7 +61,7 @@ describe('buscarOcPendientes', () => {
         // tiene 20 pedidas, 16 recibidas, 0 facturadas y 16 pendientes. El
         // test afirmaba la igualdad y fallaba con esos dos -- la igualdad era
         // cierta de los datos de entonces, no de la regla.
-        expect(r.pendienteFacturar).toBeLessThanOrEqual(r.cantidadPedida - r.cantidadFacturada)
+        expect(r.pendiente).toBeLessThanOrEqual(r.cantidadPedida - r.cantidadFacturada)
       }
     }
   })

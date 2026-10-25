@@ -1,3 +1,6 @@
+/* Las fuentes son las del sistema visual Rivai ERP (IBM Plex Sans y Mono,
+   mismos pesos), pero self-hosted con @fontsource y no desde Google Fonts
+   como dice el documento de estilo: la app corre en la red interna. */
 @import '@fontsource/ibm-plex-sans/400.css';
 @import '@fontsource/ibm-plex-sans/500.css';
 @import '@fontsource/ibm-plex-sans/600.css';
@@ -5,83 +8,73 @@
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
 @import '@fontsource/ibm-plex-mono/600.css';
+@import './tokens.css';
 
+/*
+ * Sistema visual Rivai ERP (2026-10-17, pedido del usuario). Los tokens
+ * viven en tokens.css, copiados tal cual del documento de estilo. Las
+ * variables de abajo son los nombres que ya usaban los CSS Modules de la
+ * app: se dejan como alias de los tokens nuevos para que toda la app tome
+ * la paleta sin reescribir cada regla. Codigo nuevo: usar los tokens.
+ */
 :root {
-  --fondo-app: #f2f1ed;
-  --fondo-panel: #f7f6f3;
-  --fondo-pdf: #e6e4df;
-  --superficie: #ffffff;
-  --fondo-header-tabla: #faf9f7;
+  --fondo-app: var(--bg);
+  --fondo-panel: var(--bg);
+  --fondo-pdf: var(--bg-sunken);
+  --superficie: var(--surface);
+  --fondo-header-tabla: var(--bg-sunken);
 
-  --texto: #17191d;
-  --texto-2: #5c6068;
-  --texto-3: #7b7f87;
-  --texto-4: #82868e;
-  --texto-5: #8b8f97;
-  --texto-6: #9a9ea6;
+  --texto: var(--text);
+  --texto-2: var(--text-muted);
+  --texto-3: var(--text-muted);
+  --texto-4: var(--text-subtle);
+  --texto-5: var(--text-subtle);
+  --texto-6: var(--text-subtle);
 
-  --borde: #e3e1dc;
-  --borde-input: #dcdad5;
-  --borde-sutil: #f0efec;
-  --borde-sutil-2: #f4f3f0;
-  --borde-sutil-3: #eeece8;
-  --borde-pdf: #d8d5cf;
-  --borde-dashed: #c9c6c0;
+  --borde: var(--border);
+  --borde-input: var(--border-strong);
+  --borde-sutil: var(--divider);
+  --borde-sutil-2: var(--divider);
+  --borde-sutil-3: var(--divider);
+  --borde-pdf: var(--border);
+  --borde-dashed: var(--border-strong);
 
-  --acento: #2b4fd0;
-  --acento-hover: #1b39a3;
-  --acento-tenue: #e7eef9;
-  --acento-tenue-2: #f4f6fd;
+  --acento: var(--primary);
+  --acento-hover: var(--primary-hover);
+  --acento-tenue: var(--primary-soft);
+  --acento-tenue-2: var(--primary-soft);
 
-  --exito: #1c7355;
-  --exito-fondo: #e3f1ea;
-  --conexion-ok: #3ea37c;
+  --exito: var(--success);
+  --exito-fondo: var(--success-soft);
+  /* El verde de estado (#1F6E43) no se lee sobre la barra oscura: el
+     indicador de conexion usa el verde categorico de la paleta. */
+  --conexion-ok: #1F8A5B;
 
-  --alerta: #8a5a00;
-  --alerta-fondo: #fbf0dc;
-  --alerta-borde: #e0cfa4;
-  --alerta-hover: #fdf6e7;
+  /* Los bordes de los avisos son el color del estado al 13% ("color + 22"
+     en el documento, para strips). */
+  --alerta: var(--warning);
+  --alerta-fondo: var(--warning-soft);
+  --alerta-borde: #8A5A0033;
+  --alerta-hover: var(--warning-soft);
 
-  --error: #a03526;
-  --error-fondo: #fae7e3;
-  --error-borde: #e6b9b0;
-  --error-input-fondo: #fdf6f4;
+  --error: var(--danger);
+  --error-fondo: var(--danger-soft);
+  --error-borde: #A3202033;
+  --error-input-fondo: var(--danger-soft);
 
-  --ia: #4a3fa8;
-  --ia-fondo: #eceaf6;
+  --ia: var(--ai);
+  --ia-fondo: var(--ai-soft);
 
-  --oscuro: #17191d;
-  --oscuro-2: #33363d;
-  --oscuro-3: #3b3e45;
-  --oscuro-texto: #b9bcc2;
+  --oscuro: var(--brand-dark);
+  --oscuro-2: rgba(255, 255, 255, 0.12);
+  --oscuro-3: rgba(255, 255, 255, 0.08);
+  --oscuro-texto: rgba(255, 255, 255, 0.7);
 
-  --sans: 'IBM Plex Sans', system-ui, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, monospace;
-}
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-}
-
-body {
-  background: var(--fondo-app);
-  color: var(--texto);
-  font-family: var(--sans);
-  font-size: 13px;
-  -webkit-font-smoothing: antialiased;
+  --sans: var(--font-sans);
+  --mono: var(--font-mono);
 }
 
 button {
-  font-family: inherit;
   cursor: pointer;
 }
 
@@ -89,4 +82,18 @@ input,
 textarea,
 select {
   font-family: inherit;
+}
+
+/* Los inputs de texto con el foco del sistema: borde primario + halo. */
+input:not([type='checkbox']):not([type='radio']):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(30, 58, 130, 0.14);
+}
+
+/* Embebida en Retail-local (iframe): la barra superior la pone Retail. */
+html[data-embebido='1'] [data-header-global] {
+  display: none;
 }

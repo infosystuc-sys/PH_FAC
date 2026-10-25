@@ -4,6 +4,7 @@ import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { reprocesarComprobante } from '@/server/app/acciones'
 import styles from './aviso-ia.module.css'
+import { Icono } from '@/components/icono'
 
 export function AvisoIA({
   id,
@@ -49,7 +50,9 @@ export function AvisoIA({
 
   return (
     <div className={styles.aviso}>
-      <div className={styles.icono}>✦</div>
+      <div className={styles.icono}>
+        <Icono nombre="sparkles" size={15} />
+      </div>
       <div className={styles.textos}>
         <div className={styles.titulo}>Lectura automática completada</div>
         <div className={styles.detalle}>{detalle}</div>

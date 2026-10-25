@@ -38,7 +38,10 @@ describe('catalogo de campos', () => {
     // igual en los tres.
     const porGrupo = new Map<string, number>()
     for (const c of CAMPOS) {
-      if (!analizaCampo(tipo, c.clave) && c.extraePorIA) continue
+      // Lo que el tipo no analiza no se muestra (ver camposVisibles), salvo
+      // lo que el operador escribe a mano. En el remito eso incluye campos
+      // que no lee la IA, como la fecha contable o la condicion de compra.
+      if (!analizaCampo(tipo, c.clave) && (c.extraePorIA || !c.siempreVisible)) continue
       // La celda del medio (codivaN / codpercepN / codvariosN) la pinta la
       // fila de su porcentaje o rotulo: si esa fila no se muestra en este
       // tipo, la celda tampoco. Hasta el 2026-09-15 esto se contaba igual y
@@ -76,7 +79,10 @@ describe('catalogo de campos', () => {
       for (const excluido of CAMPOS_NO_ANALIZADOS[tipo]) {
         expect(claves, `${tipo} no deberia analizar ${excluido}`).not.toContain(excluido)
       }
-      expect(claves).toHaveLength(43 - CAMPOS_NO_ANALIZADOS[tipo].length)
+      // Solo cuentan los que la IA podria leer: el remito lista ademas campos
+      // que no lee nunca, para esconderlos del formulario.
+      const excluidosIa = CAMPOS_NO_ANALIZADOS[tipo].filter((c) => campoPorClave(c)?.extraePorIA)
+      expect(claves).toHaveLength(43 - excluidosIa.length)
 
       // Todos siguen en el catalogo: la IA no los lee, pero el operador
       // puede tener uno cargado a mano de antes y el formulario tiene que

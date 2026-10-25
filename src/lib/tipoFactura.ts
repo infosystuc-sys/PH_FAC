@@ -1,5 +1,5 @@
 /**
- * Los tres tipos de comprobante que la app sabe importar. El operador lo
+ * Los tipos de comprobante que la app sabe importar. El operador lo
  * elige en el modal de importación, ANTES de que corra la IA, porque cada
  * tipo se lee con un prompt distinto (ver `src/server/ia/prompt.ts`): una
  * factura de servicios y un resumen de tarjeta no se interpretan igual, y
@@ -10,7 +10,7 @@
  * las del selector del formulario de revisión y las claves válidas de
  * `PHF_COMPROBANTE.TIPO_FACTURA`.
  */
-export type TipoFactura = 'conceptos' | 'articulos' | 'tarjeta'
+export type TipoFactura = 'conceptos' | 'articulos' | 'tarjeta' | 'remito'
 
 export type DefTipoFactura = {
   clave: TipoFactura
@@ -38,6 +38,13 @@ export const TIPOS_FACTURA: DefTipoFactura[] = [
     ayuda:
       'Resúmenes de VISA, Mastercard, Naranja, American Express y bancos. ' +
       'Se imputa al concepto de comisiones de tarjeta, sin detalle de cupones.',
+  },
+  {
+    clave: 'remito',
+    label: 'Remito de proveedor',
+    ayuda:
+      'Entrada de mercadería sin importes. Se registra en Stock contra la orden de compra ' +
+      'y suma al depósito 01.',
   },
 ]
 
@@ -145,6 +152,34 @@ const SLOTS_LIBERADOS_TARJETA = [
   'imppercep4',
 ] as const
 
+/**
+ * Todo lo que un remito de proveedor NO tiene: es un movimiento de stock,
+ * sin importes ni impuestos, y no pasa por Compras sino por Stock (STA14/
+ * STA20). De la cabecera se lee solo qué papel es, de quién, cuándo y contra
+ * qué orden de compra; el resto son los renglones.
+ *
+ * Van también los campos que no lee la IA pero que el formulario mostraría
+ * igual (`fechacontable`, `condcompra`, `imputado` y las
+ * correcciones de código de impuesto): `camposVisibles` esconde lo que el
+ * tipo no analiza, y en un remito ninguno de esos tiene a dónde ir.
+ */
+const NO_APLICAN_EN_REMITO = [
+  ...NO_ANALIZADOS_COMUNES,
+  ...REMITOS,
+  ...CONDICION_PAGO,
+  ...DESCUENTO_GENERAL,
+  'neto', 'exento', 'total', 'imputado',
+  'porciva1', 'impiva1', 'porciva2', 'impiva2', 'porciva3', 'impiva3',
+  'porciva4', 'impiva4', 'porciva5', 'impiva5',
+  'percep1', 'imppercep1', 'percep2', 'imppercep2',
+  'percep3', 'imppercep3', 'percep4', 'imppercep4',
+  'varios1', 'impvarios1', 'varios2', 'impvarios2',
+  'codiva1', 'codiva2', 'codiva3', 'codiva4', 'codiva5',
+  'codpercep1', 'codpercep2', 'codpercep3', 'codpercep4',
+  'codvarios1', 'codvarios2',
+  'fechacontable', 'condcompra',
+].filter((c) => c !== 'ordencompra')
+
 export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
   conceptos: [...NO_ANALIZADOS_COMUNES, ...REMITOS, ...CONDICION_PAGO, ...DESCUENTO_GENERAL],
   // Los remitos salieron de articulos el 2026-09-06, cuando las facturas de
@@ -175,6 +210,9 @@ export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
     ...SLOTS_LIBERADOS_TARJETA,
     ...DESCUENTO_GENERAL,
   ],
+  // La orden de compra SÍ se lee en el remito: los proveedores suelen
+  // imprimirla, y es la que se le ofrece primero al operador.
+  remito: NO_APLICAN_EN_REMITO,
 }
 
 /**
@@ -191,6 +229,7 @@ export const ANALIZA_CARGOS: Record<TipoFactura, boolean> = {
   conceptos: false,
   articulos: false,
   tarjeta: true,
+  remito: false,
 }
 
 /**
@@ -206,6 +245,8 @@ export const ANALIZA_RENGLONES_PDF: Record<TipoFactura, boolean> = {
   conceptos: false,
   articulos: true,
   tarjeta: false,
+  // Un remito es SOLO renglones: qué mercadería entró y cuánta.
+  remito: true,
 }
 
 /** Las claves de remito que la IA lee, en orden. */
@@ -232,6 +273,7 @@ export const ANALIZA_RENGLONES: Record<TipoFactura, boolean> = {
   conceptos: false,
   articulos: false,
   tarjeta: false,
+  remito: false,
 }
 
 /** Si la IA analiza `clave` en comprobantes de este tipo. */
@@ -272,6 +314,10 @@ const SPAN_POR_TIPO: Record<TipoFactura, Readonly<Record<string, number>>> = {
   // exento bajan de 3 a 2 para que la fila siga sumando 6.
   articulos: { ...COMPROBANTE_A_MEDIA_FILA, condpago: 6, neto: 2, exento: 2 },
   tarjeta: COMPROBANTE_A_MEDIA_FILA,
+  // Sin fecha contable el grupo "Comprobante" queda en tipo, punto de venta,
+  // número, fecha y orden de compra: dos filas de 6.
+  // En "Imputación" queda solo el tipo, que pasa a ocupar la fila entera.
+  remito: { tipo: 2, ptovta: 2, nro: 2, fecha: 3, ordencompra: 3, tipoFactura: 6 },
 }
 
 /** El ancho de `clave` en la grilla de este tipo, o `span` si no cambia. */
@@ -286,4 +332,22 @@ export function esTipoFactura(v: string | null | undefined): v is TipoFactura {
 /** Cae al default en vez de lanzar: un valor viejo o vacío no puede colgar la cola. */
 export function tipoFacturaODefault(v: string | null | undefined): TipoFactura {
   return esTipoFactura(v) ? v : TIPO_FACTURA_DEFAULT
+}
+
+/**
+ * Contra qué saldo de la orden de compra se imputa cada tipo. Una factura
+ * consume lo pendiente de FACTURAR (`CPA36.PENDIENTE_FACTURAR`); un remito,
+ * lo pendiente de RECIBIR (`CPA36.CAN_PENDIE`). Son dos contadores
+ * independientes: una orden puede estar recibida entera y sin facturar, o al
+ * revés.
+ */
+export type CriterioOc = 'facturar' | 'recibir'
+
+export function criterioOcDe(tipo: string | null | undefined): CriterioOc {
+  return tipo === 'remito' ? 'recibir' : 'facturar'
+}
+
+/** Si el tipo se registra por renglones contra una orden de compra. */
+export function vaContraOc(tipo: string | null | undefined): boolean {
+  return tipo === 'articulos' || tipo === 'remito'
 }

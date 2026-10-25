@@ -11,7 +11,7 @@
   padding: 28px 30px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   text-align: center;
 }
 
@@ -39,14 +39,14 @@
 }
 
 .boton {
-  height: 34px;
+  height: var(--field-h);
   padding: 0 17px;
-  background: var(--oscuro);
-  color: #fff;
+  background: var(--primary);
+  color: var(--text-inverse);
   font-size: 13px;
   font-weight: 500;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 

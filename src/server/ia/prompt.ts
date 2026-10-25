@@ -322,12 +322,46 @@ Prestá atención a tres líneas que aparecen casi solo acá:
   porcivaN/impivaN, con el importe en impivaN y porcivaN vacío, porque no
   trae porcentaje propio. Es distinta del SIRTAC y de las líneas de
   Ingresos Brutos, aunque figuren una al lado de la otra en el mismo pie.`,
+
+  remito: `Este comprobante es un REMITO de un proveedor: el papel que acompaña la
+mercadería cuando llega. No tiene importes ni impuestos -- o si los tiene,
+no se te piden: lo único que se registra es qué entró y cuánto.
+El número de remito va en ptovta y nro como cualquier comprobante: de
+"REMITO R 0001-00025490" sale ptovta "0001" y nro "00025490". En tipo
+copiá cómo se llama el papel tal como está impreso ("Remito R", "Remito").
+Si el remito cita una ORDEN DE COMPRA nuestra ("O.C.", "Orden de compra",
+"Pedido", "N/Pedido", "Su OC"), copiá ese número en ordencompra tal como
+figura. Si no la cita, dejalo vacío: no la deduzcas de otro número.
+Transcribí el detalle en el array "renglonesPdf": una entrada por cada
+artículo que entrega el remito, con estos datos tal como están impresos:
+- "codigo": el CÓDIGO del artículo, y SOLO el código. Es el que imprime el
+  proveedor: a veces es el mismo que usamos nosotros y a veces es el suyo
+  propio; copiá el que figure, sin traducirlo. Si el renglón no trae
+  código, dejalo vacío.
+  Si el renglón tiene una COLUMNA APARTE con el color o la variante
+  ("Color", "Col.", "Cod.Color"), ese valor ES PARTE DEL CÓDIGO y va
+  incluido, separado por un espacio: "1261095 140".
+- "descripcion": la DESCRIPCIÓN del artículo tal como está impresa, entera.
+  Si el renglón trae abajo el desglose por talle ("L : 6  M : 4  S : 2"),
+  copialo al final de la descripción tal como está impreso: cada talle es
+  un artículo distinto para nosotros.
+- "cantidad": la CANTIDAD entregada. Es el dato más importante del remito:
+  leelo con cuidado. Si hay una columna de cantidad pedida y otra de
+  entregada, va la ENTREGADA.
+- "precioUnitario" y "subtotal": solo si el remito los imprime; si no,
+  vacíos. No los calcules.
+No metas en ese array los totales de bultos, kilos, el transporte ni las
+leyendas del pie: solo la mercadería.`,
 }
 
 function armar(tipo: TipoFactura): string {
+  // Un remito no tiene importes: las reglas de IVA, percepciones e impuestos
+  // solo le harían buscar datos que no están y que no se le piden.
+  const impuestos =
+    tipo === 'remito' ? [] : [IVA_Y_PERCEPCIONES, SLOTS_IVA, PERCEPCIONES, IMPUESTOS_VARIOS]
   return [
     'Sos un asistente de cuentas a pagar. Leés comprobantes de compra argentinos',
-    '(facturas A/B/C, notas de crédito y de débito) y extraés sus campos.',
+    '(facturas A/B/C, notas de crédito y de débito, remitos) y extraés sus campos.',
     '',
     'Reglas:',
     '',
@@ -338,10 +372,7 @@ function armar(tipo: TipoFactura): string {
       PUNTO_VENTA,
       quienEsElProveedor(process.env.PHF_CUIT_PROPIO?.trim() || null, tipo),
       SEGUN_TIPO[tipo],
-      IVA_Y_PERCEPCIONES,
-      SLOTS_IVA,
-      PERCEPCIONES,
-      IMPUESTOS_VARIOS,
+      ...impuestos,
       MANUSCRITO,
     ]),
     '',
@@ -365,4 +396,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v15'
+export const VERSION_PROMPT = 'v16'

@@ -59,7 +59,8 @@ export function FormularioCarpetas({ config }: { config: ConfiguracionCarpetas }
         />
         <p className={styles.ayuda}>
           La app crea sola, adentro, las carpetas <code className={styles.code}>conceptos</code>,{' '}
-          <code className={styles.code}>articulos</code> y <code className={styles.code}>tarjeta</code>. Vacía
+          <code className={styles.code}>articulos</code>, <code className={styles.code}>tarjeta</code> y{' '}
+          <code className={styles.code}>remito</code>. Vacía
           desactiva el escaneo automático.
         </p>
       </div>

@@ -1,5 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { tieneColumna } from './esquema'
 
 export type ConceptoProveedor = { codConcepto: string; descripcion: string }
 
@@ -15,13 +16,17 @@ export async function buscarConceptoProveedor(codProvee: string): Promise<Concep
   if (!cod) return null
 
   const pool = await getPool()
+  // Las bases mas viejas no tienen ID_CPA45 en la tabla: ahi se une por codigo.
+  const unir = (await tieneColumna('CPA_CONCEPTOS_PROVEEDOR', 'ID_CPA45'))
+    ? 'c.ID_CPA45 = cp.ID_CPA45'
+    : 'LTRIM(RTRIM(c.COD_CONCEP)) COLLATE DATABASE_DEFAULT = LTRIM(RTRIM(cp.COD_CONCEPT)) COLLATE DATABASE_DEFAULT'
   const r = await pool
     .request()
     .input('cod', sql.VarChar(6), cod)
     .query(`
       SELECT cp.COD_CONCEPT AS codConcepto, LTRIM(RTRIM(ISNULL(c.DESC_CONCE,''))) AS descripcion
       FROM CPA_CONCEPTOS_PROVEEDOR cp
-      LEFT JOIN CPA45 c ON c.ID_CPA45 = cp.ID_CPA45
+      LEFT JOIN CPA45 c ON ${unir}
       WHERE cp.COD_PROVEE = @cod
     `)
 
@@ -81,6 +86,18 @@ export async function asignarConceptoProveedor(
   if (!prov || !concepto) return
 
   const pool = await getPool()
+  // Las bases mas viejas no tienen las claves ID_CPA45 / ID_CPA01: ahi se
+  // graba solo el par de codigos.
+  const conIds = await tieneColumna('CPA_CONCEPTOS_PROVEEDOR', 'ID_CPA45')
+  const actualizarIds = conIds
+    ? `, ID_CPA45 = (SELECT ID_CPA45 FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @concepto)`
+    : ''
+  const columnasIds = conIds ? ', ID_CPA45, ID_CPA01' : ''
+  const valoresIds = conIds
+    ? `,
+          (SELECT ID_CPA45 FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @concepto),
+          (SELECT ID_CPA01 FROM CPA01 WHERE COD_PROVEE = @prov)`
+    : ''
   await pool
     .request()
     .input('prov', sql.VarChar(6), prov)
@@ -90,14 +107,11 @@ export async function asignarConceptoProveedor(
       USING (SELECT @prov AS COD_PROVEE) AS origen
         ON LTRIM(RTRIM(destino.COD_PROVEE)) = origen.COD_PROVEE
       WHEN MATCHED THEN
-        UPDATE SET COD_CONCEPT = @concepto,
-                   ID_CPA45 = (SELECT ID_CPA45 FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @concepto)
+        UPDATE SET COD_CONCEPT = @concepto${actualizarIds}
       WHEN NOT MATCHED THEN
-        INSERT (COD_PROVEE, COD_CONCEPT, ID_CPA45, ID_CPA01)
+        INSERT (COD_PROVEE, COD_CONCEPT${columnasIds})
         VALUES (
-          @prov, @concepto,
-          (SELECT ID_CPA45 FROM CPA45 WHERE LTRIM(RTRIM(COD_CONCEP)) = @concepto),
-          (SELECT ID_CPA01 FROM CPA01 WHERE COD_PROVEE = @prov)
+          @prov, @concepto${valoresIds}
         );
     `)
 }

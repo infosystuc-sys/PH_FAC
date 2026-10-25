@@ -9,8 +9,8 @@ import { PanelValidaciones } from './validaciones'
 import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
 import { RenglonesOc } from './renglones-oc'
+import { RenglonesFactura } from './renglones-factura'
 import { Cargos } from './cargos'
-import { SelectorOc } from './selector-oc'
 import { Historial } from './historial'
 import { VisorImagen } from './visor-imagen'
 import type { RenglonGuardado, RenglonPdfGuardado, CargoGuardado, EntradaAuditoria } from '@/server/app/detalle'
@@ -20,6 +20,8 @@ import type { CodigoImpuesto } from '@/server/tango/impuestos'
 import type { AlicuotaTango } from '@/lib/alicuotas'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './pantalla.module.css'
+import { Icono } from '@/components/icono'
+import { vaContraOc } from '@/lib/tipoFactura'
 
 /**
  * pdf.js toca APIs de navegador (`DOMMatrix`) al evaluarse el módulo. Que
@@ -221,7 +223,8 @@ export function Pantalla({
             {pdfOculto ? 'Incrustar PDF' : 'Quitar el PDF de acá'}
           </button>
           <button type="button" className={styles.verPdf} onClick={abrirPdfAparte}>
-            Ver PDF ↗
+            Ver PDF
+            <Icono nombre="arrowRight" size={12} />
           </button>
         </div>
         <PanelObservacion motivo={motivoObservacion} nota={notaObservacion} />
@@ -253,12 +256,10 @@ export function Pantalla({
           )}
         </div>
 
-        {/* Dos columnas por tema (2026-10-08, decision del usuario): a la
-            izquierda lo que dice el papel --cabecera, proveedor, importes--
-            y a la derecha lo que se va a imputar en Tango. Con el PDF
-            incrustado no hay ancho para dos, y la grilla cae a una sola. */}
-        <div className={styles.columnas}>
-          <div className={styles.columna}>
+        {/* Las cuatro tarjetas de datos van en dos columnas adentro del
+            Formulario: a la izquierda lo que identifica el papel, a la
+            derecha la imputacion y los importes (2026-10-14, pedido del
+            usuario). */}
         <Formulario
           comprobanteId={comprobanteId}
           iniciales={iniciales}
@@ -280,44 +281,42 @@ export function Pantalla({
           // del usuario). Mismo criterio que permitirVincular.
           permitirAprender
         />
-          </div>
-          <div className={styles.columna}>
-        {/* Solo en articulos: es el paso que reemplaza al remito como
-            origen del detalle, y va antes de Renglones porque los define. */}
-        {iniciales.tipoFactura?.valor === 'articulos' && (
-          <SelectorOc
-            comprobanteId={comprobanteId}
-            codProvee={codProvee}
-            soloLectura={soloLectura}
-            // Ensenar una descripcion se permite siempre: es conocimiento
-            // del proveedor y sirve para las facturas que vengan, no un
-            // cambio de este comprobante (2026-10-07, decision del
-            // usuario). Ver puedeVincular en selector-oc.tsx.
-            permitirVincular
-          />
-        )}
-        {/* Va antes de Renglones porque en tarjeta es la tarjeta con el
-            detalle del comprobante, y en tarjeta no hay renglones. */}
+        {/* En tarjeta es la tarjeta con el detalle del comprobante, y en
+            tarjeta no hay renglones. */}
         <Cargos
           comprobanteId={comprobanteId}
           cargos={cargos}
           netoVigente={iniciales.neto?.valor ?? null}
           soloLectura={soloLectura}
         />
-          </div>
-        </div>
-        {/* Con una OC imputada, la tarjeta muestra la factura y la orden lado
-            a lado (decision del usuario, 2026-09-15). La de remito sigue para
-            los comprobantes que quedaron en ese circuito. */}
-        {renglones.some((r) => r.ocNOrdenCo !== null) ? (
+        {/* Factura de articulos: una sola tabla a todo el ancho con lo que
+            leyo la IA, el articulo de Tango y la OC de cada renglon, que se
+            elige ahi mismo (2026-10-14, pedido del usuario). Las facturas
+            que quedaron en el circuito viejo de remito siguen con su
+            tarjeta, y las de otro tipo con renglones de OC ya imputados,
+            con la de factura contra orden. */}
+        {vaContraOc(iniciales.tipoFactura?.valor) &&
+        !renglones.some((r) => r.remitoNcompInS !== null) ? (
+          <RenglonesFactura
+            esRemito={iniciales.tipoFactura?.valor === 'remito'}
+            comprobanteId={comprobanteId}
+            codProvee={codProvee}
+            renglones={renglones}
+            renglonesPdf={renglonesPdf}
+            descuentoGeneral={iniciales.descuentogeneral?.valor ?? null}
+            netoFactura={iniciales.neto?.valor ?? null}
+            // La base que implica el IVA, ya calculada por el servidor con
+            // las mismas lineas que valida el panel: es la evidencia con la
+            // que se decide si los subtotales son netos o brutos.
+            baseSegunImpuestos={listoParaRegistrar?.netoSegunIva ?? null}
+            soloLectura={soloLectura}
+          />
+        ) : renglones.some((r) => r.ocNOrdenCo !== null) ? (
           <RenglonesOc
             renglones={renglones}
             renglonesPdf={renglonesPdf}
             descuentoGeneral={iniciales.descuentogeneral?.valor ?? null}
             netoFactura={iniciales.neto?.valor ?? null}
-            // La base que implica el IVA, ya calculada por el servidor con las
-            // mismas lineas que valida el panel: es la evidencia con la que
-            // se decide si los subtotales son netos o brutos.
             baseSegunImpuestos={listoParaRegistrar?.netoSegunIva ?? null}
           />
         ) : (

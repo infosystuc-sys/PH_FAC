@@ -4,6 +4,7 @@ import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { reprocesarComprobante } from '@/server/app/acciones'
 import styles from './panel-error.module.css'
+import { Icono } from '@/components/icono'
 
 export function PanelError({
   id,
@@ -30,7 +31,9 @@ export function PanelError({
   return (
     <div className={styles.envoltura}>
       <div className={styles.caja}>
-        <div className={styles.icono}>✕</div>
+        <div className={styles.icono}>
+          <Icono nombre="error" size={18} />
+        </div>
         <div className={styles.titulo}>No se pudo leer el comprobante</div>
         <p className={styles.detalle}>{mensaje ?? 'La extracción falló por un motivo desconocido.'}</p>
         <button type="button" className={styles.reprocesar} onClick={reprocesar} disabled={pendiente}>

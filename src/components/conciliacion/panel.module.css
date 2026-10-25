@@ -16,7 +16,7 @@
   padding: 13px 16px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
 }
 
 .subirTitulo {
@@ -45,7 +45,7 @@
   height: 32px;
   padding: 0 14px;
   border: 1px solid var(--borde);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--fondo-app);
   font-family: var(--sans);
   font-size: 12.5px;
@@ -65,21 +65,21 @@
 .error {
   margin: 0;
   padding: 10px 14px;
-  background: #fdf3f1;
-  border: 1px solid #f0d7d1;
-  border-radius: 8px;
+  background: var(--danger-soft);
+  border: 1px solid #A3202033;
+  border-radius: var(--radius-lg);
   font-size: 12px;
-  color: #a03526;
+  color: var(--danger);
 }
 
 .aviso {
   margin: 0;
   padding: 10px 14px;
-  background: #eef5f1;
-  border: 1px solid #d5e6dd;
-  border-radius: 8px;
+  background: var(--success-soft);
+  border: 1px solid #1F6E4333;
+  border-radius: var(--radius-lg);
   font-size: 12px;
-  color: #1c7355;
+  color: var(--success);
 }
 
 /* El recuento por estado, que además filtra la tabla. */
@@ -95,7 +95,7 @@
   gap: 7px;
   padding: 7px 12px;
   border: 1px solid var(--borde);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--superficie);
   font-family: var(--sans);
   font-size: 12px;
@@ -129,7 +129,7 @@
   border-collapse: collapse;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   font-size: 12px;
 }
@@ -140,11 +140,12 @@
   padding: 8px 12px;
   text-align: left;
   font-weight: 500;
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.6px;
   color: var(--texto-4);
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .tabla td {
@@ -169,27 +170,27 @@
 .punto {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .coincide {
-  background: #e3f1ea;
-  color: #1c7355;
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .falta-en-tango {
-  background: #fae7e3;
-  color: #a03526;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .difiere {
-  background: #fbf0dc;
-  color: #8a5a00;
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .falta-en-arca {
-  background: #eceaf6;
-  color: #4a3fa8;
+  background: var(--ai-soft);
+  color: var(--ai);
 }

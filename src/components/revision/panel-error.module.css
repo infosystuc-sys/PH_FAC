@@ -19,7 +19,7 @@
   width: 40px;
   height: 40px;
   margin: 0 auto 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--error-fondo);
   color: var(--error);
   font-size: 16px;
@@ -39,9 +39,9 @@
 }
 
 .reprocesar {
-  height: 36px;
+  height: var(--field-h);
   padding: 0 18px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   border: 1px solid var(--borde);
   background: var(--superficie);
   font-size: 13px;

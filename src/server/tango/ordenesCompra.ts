@@ -1,5 +1,7 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { tieneColumna, tieneTabla } from './esquema'
+import type { CriterioOc } from '@/lib/tipoFactura'
 
 /**
  * Las órdenes de compra de Tango: `CPA35` (encabezados) y `CPA36`
@@ -25,8 +27,12 @@ export type RenglonOc = {
   cantidadPedida: number
   /** Lo que ya se facturó contra este renglón. */
   cantidadFacturada: number
-  /** Lo que queda por facturar: es el tope de lo que puede traer una factura nueva. */
-  pendienteFacturar: number
+  /**
+   * Lo que queda pendiente según contra qué se imputa: por FACTURAR para una
+   * factura, por RECIBIR para un remito (ver `CriterioOc`). Es el tope de lo
+   * que puede traer el comprobante nuevo.
+   */
+  pendiente: number
   precio: number
 }
 
@@ -53,27 +59,44 @@ export type OrdenCompra = {
  * PEDIDO, no contra lo recibido: `CPA36` tiene además
  * `PENDIENTE_FACTURAR_RECIBIDA` para esa otra lectura, que esta app no usa.
  */
-const SELECT = `
+// Las bases mas viejas no tienen ESTADO_ORDEN_COMPRA ni el enlace desde la
+// cabecera: ahi la descripcion del estado queda vacia (el numero sigue en
+// `estado`).
+/**
+ * La columna de CPA36 que mide lo pendiente para cada criterio. Un remito
+ * consume `CAN_PENDIE` (pedido menos recibido y cerrado), que Tango mantiene
+ * aparte de lo pendiente de facturar.
+ */
+const COLUMNA_PENDIENTE: Record<CriterioOc, string> = {
+  facturar: 'r.PENDIENTE_FACTURAR',
+  recibir: 'r.CAN_PENDIE',
+}
+
+const selectOc = async (criterio: CriterioOc) => {
+  const pendiente = COLUMNA_PENDIENTE[criterio]
+  const conEstado = (await tieneTabla('ESTADO_ORDEN_COMPRA')) && (await tieneColumna('CPA35', 'ID_ESTADO_ORDEN_COMPRA'))
+  return `
   SELECT
     h.N_ORDEN_CO                                        AS nOrdenCo,
     h.TALONARIO                                         AS talonario,
     LTRIM(RTRIM(h.COD_PROVEE))                          AS codProvee,
     h.FEC_EMISIO                                        AS fechaEmision,
     h.ESTADO                                            AS estado,
-    LTRIM(RTRIM(ISNULL(e.DESC_ESTADO_ORDEN_COMPRA, ''))) AS descripcionEstado,
+    ${conEstado ? "LTRIM(RTRIM(ISNULL(e.DESC_ESTADO_ORDEN_COMPRA, '')))" : "''"} AS descripcionEstado,
     ISNULL(h.TOTAL_CTE, 0)                              AS total,
     r.N_RENGL_OC                                        AS nRenglOc,
     LTRIM(RTRIM(ISNULL(r.COD_ARTICU, '')))              AS codArticu,
     LTRIM(RTRIM(ISNULL(r.DESCRIPCION_ARTICULO, '')))    AS descripcion,
     ISNULL(r.CAN_PEDIDA, 0)                             AS cantidadPedida,
     ISNULL(r.CANTIDAD_FACTURADA, 0)                     AS cantidadFacturada,
-    ISNULL(r.PENDIENTE_FACTURAR, 0)                     AS pendienteFacturar,
+    ISNULL(${pendiente}, 0)                             AS pendiente,
     ISNULL(r.PRECIO, 0)                                 AS precio
   FROM CPA35 h
   JOIN CPA36 r ON r.N_ORDEN_CO = h.N_ORDEN_CO
-  LEFT JOIN ESTADO_ORDEN_COMPRA e ON e.ID_ESTADO_ORDEN_COMPRA = h.ID_ESTADO_ORDEN_COMPRA
-  WHERE ISNULL(r.PENDIENTE_FACTURAR, 0) > 0
+  ${conEstado ? 'LEFT JOIN ESTADO_ORDEN_COMPRA e ON e.ID_ESTADO_ORDEN_COMPRA = h.ID_ESTADO_ORDEN_COMPRA' : ''}
+  WHERE ISNULL(${pendiente}, 0) > 0
 `
+}
 
 /**
  * Las OC del proveedor que todavía tienen algo por facturar.
@@ -85,7 +108,10 @@ const SELECT = `
  * pendiente. Pero como regla es más honesta: lo que decide si se le puede
  * facturar algo a una OC es que le quede algo, no cómo esté rotulada.
  */
-export async function buscarOcPendientes(codProvee: string): Promise<OrdenCompra[]> {
+export async function buscarOcPendientes(
+  codProvee: string,
+  criterio: CriterioOc = 'facturar',
+): Promise<OrdenCompra[]> {
   const cod = codProvee.trim()
   if (!cod) return []
 
@@ -94,7 +120,7 @@ export async function buscarOcPendientes(codProvee: string): Promise<OrdenCompra
     .request()
     .input('prov', sql.VarChar(6), cod)
     .query<Record<string, unknown>>(`
-      ${SELECT}
+      ${await selectOc(criterio)}
         AND LTRIM(RTRIM(h.COD_PROVEE)) = @prov
       ORDER BY h.FEC_EMISIO DESC, h.N_ORDEN_CO DESC, r.N_RENGL_OC
     `)
@@ -107,7 +133,10 @@ export async function buscarOcPendientes(codProvee: string): Promise<OrdenCompra
  * quedó guardado al elegirla: entre que el operador la eligió y el momento
  * de registrar, otra factura pudo haber consumido parte de lo pendiente.
  */
-export async function buscarOcPorNumero(nOrdenCo: string): Promise<OrdenCompra | null> {
+export async function buscarOcPorNumero(
+  nOrdenCo: string,
+  criterio: CriterioOc = 'facturar',
+): Promise<OrdenCompra | null> {
   const n = nOrdenCo.trim()
   if (!n) return null
 
@@ -116,7 +145,7 @@ export async function buscarOcPorNumero(nOrdenCo: string): Promise<OrdenCompra |
     .request()
     .input('oc', sql.VarChar(14), nOrdenCo)
     .query<Record<string, unknown>>(`
-      ${SELECT}
+      ${await selectOc(criterio)}
         AND h.N_ORDEN_CO = @oc
       ORDER BY r.N_RENGL_OC
     `)
@@ -152,7 +181,7 @@ function agrupar(filas: Record<string, unknown>[]): OrdenCompra[] {
       descripcion: String(f.descripcion),
       cantidadPedida: Number(f.cantidadPedida),
       cantidadFacturada: Number(f.cantidadFacturada),
-      pendienteFacturar: Number(f.pendienteFacturar),
+      pendiente: Number(f.pendiente),
       precio: Number(f.precio),
     })
   }

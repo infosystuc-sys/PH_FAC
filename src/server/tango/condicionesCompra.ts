@@ -1,5 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { tieneTabla } from './esquema'
 
 export type CondicionCompra = {
   codigo: number
@@ -31,7 +32,7 @@ export function normalizarTextoCondicion(texto: string): string {
 // solo necesita la cabecera -- CPA04.COND_COMPR referencia COD_CONDIC -- pero
 // contar los renglones sale gratis y le dice al operador en cuantos pagos
 // cae el comprobante sin tener que leer la descripcion.
-const SELECT = `
+const SELECT_CON_CABECERA = `
   SELECT
     c.COD_CONDIC                          AS codigo,
     LTRIM(RTRIM(ISNULL(c.DESC_CONDI,''))) AS descripcion,
@@ -42,6 +43,27 @@ const SELECT = `
     SELECT COUNT(*) AS cuotas FROM CPA49 q WHERE q.COD_CONDIC = c.COD_CONDIC
   ) r
 `
+
+// Las bases mas viejas no tienen CONDICION_COMPRA: la descripcion y el flag
+// de credito viajan repetidos en cada renglon de CPA49, asi que la cabecera
+// se arma agrupando por codigo.
+const SELECT_SIN_CABECERA = `
+  SELECT
+    c.COD_CONDIC                          AS codigo,
+    LTRIM(RTRIM(ISNULL(c.DESC_CONDI,''))) AS descripcion,
+    c.F_CREDITO                           AS esCredito,
+    c.cuotas                              AS cuotas
+  FROM (
+    SELECT COD_CONDIC, MAX(DESC_CONDI) AS DESC_CONDI,
+           MAX(CAST(F_CREDITO AS int)) AS F_CREDITO, COUNT(*) AS cuotas
+    FROM CPA49
+    GROUP BY COD_CONDIC
+  ) c
+`
+
+async function select(): Promise<string> {
+  return (await tieneTabla('CONDICION_COMPRA')) ? SELECT_CON_CABECERA : SELECT_SIN_CABECERA
+}
 
 function aCondicion(row: Record<string, unknown>): CondicionCompra {
   return {
@@ -54,7 +76,7 @@ function aCondicion(row: Record<string, unknown>): CondicionCompra {
 
 export async function listarCondicionesCompra(): Promise<CondicionCompra[]> {
   const pool = await getPool()
-  const r = await pool.request().query(`${SELECT} ORDER BY c.COD_CONDIC`)
+  const r = await pool.request().query(`${await select()} ORDER BY c.COD_CONDIC`)
   return r.recordset.map(aCondicion)
 }
 
@@ -71,7 +93,7 @@ export async function buscarCondicionCompra(codigo: number): Promise<CondicionCo
   const r = await pool
     .request()
     .input('cod', sql.SmallInt, codigo)
-    .query(`${SELECT} WHERE c.COD_CONDIC = @cod`)
+    .query(`${await select()} WHERE c.COD_CONDIC = @cod`)
 
   return r.recordset.length ? aCondicion(r.recordset[0]) : null
 }
