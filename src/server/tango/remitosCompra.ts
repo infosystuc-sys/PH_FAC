@@ -31,6 +31,9 @@ import type { RegistroTango } from './comprobantes'
  * Y lo que Tango mantiene por fuera del comprobante, que ningún trigger
  * hace solo (los triggers de STA14/STA19 solo replican a otras sucursales):
  *
+ * - El vínculo de cada renglón con su orden en `CPA_OC_REMITO`: una fila
+ *   por renglón de STA20 que va contra una OC (10.355 de 10.364 renglones
+ *   RP con orden la tienen). Pedido del usuario, 2026-10-29.
  * - El saldo del depósito (`STA19.CANT_STOCK`) sube con la cantidad. Entra
  *   siempre al depósito 01 -- decisión del usuario, 2026-10-25.
  * - `STA19.CANT_PEND` es lo pendiente de recibir de las órdenes de compra
@@ -355,6 +358,30 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
           VALUES (@art, @dep, @cant, 0, 0, @idSta11, @idSta22);`)
 
     if (oc) {
+      // 7b. El vinculo renglon de remito <-> renglon de OC en CPA_OC_REMITO
+      // (2026-10-29, pedido del usuario). Una fila por renglon de STA20 que
+      // va contra una orden, con el patron de las 10.355 filas RP reales:
+      // CANTIDAD = la del renglon, CANT_OC = la que va contra la orden (son
+      // iguales salvo que Tango reciba de mas, cosa que esta app no deja),
+      // la clave de la OC igual a la de STA20, y las cantidades de segunda
+      // unidad y de devolucion en 0. ID_CPA_OC_REMITO es identity.
+      await tx.request()
+        .input('cant', sql.Decimal(18, 4), r.cantidad)
+        .input('cantOc', sql.Decimal(18, 4), r.cantidad)
+        .input('oc', sql.VarChar(14), oc.nOrdenCo)
+        .input('nRenglOc', sql.Int, oc.nRenglOc)
+        .input('talonarioOc', sql.SmallInt, oc.talonario)
+        .input('ncompInS', sql.VarChar(8), ncompInS)
+        .input('nRenglS', sql.Int, nRenglS)
+        .query(`
+          INSERT INTO CPA_OC_REMITO (
+            CANTIDAD, CANT_OC, N_ORDEN_CO, N_RENGL_OC, TALONARIO_OC,
+            TCOMP_IN_S, NCOMP_IN_S, N_RENGL_S, CANTIDAD_2, CANT_OC_2, CANT_DEV, CANT_DEV_2
+          ) VALUES (
+            @cant, @cantOc, @oc, @nRenglOc, @talonarioOc,
+            'RP', @ncompInS, @nRenglS, 0, 0, 0, 0
+          )`)
+
       // 8. Los contadores de la orden y lo pendiente de recibir del deposito
       // de la orden.
       const n = contadoresOc(oc, r.cantidad)

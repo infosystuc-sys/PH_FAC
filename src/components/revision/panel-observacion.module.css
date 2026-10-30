@@ -1,8 +1,7 @@
 /* Mismo ancho y margen que AvisoIA, para que los bordes de las tarjetas
    del panel derecho sigan alineados entre si. */
 .banda {
-  max-width: 760px;
-  margin: 20px 24px 0;
+  margin: 0;
   display: flex;
   align-items: flex-start;
   gap: 12px;

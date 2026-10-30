@@ -227,6 +227,7 @@ export function Pantalla({
             <Icono nombre="arrowRight" size={12} />
           </button>
         </div>
+        <div className={styles.contenido}>
         <PanelObservacion motivo={motivoObservacion} nota={notaObservacion} />
         <AvisoIA
           id={comprobanteId}
@@ -330,6 +331,7 @@ export function Pantalla({
           />
         )}
         <Historial entradas={auditoria} />
+        </div>
       </div>
     </div>
   )

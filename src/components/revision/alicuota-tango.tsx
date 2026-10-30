@@ -1,5 +1,6 @@
 'use client'
 
+import type React from 'react'
 import { resolverAlicuotas, type AlicuotaTango } from '@/lib/alicuotas'
 import { JURISDICCIONES_IIBB, resolverIibbPorTipo } from '@/lib/percepcionIibb'
 import { codigosVarios, codigosPercepcion, resolverCodigoVarios } from '@/lib/percepciones'
@@ -344,6 +345,7 @@ export function CeldaConcepto({
   tipoFactura,
   bloqueado,
   onCambio,
+  estilo = { gridColumn: 'span 3' },
 }: {
   /** El resuelto por el servidor: el elegido si lo hay, si no el de la ficha. */
   concepto: { codConcepto: string; descripcion: string } | null
@@ -355,12 +357,14 @@ export function CeldaConcepto({
   tipoFactura: string
   bloqueado: boolean
   onCambio: (v: string) => void
+  /** Ver `estilo` en Campo: la tarjeta compacta lo mide distinto. */
+  estilo?: React.CSSProperties
 }) {
   // Los articulos y los remitos no llevan concepto: es informativo, no un
   // faltante.
   if (tipoFactura === 'articulos' || tipoFactura === 'remito') {
     return (
-      <div className={styles.campo} style={{ gridColumn: 'span 3' }}>
+      <div className={styles.campo} style={estilo}>
         <span className={styles.label}>Concepto en Tango</span>
         <div className={`${styles.derivado} ${clasePorTono('vacio')}`}>
           {tipoFactura === 'remito' ? 'No aplica para remitos' : 'No aplica para facturas de artículos'}
@@ -390,7 +394,7 @@ export function CeldaConcepto({
       label: etiqueta(c.codConcepto, c.descripcion),
     }))
     return (
-      <div className={styles.campo} style={{ gridColumn: 'span 3' }}>
+      <div className={styles.campo} style={estilo}>
         <span className={styles.label}>
           Concepto en Tango
           {elegido && (
@@ -435,7 +439,7 @@ export function CeldaConcepto({
   const tono: Tono = concepto ? 'ok' : hayProveedor ? 'error' : 'vacio'
 
   return (
-    <div className={styles.campo} style={{ gridColumn: 'span 3' }}>
+    <div className={styles.campo} style={estilo}>
       <span className={styles.label}>Concepto en Tango</span>
       <div className={`${styles.derivado} ${clasePorTono(tono)}`} title={texto}>
         {texto}

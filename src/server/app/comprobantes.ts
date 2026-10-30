@@ -2,6 +2,7 @@ import sql from 'mssql'
 import { tipoPorNombre, esImagen } from '@/lib/tipoArchivo'
 import { getPool } from '../db/pool'
 import type { Estado, ClaveTab } from '@/lib/estados'
+import type { TipoFactura } from '@/lib/tipoFactura'
 import { usuarioActual } from '@/lib/usuario'
 
 export type FilaBandeja = {
@@ -29,9 +30,14 @@ export type Kpis = {
 
 export type Conteos = Record<ClaveTab, number>
 
+/** Cuántos comprobantes hay de cada tipo de lectura, más el total. */
+export type ConteosTipo = Record<TipoFactura | 'todos', number>
+
 export type OpcionesListado = {
   filtro: ClaveTab
   query: string
+  /** Solo los de este tipo de lectura. `null` o ausente = todos. */
+  tipo?: TipoFactura | null
   limite?: number
   offset?: number
 }
@@ -55,10 +61,21 @@ const WHERE_BUSQUEDA = `
    OR (@idBuscado IS NOT NULL AND ID = @idBuscado))
 `
 
-function pedido(e: Ejecutor, filtro: ClaveTab, query: string): sql.Request {
+// El tipo de lectura que eligio el operador al importar --o al reclasificar
+// en la revision-- (2026-10-27, pedido del usuario). Se lee de la columna y
+// no del campo: es la que mantiene al dia guardarCampo y la que usa la cola.
+const WHERE_TIPO = `(@tipoFactura IS NULL OR TIPO_FACTURA = @tipoFactura)`
+
+function pedido(
+  e: Ejecutor,
+  filtro: ClaveTab,
+  query: string,
+  tipo: TipoFactura | null = null,
+): sql.Request {
   const q = query.trim()
   return e
     .request()
+    .input('tipoFactura', sql.VarChar(20), tipo)
     .input('q', sql.NVarChar(200), q)
     .input('like', sql.NVarChar(210), `%${q}%`)
     .input('likeCuit', sql.NVarChar(210), `%${q.replace(/[-\s.]/g, '')}%`)
@@ -102,22 +119,22 @@ function aFila(row: Record<string, unknown>): FilaBandeja {
 
 export async function listarComprobantesEn(
   e: Ejecutor,
-  { filtro, query, limite = 100, offset = 0 }: OpcionesListado,
+  { filtro, query, tipo = null, limite = 100, offset = 0 }: OpcionesListado,
 ): Promise<{ filas: FilaBandeja[]; total: number }> {
-  const r = await pedido(e, filtro, query)
+  const r = await pedido(e, filtro, query, tipo)
     .input('lim', sql.Int, limite)
     .input('off', sql.Int, offset)
     .query<Record<string, unknown>>(`
       SELECT ID, ESTADO, TIPO, PUNTO_VENTA, NUMERO, FECHA_EMISION,
              RAZON_SOCIAL, CUIT, TOTAL, CONFIANZA_PROMEDIO, ARCHIVO_NOMBRE
       FROM PHF_COMPROBANTE
-      WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA}
+      WHERE ${WHERE_ESTADO} AND ${WHERE_TIPO} AND ${WHERE_BUSQUEDA}
       ORDER BY FECHA_ALTA DESC, ID DESC
       OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY;
 
       SELECT COUNT(*) AS total
       FROM PHF_COMPROBANTE
-      WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA};
+      WHERE ${WHERE_ESTADO} AND ${WHERE_TIPO} AND ${WHERE_BUSQUEDA};
     `)
 
   return {
@@ -155,12 +172,17 @@ export async function obtenerKpis(): Promise<Kpis> {
   return obtenerKpisEn(await getPool())
 }
 
-export async function contarPorEstadoEn(e: Ejecutor, query: string): Promise<Conteos> {
-  const r = await pedido(e, 'todos', query).query(`
+/** Los contadores de las pestañas de estado, dentro del tipo elegido. */
+export async function contarPorEstadoEn(
+  e: Ejecutor,
+  query: string,
+  tipo: TipoFactura | null = null,
+): Promise<Conteos> {
+  const r = await pedido(e, 'todos', query, tipo).query(`
     SELECT ESTADO, COUNT(*) AS n,
            SUM(CASE WHEN ${WHERE_A_VINCULAR} THEN 1 ELSE 0 END) AS aVincular
     FROM PHF_COMPROBANTE
-    WHERE ${WHERE_BUSQUEDA}
+    WHERE ${WHERE_TIPO} AND ${WHERE_BUSQUEDA}
     GROUP BY ESTADO
   `)
 
@@ -183,8 +205,36 @@ export async function contarPorEstadoEn(e: Ejecutor, query: string): Promise<Con
   return c
 }
 
-export async function contarPorEstado(query: string): Promise<Conteos> {
-  return contarPorEstadoEn(await getPool(), query)
+export async function contarPorEstado(query: string, tipo: TipoFactura | null = null): Promise<Conteos> {
+  return contarPorEstadoEn(await getPool(), query, tipo)
+}
+
+/**
+ * Los contadores del filtro por tipo, dentro del estado elegido: así los dos
+ * filtros se leen juntos ("Remitos 3" = remitos en la pestaña actual).
+ */
+export async function contarPorTipoEn(
+  e: Ejecutor,
+  filtro: ClaveTab,
+  query: string,
+): Promise<ConteosTipo> {
+  const r = await pedido(e, filtro, query).query(`
+    SELECT TIPO_FACTURA, COUNT(*) AS n
+    FROM PHF_COMPROBANTE
+    WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA}
+    GROUP BY TIPO_FACTURA
+  `)
+  const c: ConteosTipo = { todos: 0, conceptos: 0, articulos: 0, tarjeta: 0, remito: 0 }
+  for (const row of r.recordset) {
+    const t = String(row.TIPO_FACTURA ?? '')
+    if (t in c && t !== 'todos') c[t as TipoFactura] += Number(row.n)
+    c.todos += Number(row.n)
+  }
+  return c
+}
+
+export async function contarPorTipo(filtro: ClaveTab, query: string): Promise<ConteosTipo> {
+  return contarPorTipoEn(await getPool(), filtro, query)
 }
 
 export type Encabezado = {
@@ -288,10 +338,10 @@ export type Vecinos = { anteriorId: number | null; siguienteId: number | null }
  */
 export async function obtenerVecinosEn(
   e: Ejecutor,
-  { filtro, query }: { filtro: ClaveTab; query: string },
+  { filtro, query, tipo = null }: { filtro: ClaveTab; query: string; tipo?: TipoFactura | null },
   id: number,
 ): Promise<Vecinos> {
-  const r = await pedido(e, filtro, query)
+  const r = await pedido(e, filtro, query, tipo)
     .input('id', sql.Int, id)
     .query<Record<string, unknown>>(`
       WITH ordenado AS (
@@ -300,7 +350,7 @@ export async function obtenerVecinosEn(
           LAG(ID) OVER (ORDER BY FECHA_ALTA DESC, ID DESC)  AS ANTERIOR_ID,
           LEAD(ID) OVER (ORDER BY FECHA_ALTA DESC, ID DESC) AS SIGUIENTE_ID
         FROM PHF_COMPROBANTE
-        WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA}
+        WHERE ${WHERE_ESTADO} AND ${WHERE_TIPO} AND ${WHERE_BUSQUEDA}
       )
       SELECT ANTERIOR_ID, SIGUIENTE_ID FROM ordenado WHERE ID = @id
     `)
@@ -313,14 +363,17 @@ export async function obtenerVecinosEn(
   }
 }
 
-export async function obtenerVecinos(opts: { filtro: ClaveTab; query: string }, id: number): Promise<Vecinos> {
+export async function obtenerVecinos(
+  opts: { filtro: ClaveTab; query: string; tipo?: TipoFactura | null },
+  id: number,
+): Promise<Vecinos> {
   return obtenerVecinosEn(await getPool(), opts, id)
 }
 
 /** Inserta un comprobante minimo. Es para los tests, no para la app. */
 export async function insertarComprobantePrueba(
   tx: sql.Transaction,
-  datos: Partial<FilaBandeja> & { estado: Estado; fechaRegistro?: Date },
+  datos: Partial<FilaBandeja> & { estado: Estado; fechaRegistro?: Date; tipoFactura?: TipoFactura },
 ): Promise<number> {
   const r = await tx
     .request()
@@ -341,13 +394,16 @@ export async function insertarComprobantePrueba(
     .input('fechaEmision', sql.Date, datos.fechaEmision ?? null)
     .input('fechaRegistro', sql.DateTime2, datos.fechaRegistro ?? null)
     .input('usuario', sql.NVarChar(60), usuarioActual())
+    .input('tipoFactura', sql.VarChar(20), datos.tipoFactura ?? null)
     .query(`
       INSERT INTO PHF_COMPROBANTE
         (ARCHIVO_NOMBRE, ARCHIVO_RUTA, ARCHIVO_HASH, ESTADO, TIPO, PUNTO_VENTA,
-         NUMERO, RAZON_SOCIAL, CUIT, TOTAL, FECHA_EMISION, FECHA_REGISTRO, USUARIO_ALTA)
+         NUMERO, RAZON_SOCIAL, CUIT, TOTAL, FECHA_EMISION, FECHA_REGISTRO, USUARIO_ALTA,
+         TIPO_FACTURA)
       OUTPUT INSERTED.ID
       VALUES (@nombre, @ruta, @hash, @estado, @tipo, @pv,
-              @numero, @razon, @cuit, @total, @fechaEmision, @fechaRegistro, @usuario)
+              @numero, @razon, @cuit, @total, @fechaEmision, @fechaRegistro, @usuario,
+              @tipoFactura)
     `)
   return Number(r.recordset[0].ID)
 }

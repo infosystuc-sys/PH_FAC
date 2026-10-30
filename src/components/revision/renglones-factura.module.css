@@ -4,8 +4,7 @@
 .tarjeta {
   /* Sin tope con el PDF incrustado: es la tarjeta con más columnas y usa
      todo el ancho del panel. Con el PDF oculto se alinea con las de arriba. */
-  max-width: var(--ancho-renglones, none);
-  margin: 0 24px 16px;
+  margin: 0;
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radius-lg);

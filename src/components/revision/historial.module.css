@@ -1,6 +1,5 @@
 .tarjeta {
-  max-width: 760px;
-  margin: 0 24px 60px;
+  margin: 0;
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radius-lg);

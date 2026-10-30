@@ -66,8 +66,24 @@ function rutaAdentroDelStorage(ruta: string): string {
   return resuelta
 }
 
+/**
+ * Si el archivo no está en la ruta guardada, se lo busca por su nombre en
+ * el directorio de comprobantes de ESTA instalación (2026-10-27). La base
+ * guarda la ruta absoluta de donde se importó, así que una copia de la app
+ * y de la base a otra PC --o un cambio de disco, como la mudanza de D: a C:
+ * de agosto-- dejaba todos los PDF sin poder abrirse aunque los archivos
+ * estuvieran copiados. El nombre lleva un UUID adelante, así que no hay
+ * forma de que traiga el de otro comprobante, y solo se busca adentro del
+ * storage: nunca se lee fuera de él.
+ */
 export async function leerPdf(ruta: string): Promise<Buffer> {
-  return readFile(rutaAdentroDelStorage(ruta))
+  try {
+    return await readFile(rutaAdentroDelStorage(ruta))
+  } catch (err) {
+    const nombre = path.win32.basename(ruta)
+    if (nombre === '' || nombre === '.' || nombre === '..') throw err
+    return readFile(path.join(directorioStorage(), nombre))
+  }
 }
 
 /**

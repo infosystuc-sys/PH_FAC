@@ -8,6 +8,7 @@ import {
   listarComprobantesEn,
   obtenerKpisEn,
   contarPorEstadoEn,
+  contarPorTipoEn,
   insertarComprobantePrueba,
   obtenerVecinosEn,
 } from '@/server/app/comprobantes'
@@ -378,6 +379,56 @@ describe('obtenerKpis', () => {
 
       const k = await obtenerKpisEn(tx)
       expect(k.registradosHoy).toBe(antes.registradosHoy + 1)
+    })
+  })
+})
+
+describe('filtro por tipo de lectura', () => {
+  // Pedido del usuario, 2026-10-27: filtrar la bandeja por articulos,
+  // conceptos, tarjeta o remito. Se combina con la pestaña de estado.
+  it('lista solo los del tipo pedido', async () => {
+    await conRollback(async (tx) => {
+      const antes = await listarComprobantesEn(tx, { filtro: 'todos', query: '', tipo: 'remito' })
+      const marca = marcaUnica()
+      await insertarComprobantePrueba(tx, { estado: 'leido', tipoFactura: 'remito', razonSocial: `${marca} R` })
+      await insertarComprobantePrueba(tx, { estado: 'leido', tipoFactura: 'articulos', razonSocial: `${marca} A` })
+
+      const r = await listarComprobantesEn(tx, { filtro: 'todos', query: '', tipo: 'remito' })
+      expect(r.total).toBe(antes.total + 1)
+      expect(r.filas[0].razonSocial).toBe(`${marca} R`)
+
+      // Con la busqueda acotada a lo sembrado: sin tipo trae los dos.
+      const todos = await listarComprobantesEn(tx, { filtro: 'todos', query: marca })
+      expect(todos.total).toBe(2)
+    })
+  })
+
+  it('se combina con el estado', async () => {
+    await conRollback(async (tx) => {
+      const marca = marcaUnica()
+      await insertarComprobantePrueba(tx, { estado: 'leido', tipoFactura: 'tarjeta', razonSocial: `${marca} 1` })
+      await insertarComprobantePrueba(tx, { estado: 'registrado', tipoFactura: 'tarjeta', razonSocial: `${marca} 2` })
+
+      const r = await listarComprobantesEn(tx, { filtro: 'leido', query: marca, tipo: 'tarjeta' })
+      expect(r.total).toBe(1)
+      expect(r.filas[0].razonSocial).toBe(`${marca} 1`)
+    })
+  })
+
+  it('cuenta por tipo dentro del estado elegido, y por estado dentro del tipo', async () => {
+    await conRollback(async (tx) => {
+      const marca = marcaUnica()
+      await insertarComprobantePrueba(tx, { estado: 'leido', tipoFactura: 'remito', razonSocial: `${marca} 1` })
+      await insertarComprobantePrueba(tx, { estado: 'leido', tipoFactura: 'conceptos', razonSocial: `${marca} 2` })
+      await insertarComprobantePrueba(tx, { estado: 'error', tipoFactura: 'remito', razonSocial: `${marca} 3` })
+
+      const porTipo = await contarPorTipoEn(tx, 'leido', marca)
+      expect(porTipo).toEqual({ todos: 2, conceptos: 1, articulos: 0, tarjeta: 0, remito: 1 })
+
+      const porEstado = await contarPorEstadoEn(tx, marca, 'remito')
+      expect(porEstado.todos).toBe(2)
+      expect(porEstado.leido).toBe(1)
+      expect(porEstado.error).toBe(1)
     })
   })
 })

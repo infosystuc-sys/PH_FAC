@@ -9,6 +9,7 @@ import { conceptoDelComprobante, listarConceptos } from '@/server/tango/concepto
 import { cargarAprendidos } from '@/server/app/aprendizajeImpuestos'
 import { probarConexion } from '@/server/db/pool'
 import { leerFiltro } from '@/lib/estados'
+import { leerFiltroTipo } from '@/lib/tipoFactura'
 import { Pantalla } from '@/components/revision/pantalla'
 import { BarraAcciones } from '@/components/revision/barra-acciones'
 import { PanelProcesando } from '@/components/revision/panel-procesando'
@@ -38,7 +39,7 @@ export default async function RevisionPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ filtro?: string; q?: string }>
+  searchParams: Promise<{ filtro?: string; q?: string; tipo?: string }>
 }) {
   const { id: idParam } = await params
   const id = Number(idParam)
@@ -46,6 +47,7 @@ export default async function RevisionPage({
 
   const sp = await searchParams
   const filtro = leerFiltro(sp.filtro)
+  const tipo = leerFiltroTipo(sp.tipo)
   const query = sp.q ?? ''
 
   // El id tiene que ser válido y el comprobante tiene que existir antes de
@@ -64,7 +66,7 @@ export default async function RevisionPage({
   // no releer PHF_CAMPO/PHF_RENGLON/PHF_AUDITORIA una segunda vez adentro).
   const [vecinos, detalle, condicionesCompra, codigosImpuesto, alicuotasIva, conexion, conceptos] =
     await Promise.all([
-      obtenerVecinos({ filtro, query }, id),
+      obtenerVecinos({ filtro, query, tipo }, id),
       obtenerDetalle(id),
       mostrarRevision ? listarCondicionesCompra() : Promise.resolve([]),
       mostrarRevision ? listarCodigosImpuesto() : Promise.resolve([]),
@@ -77,6 +79,7 @@ export default async function RevisionPage({
 
   const qs = new URLSearchParams()
   if (filtro !== 'todos') qs.set('filtro', filtro)
+  if (tipo) qs.set('tipo', tipo)
   if (query) qs.set('q', query)
   const sufijo = qs.toString() ? `?${qs.toString()}` : ''
 

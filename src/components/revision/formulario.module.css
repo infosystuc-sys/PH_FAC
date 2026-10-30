@@ -1,33 +1,15 @@
 .panel {
-  overflow: auto;
-  background: var(--fondo-panel);
-  padding: 20px 24px 60px;
+  padding: 0;
 }
 
 /* Con el PDF oculto toma el ancho de la tabla de renglones, para que las
    dos columnas de tarjetas y la tabla de abajo tengan el mismo borde. */
 .contenido {
-  max-width: var(--ancho-renglones, 760px);
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-/* Dos pilas de tarjetas. auto-fit y no dos columnas fijas: con el PDF
-   incrustado queda la mitad del ancho y cae a una sola, sin media queries. */
-.columnas {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-
-.pila {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
 
 .tarjeta {
   background: var(--superficie);
@@ -190,4 +172,28 @@
   font-family: var(--sans);
   font-size: 11.5px;
   color: var(--ai);
+}
+
+/* La cabecera compacta: filas de campos con el ancho de lo que llevan, y el
+   que se estira ocupa lo que sobra (2026-10-27). Si una fila no entra en el
+   ancho, baja a la linea siguiente en vez de apretar los campos. */
+.cabecera {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.filaCabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+}
+
+/* Los labels de campos angostos ("Tipo", "Punto venta") no se parten. */
+.filaCabecera .label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

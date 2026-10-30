@@ -79,11 +79,26 @@ describe('leerPdf', () => {
     const { ruta } = await guardarPdf('valido.pdf', Buffer.from('contenido'))
     creados.push(ruta)
 
-    // Intentar leer un archivo fuera del directorio
+    // Intentar leer un archivo fuera del directorio. Desde 2026-10-27 se
+    // busca su nombre adentro del storage --para las copias a otra PC--, y
+    // ahi no hay ningun "passwd": falla igual, sin tocar el de afuera.
     const rutaFuera = '/etc/passwd'
-    await expect(leerPdf(rutaFuera)).rejects.toThrow(
-      'Ruta de archivo fuera del directorio de comprobantes.'
-    )
+    await expect(leerPdf(rutaFuera)).rejects.toThrow()
+  })
+
+  it('encuentra el archivo por su nombre cuando la ruta guardada es de otra PC', async () => {
+    // La base copiada de produccion guarda C:\APP\PH_FAC\storage\...; en
+    // esta instalacion el storage puede estar en otro lado.
+    const { ruta } = await guardarPdf('copiado.pdf', Buffer.from('desde produccion'))
+    creados.push(ruta)
+    const nombre = ruta.split(/[\\/]/).pop()!
+    const rutaDeOtraPc = `Z:\\otra\\instalacion\\storage\\${nombre}`
+
+    expect((await leerPdf(rutaDeOtraPc)).toString()).toBe('desde produccion')
+  })
+
+  it('no sale del storage aunque el nombre guardado traiga ..', async () => {
+    await expect(leerPdf('C:\\APP\\PH_FAC\\storage\\..')).rejects.toThrow()
   })
 })
 

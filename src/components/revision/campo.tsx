@@ -1,5 +1,6 @@
 'use client'
 
+import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { DefCampo } from '@/lib/campos'
 import { nivelConfianza } from '@/lib/confianza'
@@ -14,6 +15,8 @@ export function Campo({
   onCambio,
   onFoco,
   onDesenfoque,
+  estilo,
+  sinChip = false,
 }: {
   def: DefCampo
   valor: string
@@ -29,6 +32,12 @@ export function Campo({
   onCambio: (v: string) => void
   onFoco: (v: string) => void
   onDesenfoque: () => void
+  /** Reemplaza el `gridColumn` del catálogo: la tarjeta compacta de la
+   *  cabecera mide cada campo por su contenido, no por columnas. */
+  estilo?: React.CSSProperties
+  /** Sin el chip de confianza al lado del label (tarjeta compacta). El
+   *  borde rojo de confianza baja se mantiene: es lo que no se puede perder. */
+  sinChip?: boolean
 }) {
   const [local, setLocal] = useState(valor)
   // Se prende en el onChange del input, nunca en un efecto. Es lo que
@@ -72,10 +81,10 @@ export function Campo({
   const nivel = confianza === null || confianza >= 1 ? null : nivelConfianza(confianza)
 
   return (
-    <div className={styles.campo} style={{ gridColumn: `span ${def.span}` }}>
+    <div className={styles.campo} style={estilo ?? { gridColumn: `span ${def.span}` }}>
       <label className={styles.label} htmlFor={`campo-${def.clave}`}>
         {def.label}
-        {nivel && (
+        {nivel && !sinChip && (
           <span className={styles.chip} style={{ background: nivel.fondo, color: nivel.texto }}>
             {Math.round(confianza! * 100)}%
           </span>

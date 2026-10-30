@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { FilaBandeja } from '@/server/app/comprobantes'
 import type { ClaveTab } from '@/lib/estados'
+import type { TipoFactura } from '@/lib/tipoFactura'
 import { BadgeEstado } from '@/components/badge-estado'
 import { AccionesFila } from './acciones-fila'
 import { ChipConfianza } from '@/components/chip-confianza'
@@ -11,7 +12,18 @@ import { ModalEliminarLote } from '@/components/modal-eliminar-lote'
 import { formatMoneda, formatFecha, formatCuit } from '@/lib/formato'
 import styles from './tabla.module.css'
 
-export function Tabla({ filas, filtro, query }: { filas: FilaBandeja[]; filtro: ClaveTab; query: string }) {
+export function Tabla({
+  filas,
+  filtro,
+  tipo = null,
+  query,
+}: {
+  filas: FilaBandeja[]
+  filtro: ClaveTab
+  /** El filtro por tipo de lectura: viaja al link, igual que el de estado. */
+  tipo?: TipoFactura | null
+  query: string
+}) {
   const [seleccion, setSeleccion] = useState<Set<number>>(new Set())
   const [modalAbierto, setModalAbierto] = useState(false)
 
@@ -29,6 +41,7 @@ export function Tabla({ filas, filtro, query }: { filas: FilaBandeja[]; filtro: 
   // vista, no de la bandeja completa.
   const qs = new URLSearchParams()
   if (filtro !== 'todos') qs.set('filtro', filtro)
+  if (tipo) qs.set('tipo', tipo)
   if (query) qs.set('q', query)
   const sufijo = qs.toString() ? `?${qs.toString()}` : ''
 

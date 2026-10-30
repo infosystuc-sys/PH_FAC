@@ -4,8 +4,7 @@
      pantalla.module.css) la sube: es la tarjeta con más columnas y la
      descripción es lo primero que se corta, así que es la que más
      aprovecha el ancho que deja libre esconder el visor. */
-  max-width: var(--ancho-renglones, 760px);
-  margin: 0 24px 16px;
+  margin: 0;
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radius-lg);

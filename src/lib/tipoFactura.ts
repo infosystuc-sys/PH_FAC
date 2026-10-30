@@ -17,12 +17,15 @@ export type DefTipoFactura = {
   label: string
   /** Qué entra en este tipo. Se muestra en el modal de importación. */
   ayuda: string
+  /** Cómo se nombra el grupo en el filtro de la bandeja. */
+  plural: string
 }
 
 export const TIPOS_FACTURA: DefTipoFactura[] = [
   {
     clave: 'conceptos',
     label: 'Factura de conceptos',
+    plural: 'Conceptos',
     ayuda:
       'Servicios y gastos: telefonía, luz, gas, internet, seguros, alquiler, ' +
       'honorarios, fletes, publicidad. Se imputa por concepto, sin renglones.',
@@ -30,11 +33,13 @@ export const TIPOS_FACTURA: DefTipoFactura[] = [
   {
     clave: 'articulos',
     label: 'Factura de artículos',
+    plural: 'Artículos',
     ayuda: 'Compra de mercadería con detalle de renglones, normalmente contra un remito.',
   },
   {
     clave: 'tarjeta',
     label: 'Liquidación de tarjeta',
+    plural: 'Tarjetas',
     ayuda:
       'Resúmenes de VISA, Mastercard, Naranja, American Express y bancos. ' +
       'Se imputa al concepto de comisiones de tarjeta, sin detalle de cupones.',
@@ -42,6 +47,7 @@ export const TIPOS_FACTURA: DefTipoFactura[] = [
   {
     clave: 'remito',
     label: 'Remito de proveedor',
+    plural: 'Remitos',
     ayuda:
       'Entrada de mercadería sin importes. Se registra en Stock contra la orden de compra ' +
       'y suma al depósito 01.',
@@ -327,6 +333,14 @@ export function spanDe(tipo: TipoFactura, clave: string, span: number): number {
 
 export function esTipoFactura(v: string | null | undefined): v is TipoFactura {
   return TIPOS_FACTURA.some((t) => t.clave === v)
+}
+
+/**
+ * El filtro por tipo de la bandeja, tal como llega por la URL (`?tipo=`).
+ * Ausente o desconocido = todos los tipos, en vez de romper.
+ */
+export function leerFiltroTipo(v: string | undefined): TipoFactura | null {
+  return esTipoFactura(v) ? v : null
 }
 
 /** Cae al default en vez de lanzar: un valor viejo o vacío no puede colgar la cola. */

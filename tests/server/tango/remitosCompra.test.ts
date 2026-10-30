@@ -134,6 +134,19 @@ describe('registrarComprobanteEn con un remito', () => {
       expect(ren.N_ORDEN_CO).toBe(oc.N_ORDEN_CO)
       expect(ren.ID_STA14).toBe(cab.ID_STA14)
 
+      // El vinculo con la orden, una fila por renglon de STA20 (2026-10-29).
+      const vinculo = await tx.request().input('n', sql.VarChar(8), cab.NCOMP_IN_S).query(`
+        SELECT * FROM CPA_OC_REMITO WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+      expect(vinculo.recordset).toHaveLength(1)
+      const v = vinculo.recordset[0]
+      expect(v.N_RENGL_S).toBe(ren.N_RENGL_S)
+      expect(v.N_ORDEN_CO).toBe(oc.N_ORDEN_CO)
+      expect(v.N_RENGL_OC).toBe(oc.N_RENGL_OC)
+      expect(v.TALONARIO_OC).toBe(ren.TALONARIO_OC)
+      expect(Number(v.CANTIDAD)).toBe(1)
+      expect(Number(v.CANT_OC)).toBe(1)
+      expect(Number(v.CANT_DEV)).toBe(0)
+
       const stockDespues = await tx.request().input('a', sql.VarChar(15), oc.COD_ARTICU)
         .query(`SELECT ISNULL(SUM(CANT_STOCK), 0) AS s FROM STA19 WHERE COD_ARTICU=@a AND COD_DEPOSI='01'`)
       expect(Number(stockDespues.recordset[0].s)).toBeCloseTo(Number(stockAntes.recordset[0].s) + 1, 4)

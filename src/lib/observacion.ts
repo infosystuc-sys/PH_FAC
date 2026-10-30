@@ -22,9 +22,16 @@ export const MOTIVO_REMITO_SIN_SALDO = 'Remito sin saldo o inexistente'
  */
 export const MOTIVO_FACTURA_NO_COINCIDE = 'La factura no coincide con el remito'
 
+/**
+ * El motivo que el operador elige cuando el CUIT no da con un proveedor de
+ * Tango. Tiene constante propia porque "Revalidar contra Tango" lo levanta
+ * solo si, una vez cargado el proveedor en Tango, el CUIT ya resuelve.
+ */
+export const MOTIVO_PROVEEDOR_INEXISTENTE = 'Proveedor inexistente en Tango'
+
 export const MOTIVOS_OBSERVACION = [
   'Diferencia de importe con la O/C',
-  'Proveedor inexistente en Tango',
+  MOTIVO_PROVEEDOR_INEXISTENTE,
   MOTIVO_SIN_CONCEPTO,
   MOTIVO_REMITO_SIN_SALDO,
   MOTIVO_FACTURA_NO_COINCIDE,

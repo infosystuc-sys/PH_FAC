@@ -1,5 +1,6 @@
 'use client'
 
+import type React from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import {
   GRUPOS,
@@ -30,15 +31,56 @@ export type ValorInicial = { valor: string; confianza: number | null }
 const MAX_SLOTS_ALICUOTA = 5
 
 /**
- * Las cuatro tarjetas en dos columnas (2026-10-14, pedido del usuario): a la
- * izquierda lo que identifica el papel, a la derecha cómo se imputa y con
- * qué importes. Cada columna es su propia pila, así una tarjeta alta
- * --Importes crece con cada alícuota-- no estira a la de al lado.
+ * La cabecera en UNA tarjeta compacta (2026-10-27, pedido del usuario con
+ * una captura): comprobante, proveedor e imputación en Tango, en filas, con
+ * cada campo del ancho de lo que lleva -- "A" no necesita el mismo lugar que
+ * una razón social. Antes eran tres tarjetas en una grilla de 6 columnas,
+ * con mucho aire y los datos lejos unos de otros.
+ *
+ * Cada fila junta los campos de esas claves que estén visibles en este tipo
+ * de comprobante (ver camposVisibles): si un tipo agrega CAE o remitos, se
+ * suman a su fila y la fila se acomoda sola. `null` es la celda del
+ * concepto, que pinta el formulario y no el catálogo.
  */
-const COLUMNAS: GrupoCampo[][] = [
-  ['comprobante', 'proveedor'],
-  ['imputacion', 'importes'],
+const FILAS_CABECERA: (string | null)[][] = [
+  ['tipo', 'ptovta', 'nro', 'fecha', 'fechacontable', 'cae', 'vtocae', 'moneda', 'cotizacion',
+    'ordencompra', 'remito1', 'remito2', 'condpago'],
+  ['razon', 'condiva', 'vencimiento', 'codprovee', 'cuit'],
+  ['condcompra', 'tipoFactura', null],
+  ['leyendaAsiento'],
 ]
+
+/** Ancho de cada campo en la tarjeta compacta: fijo, o 'flex' para el que
+ *  se estira y ocupa lo que sobra de la fila. */
+const ANCHO_CABECERA: Record<string, number | 'flex'> = {
+  tipo: 48,
+  ptovta: 92,
+  nro: 104,
+  fecha: 116,
+  fechacontable: 116,
+  cae: 150,
+  vtocae: 116,
+  moneda: 72,
+  cotizacion: 96,
+  ordencompra: 140,
+  remito1: 150,
+  remito2: 150,
+  condpago: 'flex',
+  razon: 'flex',
+  condiva: 150,
+  vencimiento: 116,
+  codprovee: 120,
+  cuit: 132,
+  condcompra: 200,
+  tipoFactura: 190,
+  concepto: 'flex',
+  leyendaAsiento: 'flex',
+}
+
+function estiloCabecera(clave: string): React.CSSProperties {
+  const ancho = ANCHO_CABECERA[clave] ?? 140
+  return ancho === 'flex' ? { flex: '1 1 200px', minWidth: 0 } : { flex: `0 0 ${ancho}px`, minWidth: 0 }
+}
 
 /**
  * Sobre 15.625 facturas reales: el slot 2 de alícuota se usa en el 19% de
@@ -324,6 +366,141 @@ export function Formulario({
     [comprobanteId, limpiarCorreccion, valores, soloLectura],
   )
 
+  // Las celdas de un campo: el input, y en las tres familias de impuestos
+  // la celda derivada de al lado. La usan las dos tarjetas.
+  const celdas = (def: DefCampo, estilo?: React.CSSProperties, compacta = false) => {
+    // "Total imputado" no es un input: se recalcula en vivo a
+    // partir de los demas campos del grupo. Un <input readOnly>
+    // generico no serviria: Campo guarda su valor en estado
+    // local para el autosave y ese estado no se resincroniza
+    // con la prop despues del primer render, asi que nunca
+    // reflejaria los cambios en neto/impivaN mientras se edita.
+    if (def.clave === 'imputado') {
+      return [
+        <div
+          key={def.clave}
+          className={styles.campo}
+          style={estilo ?? { gridColumn: `span ${def.span}` }}
+        >
+          <span className={styles.label}>{def.label}</span>
+          <div className={styles.valorCalculado}>{imputado}</div>
+        </div>,
+      ]
+    }
+
+    const campo = (
+      <Campo
+        key={def.clave}
+        def={def}
+        valor={valores[def.clave] ?? ''}
+        confianza={iniciales[def.clave]?.confianza ?? null}
+        bloqueado={soloLectura}
+        opciones={opcionesPara(def.clave, condicionesCompra, codigosImpuesto)}
+        onCambio={(v) => cambiar(def.clave, v)}
+        onFoco={onEnfocar}
+        onDesenfoque={() => onEnfocar(null)}
+        estilo={estilo}
+        sinChip={compacta}
+      />
+    )
+
+    // Las tres familias de linea del grupo "Importes" se
+    // muestran igual: tres celdas de span 2, con la del medio
+    // diciendo a que codigo de Tango resuelve la de la
+    // izquierda. Esa celda la arma el formulario porque es
+    // derivada y no se guarda -- ver el comentario del grupo
+    // en src/lib/campos.ts. Lo que cambia entre familias es
+    // que identifica cada una: porcentaje, jurisdiccion o
+    // codigo elegido a mano.
+
+    const slotIva = RE_PORC_ALICUOTA.exec(def.clave)
+    if (slotIva) {
+      const correccion = `codiva${slotIva[1]}`
+      return [
+        campo,
+        <CeldaAlicuotaTango
+          key={`tango-${def.clave}`}
+          porcentaje={valores[def.clave] ?? ''}
+          importe={valores[`impiva${slotIva[1]}`] ?? ''}
+          correccion={valores[correccion] ?? ''}
+          alicuotas={alicuotasIva}
+          aprendidos={aprendidosIva}
+          bloqueado={bloquearEquivalencia}
+          onCambio={(v) => cambiar(correccion, v)}
+        />,
+      ]
+    }
+
+    const slotPercep = RE_PERCEP.exec(def.clave)
+    if (slotPercep) {
+      const correccion = `codpercep${slotPercep[1]}`
+      return [
+        campo,
+        <CeldaPercepcionTango
+          key={`tango-${def.clave}`}
+          jurisdiccion={valores[def.clave] ?? ''}
+          importe={valores[`imppercep${slotPercep[1]}`] ?? ''}
+          correccion={valores[correccion] ?? ''}
+          tipoFactura={valores.tipoFactura ?? ''}
+          codigos={codigosImpuesto}
+          aprendidos={aprendidosPercepcion}
+          bloqueado={bloquearEquivalencia}
+          onCambio={(v) => cambiar(correccion, v)}
+        />,
+      ]
+    }
+
+    const slotVarios = RE_VARIOS.exec(def.clave)
+    if (slotVarios) {
+      const correccion = `codvarios${slotVarios[1]}`
+      return [
+        campo,
+        <CeldaVariosTango
+          key={`tango-${def.clave}`}
+          texto={valores[def.clave] ?? ''}
+          importe={valores[`impvarios${slotVarios[1]}`] ?? ''}
+          correccion={valores[correccion] ?? ''}
+          codigos={codigosImpuesto}
+          aprendidos={aprendidosVarios}
+          bloqueado={bloquearEquivalencia}
+          onCambio={(v) => cambiar(correccion, v)}
+        />,
+      ]
+    }
+
+    return [campo]
+  }
+
+  const celdaConcepto = (estilo: React.CSSProperties) => (
+    <CeldaConcepto
+      key="concepto"
+      concepto={concepto}
+      conceptos={conceptos}
+      eleccion={valores.concepto ?? ''}
+      hayProveedor={(valores.codprovee ?? '').trim() !== ''}
+      tipoFactura={valores.tipoFactura ?? ''}
+      bloqueado={soloLectura}
+      onCambio={(v) => cambiar('concepto', v)}
+      estilo={estilo}
+    />
+  )
+
+  // Los campos visibles de la cabecera, ordenados en sus filas. Una fila sin
+  // ningun campo visible no se pinta.
+  const visiblesCabecera = new Map(
+    (['comprobante', 'proveedor', 'imputacion'] as GrupoCampo[])
+      .flatMap((g) => camposVisibles(g, slots, valores, ocultarVacios))
+      .map((d) => [d.clave, d] as const),
+  )
+  const cabecera = FILAS_CABECERA.map((fila) =>
+    fila.flatMap((clave) => {
+      if (clave === null) return [null]
+      const def = visiblesCabecera.get(clave)
+      return def ? [def] : []
+    }),
+  ).filter((fila) => fila.some((d) => d !== null))
+  const importes = camposVisibles('importes', slots, valores, ocultarVacios)
+
   return (
     <div className={styles.panel}>
       <div className={styles.contenido}>
@@ -337,140 +514,28 @@ export function Formulario({
             las facturas que vengan.
           </p>
         )}
-        <div className={styles.columnas}>
-        {COLUMNAS.map((columna) => (
-          <div key={columna.join('-')} className={styles.pila}>
-        {GRUPOS.filter((g) => columna.includes(g.clave))
-          // Un grupo sin ningun campo visible no se pinta: en un remito el de
-          // Importes queda vacio, y una tarjeta con solo el titulo parece un
-          // error de carga.
-          .filter((g) => camposVisibles(g.clave, slots, valores, ocultarVacios).length > 0)
-          .sort((a, b) => columna.indexOf(a.clave) - columna.indexOf(b.clave))
-          .map((g) => (
-          <section key={g.clave} className={styles.tarjeta}>
-            <h3 className={styles.tituloGrupo}>{g.titulo}</h3>
-            <div className={styles.grilla}>
-              {camposVisibles(g.clave, slots, valores, ocultarVacios).flatMap((def) => {
-                // "Total imputado" no es un input: se recalcula en vivo a
-                // partir de los demas campos del grupo. Un <input readOnly>
-                // generico no serviria: Campo guarda su valor en estado
-                // local para el autosave y ese estado no se resincroniza
-                // con la prop despues del primer render, asi que nunca
-                // reflejaria los cambios en neto/impivaN mientras se edita.
-                if (def.clave === 'imputado') {
-                  return [
-                    <div
-                      key={def.clave}
-                      className={styles.campo}
-                      style={{ gridColumn: `span ${def.span}` }}
-                    >
-                      <span className={styles.label}>{def.label}</span>
-                      <div className={styles.valorCalculado}>{imputado}</div>
-                    </div>,
-                  ]
-                }
-
-                const campo = (
-                  <Campo
-                    key={def.clave}
-                    def={def}
-                    valor={valores[def.clave] ?? ''}
-                    confianza={iniciales[def.clave]?.confianza ?? null}
-                    bloqueado={soloLectura}
-                    opciones={opcionesPara(def.clave, condicionesCompra, codigosImpuesto)}
-                    onCambio={(v) => cambiar(def.clave, v)}
-                    onFoco={onEnfocar}
-                    onDesenfoque={() => onEnfocar(null)}
-                  />
-                )
-
-                // Las tres familias de linea del grupo "Importes" se
-                // muestran igual: tres celdas de span 2, con la del medio
-                // diciendo a que codigo de Tango resuelve la de la
-                // izquierda. Esa celda la arma el formulario porque es
-                // derivada y no se guarda -- ver el comentario del grupo
-                // en src/lib/campos.ts. Lo que cambia entre familias es
-                // que identifica cada una: porcentaje, jurisdiccion o
-                // codigo elegido a mano.
-                if (def.clave === 'codprovee') {
-                  return [
-                    campo,
-                    <CeldaConcepto
-                      key="concepto"
-                      concepto={concepto}
-                      conceptos={conceptos}
-                      eleccion={valores.concepto ?? ''}
-                      hayProveedor={(valores.codprovee ?? '').trim() !== ''}
-                      tipoFactura={valores.tipoFactura ?? ''}
-                      bloqueado={soloLectura}
-                      onCambio={(v) => cambiar('concepto', v)}
-                    />,
-                  ]
-                }
-
-                const slotIva = RE_PORC_ALICUOTA.exec(def.clave)
-                if (slotIva) {
-                  const correccion = `codiva${slotIva[1]}`
-                  return [
-                    campo,
-                    <CeldaAlicuotaTango
-                      key={`tango-${def.clave}`}
-                      porcentaje={valores[def.clave] ?? ''}
-                      importe={valores[`impiva${slotIva[1]}`] ?? ''}
-                      correccion={valores[correccion] ?? ''}
-                      alicuotas={alicuotasIva}
-                      aprendidos={aprendidosIva}
-                      bloqueado={bloquearEquivalencia}
-                      onCambio={(v) => cambiar(correccion, v)}
-                    />,
-                  ]
-                }
-
-                const slotPercep = RE_PERCEP.exec(def.clave)
-                if (slotPercep) {
-                  const correccion = `codpercep${slotPercep[1]}`
-                  return [
-                    campo,
-                    <CeldaPercepcionTango
-                      key={`tango-${def.clave}`}
-                      jurisdiccion={valores[def.clave] ?? ''}
-                      importe={valores[`imppercep${slotPercep[1]}`] ?? ''}
-                      correccion={valores[correccion] ?? ''}
-                      tipoFactura={valores.tipoFactura ?? ''}
-                      codigos={codigosImpuesto}
-                      aprendidos={aprendidosPercepcion}
-                      bloqueado={bloquearEquivalencia}
-                      onCambio={(v) => cambiar(correccion, v)}
-                    />,
-                  ]
-                }
-
-                const slotVarios = RE_VARIOS.exec(def.clave)
-                if (slotVarios) {
-                  const correccion = `codvarios${slotVarios[1]}`
-                  return [
-                    campo,
-                    <CeldaVariosTango
-                      key={`tango-${def.clave}`}
-                      texto={valores[def.clave] ?? ''}
-                      importe={valores[`impvarios${slotVarios[1]}`] ?? ''}
-                      correccion={valores[correccion] ?? ''}
-                      codigos={codigosImpuesto}
-                      aprendidos={aprendidosVarios}
-                      bloqueado={bloquearEquivalencia}
-                      onCambio={(v) => cambiar(correccion, v)}
-                    />,
-                  ]
-                }
-
-                return [campo]
-              })}
+        {cabecera.length > 0 && (
+          <section className={styles.tarjeta}>
+            <h3 className={styles.tituloGrupo}>Comprobante</h3>
+            <div className={styles.cabecera}>
+              {cabecera.map((fila, i) => (
+                <div key={i} className={styles.filaCabecera}>
+                  {fila.flatMap((def) =>
+                    def === null
+                      ? [celdaConcepto(estiloCabecera('concepto'))]
+                      : celdas(def, estiloCabecera(def.clave), true),
+                  )}
+                </div>
+              ))}
             </div>
           </section>
-        ))}
-          </div>
-        ))}
-        </div>
+        )}
+        {importes.length > 0 && (
+          <section className={styles.tarjeta}>
+            <h3 className={styles.tituloGrupo}>Importes</h3>
+            <div className={styles.grilla}>{importes.flatMap((def) => celdas(def))}</div>
+          </section>
+        )}
       </div>
     </div>
   )

@@ -320,6 +320,45 @@ export async function quitarOcDeRenglonEn(
   return borrados
 }
 
+/**
+ * Vuelve a leer de Tango lo que tiene pendiente cada renglón de OC imputado
+ * y pisa `OC_PENDIENTE`, que es una foto tomada al imputar (ver
+ * `agregarOcEn`). Si en Tango se amplió la orden, o se anuló lo que la
+ * consumía, la revisión tiene que verlo sin volver a imputar.
+ *
+ * El pendiente es el del mismo saldo que usó la imputación: de facturar en
+ * una factura, de recibir en un remito (`criterioOcDe`). Un renglón que la
+ * orden ya no trae --la orden se cerró o se consumió entera-- queda en 0, que
+ * es lo que Tango dice que hay.
+ *
+ * Devuelve cuántos renglones cambiaron.
+ */
+export async function actualizarPendientesOcEn(e: Ejecutor, comprobanteId: number): Promise<number> {
+  const detalle = await obtenerDetalleEn(e, comprobanteId)
+  const tipo = detalle.campos.find((c) => c.clave === 'tipoFactura')?.valorFinal ?? null
+
+  let cambiados = 0
+  for (const nOrdenCo of await ocsDelComprobanteEn(e, comprobanteId)) {
+    const oc = await buscarOcPorNumero(nOrdenCo, criterioOcDe(tipo))
+    const vivo = new Map((oc?.renglones ?? []).map((r) => [r.nRenglOc, r.pendiente]))
+
+    for (const r of detalle.renglones) {
+      if (r.ocNOrdenCo !== nOrdenCo || r.ocNRenglOc === null) continue
+      const pendiente = vivo.get(r.ocNRenglOc) ?? 0
+      const actual = r.ocPendiente === null ? null : Number(r.ocPendiente)
+      if (actual !== null && Math.abs(actual - pendiente) < 0.00005) continue
+
+      await e
+        .request()
+        .input('id', sql.Int, r.id)
+        .input('pend', sql.Decimal(19, 4), pendiente)
+        .query('UPDATE PHF_RENGLON SET OC_PENDIENTE = @pend WHERE ID = @id')
+      cambiados += 1
+    }
+  }
+  return cambiados
+}
+
 /** Las órdenes de compra imputadas a este comprobante, sin repetir. */
 export async function ocsDelComprobanteEn(
   e: Ejecutor,

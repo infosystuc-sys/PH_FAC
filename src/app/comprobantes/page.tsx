@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
-import { listarComprobantes, obtenerKpis, contarPorEstado } from '@/server/app/comprobantes'
+import { listarComprobantes, obtenerKpis, contarPorEstado, contarPorTipo } from '@/server/app/comprobantes'
 import { leerFiltro } from '@/lib/estados'
+import { leerFiltroTipo } from '@/lib/tipoFactura'
 import { FilaKpis } from '@/components/bandeja/kpis'
 import { Filtros } from '@/components/bandeja/filtros'
 import { Tabla } from '@/components/bandeja/tabla'
@@ -21,18 +22,20 @@ function leerPagina(v: string | undefined): number {
 export default async function BandejaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filtro?: string; q?: string; pagina?: string }>
+  searchParams: Promise<{ filtro?: string; q?: string; pagina?: string; tipo?: string }>
 }) {
   const sp = await searchParams
   const filtro = leerFiltro(sp.filtro)
+  const tipo = leerFiltroTipo(sp.tipo)
   const query = sp.q ?? ''
   const pagina = leerPagina(sp.pagina)
   const offset = (pagina - 1) * LIMITE_PAGINA
 
-  const [{ filas, total }, kpis, conteos] = await Promise.all([
-    listarComprobantes({ filtro, query, limite: LIMITE_PAGINA, offset }),
+  const [{ filas, total }, kpis, conteos, conteosTipo] = await Promise.all([
+    listarComprobantes({ filtro, query, tipo, limite: LIMITE_PAGINA, offset }),
     obtenerKpis(),
-    contarPorEstado(query),
+    contarPorEstado(query, tipo),
+    contarPorTipo(filtro, query),
   ])
 
   const totalPaginas = Math.max(1, Math.ceil(total / LIMITE_PAGINA))
@@ -45,6 +48,7 @@ export default async function BandejaPage({
   if (total > 0 && pagina > totalPaginas) {
     const next = new URLSearchParams()
     if (filtro !== 'todos') next.set('filtro', filtro)
+    if (tipo) next.set('tipo', tipo)
     if (query) next.set('q', query)
     if (totalPaginas > 1) next.set('pagina', String(totalPaginas))
     const qs = next.toString()
@@ -68,8 +72,8 @@ export default async function BandejaPage({
         </div>
 
         <FilaKpis kpis={kpis} />
-        <Filtros filtro={filtro} query={query} conteos={conteos} />
-        <Tabla filas={filas} filtro={filtro} query={query} />
+        <Filtros filtro={filtro} tipo={tipo} query={query} conteos={conteos} conteosTipo={conteosTipo} />
+        <Tabla filas={filas} filtro={filtro} tipo={tipo} query={query} />
         <RefrescoAutomatico procesando={conteos.procesando} />
 
         <Paginacion pagina={pagina} totalPaginas={totalPaginas} desde={desde} hasta={hasta} total={total} />

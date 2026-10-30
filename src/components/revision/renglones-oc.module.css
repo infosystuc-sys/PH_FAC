@@ -3,8 +3,7 @@
    factura y la orden van lado a lado-- así que también es la que más
    aprovecha el ancho que deja libre esconder el visor. */
 .tarjeta {
-  max-width: var(--ancho-renglones, 760px);
-  margin: 0 24px 16px;
+  margin: 0;
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radius-lg);

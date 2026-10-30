@@ -4,13 +4,16 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { ORDEN_TABS, type ClaveTab } from '@/lib/estados'
-import type { Conteos } from '@/server/app/comprobantes'
+import { TIPOS_FACTURA, type TipoFactura } from '@/lib/tipoFactura'
+import type { Conteos, ConteosTipo } from '@/server/app/comprobantes'
 import styles from './filtros.module.css'
 
-export function Filtros({ filtro, query, conteos }: {
+export function Filtros({ filtro, tipo, query, conteos, conteosTipo }: {
   filtro: ClaveTab
+  tipo: TipoFactura | null
   query: string
   conteos: Conteos
+  conteosTipo: ConteosTipo
 }) {
   const router = useRouter()
   const params = useSearchParams()
@@ -53,7 +56,23 @@ export function Filtros({ filtro, query, conteos }: {
     navegar(next)
   }
 
+  // El tipo de lectura (2026-10-27, pedido del usuario): se combina con la
+  // pestaña de estado, no la reemplaza.
+  function cambiarTipo(clave: TipoFactura | null) {
+    const next = new URLSearchParams(params.toString())
+    if (clave === null) next.delete('tipo')
+    else next.set('tipo', clave)
+    next.delete('pagina')
+    navegar(next)
+  }
+
+  const opcionesTipo: { clave: TipoFactura | null; label: string; n: number }[] = [
+    { clave: null, label: 'Todos los tipos', n: conteosTipo.todos },
+    ...TIPOS_FACTURA.map((t) => ({ clave: t.clave, label: t.plural, n: conteosTipo[t.clave] })),
+  ]
+
   return (
+    <div className={styles.bloque}>
     <div className={styles.fila}>
       {ORDEN_TABS.map((t) => {
         const activo = t.clave === filtro
@@ -90,6 +109,26 @@ export function Filtros({ filtro, query, conteos }: {
           placeholder="Buscar proveedor, CUIT o número"
         />
       </div>
+    </div>
+
+    <div className={styles.filaTipo}>
+      <span className={styles.etiquetaTipo}>Tipo de lectura</span>
+      {opcionesTipo.map((o) => {
+        const activo = o.clave === tipo
+        return (
+          <button
+            key={o.clave ?? 'todos'}
+            type="button"
+            onClick={() => cambiarTipo(o.clave)}
+            className={activo ? `${styles.chipTipo} ${styles.chipTipoActivo}` : styles.chipTipo}
+            aria-pressed={activo}
+          >
+            {o.label}
+            <span className={styles.count}>{o.n}</span>
+          </button>
+        )
+      })}
+    </div>
     </div>
   )
 }

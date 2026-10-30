@@ -2,7 +2,8 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { reprocesarComprobante } from '@/server/app/acciones'
+import { reprocesarComprobante, revalidarContraTango } from '@/server/app/acciones'
+import { useToast } from '@/components/toast/toast-provider'
 import styles from './aviso-ia.module.css'
 import { Icono } from '@/components/icono'
 
@@ -22,7 +23,9 @@ export function AvisoIA({
   hayCorrecciones: boolean
 }) {
   const [pendiente, arrancar] = useTransition()
+  const [revalidando, arrancarRevalidar] = useTransition()
   const router = useRouter()
+  const toast = useToast()
 
   const detalle = [
     `Claude leyó ${campos} campos`,
@@ -48,6 +51,25 @@ export function AvisoIA({
     })
   }
 
+  // Sin IA: vuelve a mirar Tango con lo que ya está en pantalla, incluidas
+  // las correcciones del operador (ver revalidarContraTangoEn). Es lo que se
+  // usa después de arreglar en Tango lo que la revisión marcó.
+  function revalidar() {
+    arrancarRevalidar(async () => {
+      try {
+        const { cambios } = await revalidarContraTango(id)
+        toast(
+          cambios.length > 0
+            ? `Revalidado contra Tango: ${cambios.join('; ')}.`
+            : 'Revalidado contra Tango: sin cambios.',
+        )
+        router.refresh()
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'No se pudo revalidar contra Tango.')
+      }
+    })
+  }
+
   return (
     <div className={styles.aviso}>
       <div className={styles.icono}>
@@ -57,7 +79,22 @@ export function AvisoIA({
         <div className={styles.titulo}>Lectura automática completada</div>
         <div className={styles.detalle}>{detalle}</div>
       </div>
-      <button type="button" className={styles.reprocesar} onClick={reprocesar} disabled={pendiente}>
+      <button
+        type="button"
+        className={styles.reprocesar}
+        onClick={revalidar}
+        disabled={pendiente || revalidando}
+        title="Vuelve a correr las validaciones contra Tango sin leer de nuevo el PDF. Conserva tus correcciones."
+      >
+        {revalidando ? 'Revalidando…' : 'Revalidar contra Tango'}
+      </button>
+      <button
+        type="button"
+        className={styles.reprocesar}
+        onClick={reprocesar}
+        disabled={pendiente || revalidando}
+        title="Vuelve a leer el PDF con IA. Descarta las correcciones hechas a mano."
+      >
         {pendiente ? 'Reprocesando…' : 'Reprocesar'}
       </button>
     </div>

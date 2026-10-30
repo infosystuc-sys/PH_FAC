@@ -12,6 +12,7 @@ import {
   registrarComprobante as registrarComprobanteAccion,
   asignarRemitoEn,
   actualizarCantidadesRemitoEn,
+  revalidarContraTangoEn,
 } from '@/server/app/acciones'
 import {
   eliminarComprobanteEn,
@@ -19,7 +20,11 @@ import {
   elegirArticuloEn,
   asociarCodigosProveedorEnLote,
 } from '@/server/app/acciones'
-import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
+import {
+  MOTIVOS_OBSERVACION,
+  MOTIVO_SIN_CONCEPTO,
+  MOTIVO_PROVEEDOR_INEXISTENTE,
+} from '@/lib/observacion'
 import { obtenerDetalleEn, guardarCampoEn, auditarEn } from '@/server/app/detalle'
 import { insertarComprobantePrueba, insertarRenglonPrueba } from '@/server/app/comprobantes'
 
@@ -473,5 +478,143 @@ describe('asociarCodigosProveedorEnLote', () => {
   it('sin pares no toca nada y devuelve 0', async () => {
     const n = await asociarCodigosProveedorEnLote(999999999, '010685', [])
     expect(n).toBe(0)
+  })
+})
+
+describe('revalidarContraTangoEn', () => {
+  /** Un CUIT de CPA01 que resuelve a un solo proveedor. */
+  async function cuitUnico(): Promise<{ cuit: string; cod: string }> {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 cuit, MIN(cod) AS cod
+      FROM (
+        SELECT LTRIM(RTRIM(COD_PROVEE)) AS cod,
+               REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '') AS cuit
+        FROM CPA01
+        WHERE LEN(REPLACE(REPLACE(REPLACE(ISNULL(N_CUIT,''), '-', ''), ' ', ''), '.', '')) = 11
+      ) x
+      GROUP BY cuit
+      HAVING COUNT(*) = 1
+      ORDER BY cuit
+    `)
+    return { cuit: String(r.recordset[0].cuit), cod: String(r.recordset[0].cod) }
+  }
+
+  async function filaDe(tx: sql.Transaction, id: number) {
+    const r = await tx.request().input('id', sql.Int, id).query(
+      'SELECT ESTADO, MOTIVO_OBSERVACION, COD_PROVEE FROM PHF_COMPROBANTE WHERE ID = @id',
+    )
+    return r.recordset[0]
+  }
+
+  it('resuelve el proveedor con el CUIT corregido a mano, sin tocar las demas correcciones', async () => {
+    const real = await cuitUnico()
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'observacion' })
+      await tx.request().input('id', sql.Int, id).input('m', sql.NVarChar(60), MOTIVO_PROVEEDOR_INEXISTENTE)
+        .query('UPDATE PHF_COMPROBANTE SET MOTIVO_OBSERVACION = @m WHERE ID = @id')
+      await guardarCampoEn(tx, id, 'cuit', real.cuit, { corregidoPorUsuario: true })
+      await guardarCampoEn(tx, id, 'nro', '00001234', { corregidoPorUsuario: true })
+
+      const r = await revalidarContraTangoEn(tx, id)
+      expect(r.cambios.join(' ')).toContain(real.cod)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'codprovee')?.valorFinal).toBe(real.cod)
+      // Lo corregido a mano sigue ahi: es la diferencia con "Reprocesar".
+      const nro = d.campos.find((c) => c.clave === 'nro')!
+      expect(nro.valorFinal).toBe('00001234')
+      expect(nro.corregido).toBe(true)
+
+      const fila = await filaDe(tx, id)
+      expect(fila.ESTADO).toBe('leido')
+      expect(fila.MOTIVO_OBSERVACION).toBeNull()
+      expect(d.auditoria.some((a) => a.texto.startsWith('Revalidado contra Tango'))).toBe(true)
+    })
+  })
+
+  it('no pisa un proveedor ya elegido ni levanta una observacion que puso el operador', async () => {
+    const real = await cuitUnico()
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'observacion' })
+      await tx.request().input('id', sql.Int, id).input('m', sql.NVarChar(60), MOTIVOS_OBSERVACION[0])
+        .query('UPDATE PHF_COMPROBANTE SET MOTIVO_OBSERVACION = @m WHERE ID = @id')
+      await guardarCampoEn(tx, id, 'cuit', real.cuit, { corregidoPorUsuario: false })
+      await guardarCampoEn(tx, id, 'codprovee', 'OTRO01', { corregidoPorUsuario: true })
+
+      const r = await revalidarContraTangoEn(tx, id)
+      expect(r.cambios).toEqual([])
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'codprovee')?.valorFinal).toBe('OTRO01')
+      const fila = await filaDe(tx, id)
+      expect(fila.ESTADO).toBe('observacion')
+      expect(fila.MOTIVO_OBSERVACION).toBe(MOTIVOS_OBSERVACION[0])
+    })
+  })
+
+  it('saca de observacion la factura de conceptos cuando el proveedor ya tiene concepto', async () => {
+    const pool = await getPool()
+    const c = await pool.request().query(
+      'SELECT TOP 1 LTRIM(RTRIM(COD_PROVEE)) AS cod FROM CPA_CONCEPTOS_PROVEEDOR ORDER BY COD_PROVEE',
+    )
+    if (c.recordset.length === 0) return
+    const cod = String(c.recordset[0].cod)
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'observacion', tipoFactura: 'conceptos' })
+      await tx.request().input('id', sql.Int, id).input('m', sql.NVarChar(60), MOTIVO_SIN_CONCEPTO)
+        .query('UPDATE PHF_COMPROBANTE SET MOTIVO_OBSERVACION = @m WHERE ID = @id')
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos', { corregidoPorUsuario: false })
+      await guardarCampoEn(tx, id, 'codprovee', cod, { corregidoPorUsuario: false })
+
+      await revalidarContraTangoEn(tx, id)
+      const fila = await filaDe(tx, id)
+      expect(fila.ESTADO).toBe('leido')
+      expect(fila.MOTIVO_OBSERVACION).toBeNull()
+    })
+  })
+
+  it('actualiza lo pendiente de la OC con lo que dice Tango hoy', async () => {
+    const pool = await getPool()
+    const o = await pool.request().query(`
+      SELECT TOP 1 N_ORDEN_CO, TALONARIO, N_RENGL_OC, COD_ARTICU, PENDIENTE_FACTURAR
+      FROM CPA36 WHERE PENDIENTE_FACTURAR > 0 ORDER BY N_ORDEN_CO DESC
+    `)
+    if (o.recordset.length === 0) return
+    const oc = o.recordset[0]
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido', tipoFactura: 'articulos' })
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos', { corregidoPorUsuario: false })
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: String(oc.COD_ARTICU), descripcion: 'x', cantidad: '1', precioUnitario: '1', importe: '1',
+      })
+      // La foto vieja: al imputarla, la orden no tenia nada pendiente.
+      await tx.request()
+        .input('id', sql.Int, renglonId)
+        .input('oc', sql.VarChar(14), String(oc.N_ORDEN_CO))
+        .input('tal', sql.Int, Number(oc.TALONARIO))
+        .input('r', sql.Int, Number(oc.N_RENGL_OC))
+        .query(`
+          UPDATE PHF_RENGLON
+          SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, OC_PENDIENTE=0
+          WHERE ID=@id`)
+
+      const r = await revalidarContraTangoEn(tx, id)
+      expect(r.cambios.some((x) => x.includes('pendiente de OC'))).toBe(true)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(Number(d.renglones[0].ocPendiente)).toBeCloseTo(Number(oc.PENDIENTE_FACTURAR), 2)
+    })
+  })
+
+  it('rechaza un comprobante ya registrado o sin lectura terminada', async () => {
+    await conRollback(async (tx) => {
+      const registrado = await insertarComprobantePrueba(tx, { estado: 'registrado' })
+      await expect(revalidarContraTangoEn(tx, registrado)).rejects.toThrow(/ya está en Tango/)
+      const enError = await insertarComprobantePrueba(tx, { estado: 'error' })
+      await expect(revalidarContraTangoEn(tx, enError)).rejects.toThrow(/Reprocesar/)
+    })
   })
 })

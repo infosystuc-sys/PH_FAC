@@ -94,6 +94,9 @@ REM archivo con --recompilar. Despues de actualizar el codigo hay que usar
 REM --recompilar: sin eso arranca la version anterior.
 set COMPILAR=0
 if not exist ".next\BUILD_ID" set COMPILAR=1
+REM Una compilacion a medias (cortada, o pisada por el modo desarrollo de
+REM antes) tiene BUILD_ID pero no este manifiesto, y no arranca.
+if not exist ".next\prerender-manifest.json" set COMPILAR=1
 if "%~1"=="--recompilar" set COMPILAR=1
 if "%COMPILAR%"=="1" (
   echo   Compilando...

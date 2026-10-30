@@ -1,10 +1,5 @@
-/* Mismo padding horizontal y max-width que Formulario, AvisoIA, Renglones e
-   Historial, para que los bordes de las tarjetas aliniem entre si aunque
-   cada pieza lo aplique por su cuenta (ver el comentario de .derecha en
-   pantalla.module.css). */
 .tarjeta {
-  margin: 0 24px 16px;
-  max-width: 760px;
+  margin: 0;
   padding: 16px 18px;
   background: var(--superficie);
   border: 1px solid var(--borde-sutil-3);

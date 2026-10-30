@@ -11,10 +11,18 @@ import {
   importarComprobanteEn,
   recalcularNetoDeCargosEn,
   calcularFechaContableEn,
+  resolverProveedorEn,
+  resolverCondicionCompraEn,
+  marcarExistenteEnTangoEn,
 } from './cola'
+import { aprenderLecturaEn } from './aprenderLectura'
 import { usuarioActual } from '@/lib/usuario'
-import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
-import { esTipoFactura, criterioOcDe, type CriterioOc } from '@/lib/tipoFactura'
+import {
+  MOTIVOS_OBSERVACION,
+  MOTIVO_PROVEEDOR_INEXISTENTE,
+  MOTIVO_SIN_CONCEPTO,
+} from '@/lib/observacion'
+import { esTipoFactura, criterioOcDe, vaContraOc, type CriterioOc } from '@/lib/tipoFactura'
 import { campoPorClave } from '@/lib/campos'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { validarComprobante } from '@/server/app/validaciones'
@@ -42,6 +50,7 @@ import { normalizarCodigo } from '@/lib/cotejoOc'
 import { aprenderArticuloEn, marcarSinOcEn } from './articulosProveedor'
 import {
   listarConceptos,
+  buscarConceptoProveedor,
   asignarConceptoProveedor,
   type ConceptoProveedor,
 } from '@/server/tango/conceptos'
@@ -55,6 +64,7 @@ import {
   recalcularAVincularEn,
   sincronizarCargosEn,
   quitarOcDeRenglonEn,
+  actualizarPendientesOcEn,
 } from './ordenCompra'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
@@ -1389,6 +1399,118 @@ export async function actualizarCantidadesRemito(comprobanteId: number): Promise
 
   revalidatePath(`/comprobantes/${comprobanteId}`)
   return actualizados
+}
+
+/** Lo que cambió al revalidar, para el aviso y el historial. */
+export type ResultadoRevalidacion = { cambios: string[] }
+
+/**
+ * Vuelve a correr contra Tango todo lo que la lectura resolvió con datos del
+ * ERP, SIN volver a leer el PDF con la IA (2026-10-30, pedido del usuario).
+ * Es para cuando la revisión marcó algo que se arregla en Tango --el
+ * proveedor no existía, el artículo no estaba, la OC no tenía pendiente, el
+ * proveedor no tenía concepto--: una vez corregido allá, el operador
+ * revalida acá y no pierde lo que ya corrigió a mano, que es lo que pasa con
+ * "Reprocesar" (borra PHF_CAMPO y lee de nuevo).
+ *
+ * Las validaciones de la pantalla ya se calculan en vivo al cargarla (ver
+ * page.tsx). Lo que hace falta rehacer es lo que la lectura dejó GUARDADO:
+ *
+ *   - el proveedor por CUIT, solo si no hay ninguno (uno elegido o resuelto
+ *     no se pisa);
+ *   - la condición de compra aprendida, solo si está vacía;
+ *   - la forma de leer del proveedor y el contador de renglones a vincular;
+ *   - las fotos de Tango: lo pendiente de cada renglón de OC y lo entregado
+ *     de cada remito;
+ *   - las observaciones que puso la app por un dato que faltaba en Tango, que
+ *     se levantan si el dato ya está;
+ *   - si mientras tanto el comprobante se cargó en Tango, pasa a existente.
+ *
+ * El CUIT es el del formulario (`valorFinal`), así que también sirve después
+ * de que el operador corrigió un CUIT mal leído.
+ */
+export async function revalidarContraTangoEn(e: Ejecutor, id: number): Promise<ResultadoRevalidacion> {
+  const fila = await e
+    .request()
+    .input('id', sql.Int, id)
+    .query(`SELECT ESTADO, MOTIVO_OBSERVACION, RENGLONES_A_VINCULAR FROM PHF_COMPROBANTE WHERE ID = @id`)
+  if (fila.recordset.length === 0) throw new Error('El comprobante no existe.')
+  const { ESTADO: estado, MOTIVO_OBSERVACION: motivo } = fila.recordset[0] as {
+    ESTADO: string
+    MOTIVO_OBSERVACION: string | null
+  }
+  const aVincularAntes = Number(fila.recordset[0].RENGLONES_A_VINCULAR ?? 0)
+  if (estado === 'registrado' || estado === 'existente') {
+    throw new Error('El comprobante ya está en Tango: no hay nada que revalidar.')
+  }
+  if (estado === 'procesando' || estado === 'error') {
+    throw new Error('El comprobante no tiene una lectura terminada. Usá "Reprocesar".')
+  }
+
+  const detalle = await obtenerDetalleEn(e, id)
+  const valores: Record<string, string | null> = Object.fromEntries(
+    detalle.campos.map((c) => [c.clave, c.valorFinal]),
+  )
+  const tipo = valores.tipoFactura ?? null
+  const cambios: string[] = []
+
+  let cod = (valores.codprovee ?? '').trim() || null
+  if (!cod) {
+    cod = await resolverProveedorEn(e, id, valores.cuit ?? null)
+    if (cod) cambios.push(`proveedor resuelto por CUIT (${cod})`)
+  }
+  await resolverCondicionCompraEn(e, id, cod, valores.condpago ?? null)
+
+  if (vaContraOc(tipo)) {
+    await aprenderLecturaEn(e, id, cod)
+    const aVincular = await recalcularAVincularEn(e, id, cod)
+    if (aVincular !== aVincularAntes) {
+      cambios.push(`renglones a vincular: ${aVincularAntes} → ${aVincular}`)
+    }
+  }
+
+  const pendientes = await actualizarPendientesOcEn(e, id)
+  if (pendientes > 0) cambios.push(`pendiente de OC actualizado en ${pendientes} renglón(es)`)
+  const remitos = await actualizarCantidadesRemitoEn(e, id)
+  if (remitos > 0) cambios.push(`cantidad de remito actualizada en ${remitos} renglón(es)`)
+
+  // Solo las observaciones por un dato que faltaba en Tango y que ahora
+  // está. Las demás las puso el operador por algo que ve en el papel, y no
+  // es la app la que puede decir que se resolvieron.
+  if (estado === 'observacion') {
+    const resuelta =
+      (motivo === MOTIVO_PROVEEDOR_INEXISTENTE && cod !== null) ||
+      (motivo === MOTIVO_SIN_CONCEPTO && cod !== null && (await buscarConceptoProveedor(cod)) !== null)
+    if (resuelta) {
+      await e.request().input('id', sql.Int, id).query(`
+        UPDATE PHF_COMPROBANTE
+        SET ESTADO = 'leido', MOTIVO_OBSERVACION = NULL, NOTA_OBSERVACION = NULL,
+            FECHA_MODIF = SYSDATETIME()
+        WHERE ID = @id
+      `)
+      cambios.push(`sale de observación (${motivo})`)
+    }
+  }
+
+  if (await marcarExistenteEnTangoEn(e, id, cod, valores)) {
+    cambios.push('ya está cargado en Tango: pasa a existente')
+  }
+
+  await auditarEn(
+    e,
+    id,
+    cambios.length > 0
+      ? `Revalidado contra Tango, sin IA — ${cambios.join('; ')}`
+      : 'Revalidado contra Tango, sin IA — sin cambios',
+  )
+  return { cambios }
+}
+
+export async function revalidarContraTango(id: number): Promise<ResultadoRevalidacion> {
+  const r = await conTransaccion((tx) => revalidarContraTangoEn(tx, id))
+  revalidatePath('/comprobantes')
+  revalidatePath(`/comprobantes/${id}`)
+  return r
 }
 
 /**

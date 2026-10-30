@@ -31,6 +31,9 @@
 /* Pegada arriba del scroll del panel derecho: el boton tiene que seguir
    accesible despues de bajar 48 renglones. */
 .barraVista {
+  /* Mismo tope que .contenido: los botones de la derecha terminan en el
+     mismo borde que las tarjetas de abajo. */
+  max-width: calc(var(--ancho-renglones) + 48px);
   position: sticky;
   top: 0;
   z-index: 5;
@@ -89,8 +92,27 @@
 .estado {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 0 16px;
+  gap: 16px;
   align-items: start;
+}
+
+/*
+ * Todo lo que va debajo de la barra de vista, en una sola columna con UN
+ * margen y UN tope de ancho para todas las tarjetas (2026-10-27, reportado
+ * por el usuario: "la informacion aparece desalineada"). Hasta ese dia cada
+ * tarjeta ponia su propio margen y su propio max-width --760px unas, el
+ * ancho de la tabla otras, centradas algunas-- y los bordes no coincidian.
+ * Las dos columnas del estado y las del formulario usan la misma grilla,
+ * asi que sus bordes tambien caen en el mismo lugar.
+ */
+.contenido {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* El tope es el de las tarjetas mas el margen de 24px de cada lado. Sin
+     --ancho-renglones (PDF incrustado) el calc es invalido y no hay tope. */
+  max-width: calc(var(--ancho-renglones) + 48px);
+  padding: 12px 24px 60px;
 }
 
 .alternarPdf {
