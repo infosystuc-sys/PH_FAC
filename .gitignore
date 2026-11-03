@@ -17,3 +17,9 @@ tsconfig.tsbuildinfo
 /*.bak
 /*.rar
 storage-central/
+
+# Remitos de prueba y material comercial/demo (2026-11-03)
+/REMITOS/
+/REMITOS.zip
+/docs/cotizacion/
+/docs/demo/
