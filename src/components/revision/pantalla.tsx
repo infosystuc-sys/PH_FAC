@@ -311,6 +311,7 @@ export function Pantalla({
             // que se decide si los subtotales son netos o brutos.
             baseSegunImpuestos={listoParaRegistrar?.netoSegunIva ?? null}
             soloLectura={soloLectura}
+            version={auditoria.length}
           />
         ) : renglones.some((r) => r.ocNOrdenCo !== null) ? (
           <RenglonesOc

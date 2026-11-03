@@ -366,3 +366,9 @@
 .total .der {
   white-space: nowrap;
 }
+
+/* Reconocido y con una orden que lo tiene, pero todavia sin elegirla. */
+.notaOc {
+  font-size: 10.5px;
+  color: var(--texto-3);
+}

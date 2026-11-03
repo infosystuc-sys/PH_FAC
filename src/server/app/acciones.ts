@@ -980,6 +980,22 @@ export async function listarOcParaComprobante(
     }
   }
 
+  // El articulo de Tango de los renglones que SI tienen una orden con saldo:
+  // `reconocidos` solo junta los que no la tienen, para explicar por que. Sin
+  // esto la columna de Tango quedaba en "—" hasta imputar la orden, y un
+  // sinonimo recien cargado en Tango parecia no encontrarse (2026-10-30,
+  // reportado por el usuario con AGRO&TEC EY26SB7-12).
+  const descripcionEnOc = new Map(
+    todas.flatMap((oc) =>
+      oc.renglones.map((x) => [normalizarCodigo(x.codArticu), { codArticu: x.codArticu, descripcion: x.descripcion }] as const),
+    ),
+  )
+  const reconocidoEnOc = (codigo: string | null): ArticuloDescripto | null => {
+    const art = resolverCodigoArticulo(codigo, enAlgunaOc, sinonimos)
+    const enOc = art ? descripcionEnOc.get(art) : undefined
+    return enOc ? { ...enOc, escala: 'ninguna' } : null
+  }
+
   const sinOrdenAnotado = sinOrden.map((r) => ({
     ...r,
     // Con el renglon ya abierto por talle: el codigo pelado de una linea
@@ -990,7 +1006,7 @@ export async function listarOcParaComprobante(
     hayCandidata:
       (candidatasPorRenglon[r.orden]?.length ?? 0) > 0 ||
       resolverCodigoArticulo(r.codigo, enAlgunaOc, sinonimos) !== null,
-    reconocidoComo: reconocidos.get(normalizarCodigo(r.codigo)) ?? null,
+    reconocidoComo: reconocidos.get(normalizarCodigo(r.codigo)) ?? reconocidoEnOc(r.codigo),
     // Las variantes de escala pendientes, cuando el codigo es un base.
     variantesEscala:
       variantes.get(reconocidos.get(normalizarCodigo(r.codigo))?.codArticu ?? '') ?? [],

@@ -70,6 +70,7 @@ export function RenglonesFactura({
   baseSegunImpuestos,
   soloLectura = false,
   esRemito = false,
+  version = 0,
 }: {
   /**
    * Un remito de proveedor (2026-10-25): la misma tabla, pero contra lo
@@ -88,6 +89,14 @@ export function RenglonesFactura({
   /** La base que implica el IVA impreso: la evidencia que decide el caso. */
   baseSegunImpuestos: number | null
   soloLectura?: boolean
+  /**
+   * Cambia cada vez que el servidor anota algo en el historial del
+   * comprobante. Las órdenes y los artículos reconocidos se piden a Tango
+   * desde acá y no viajan con la página, así que sin esto un
+   * "Revalidar contra Tango" refrescaba todo menos esta tabla: el sinónimo
+   * recién cargado en Tango seguía sin aparecer (2026-10-30).
+   */
+  version?: number
 }) {
   const [oferta, setOferta] = useState<OfertaOc | null>(null)
   const [errorCarga, setErrorCarga] = useState<string | null>(null)
@@ -111,7 +120,7 @@ export function RenglonesFactura({
       })
   }, [comprobanteId, codProvee])
 
-  useEffect(cargar, [cargar])
+  useEffect(cargar, [cargar, version])
 
   const resultado = resolverDescuentoDeDetalle(
     renglonesPdf,
@@ -379,6 +388,11 @@ export function RenglonesFactura({
                         <>
                           <span className={styles.mono}>{faltante.reconocidoComo.codArticu}</span>
                           <span className={styles.articuloDesc}>{faltante.reconocidoComo.descripcion}</span>
+                          {faltante.hayCandidata && !soloLectura && (
+                            // La columna OC puede quedar fuera de la vista
+                            // con el PDF al lado: se dice aca que falta.
+                            <span className={styles.notaOc}>falta elegir la OC (columna OC →)</span>
+                          )}
                           {!faltante.hayCandidata && (
                             <span className={styles.alertaNota}>
                               {faltante.reconocidoComo.escala === 'base'
