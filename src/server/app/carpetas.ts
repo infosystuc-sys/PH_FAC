@@ -200,7 +200,7 @@ async function cicloCarpetas(): Promise<void> {
   } catch (err) {
     // No se deja escapar -- el ciclo tiene que seguir reprogramandose pase
     // lo que pase -- pero silenciarlo del todo hizo dificil de diagnosticar
-    // un fallo real (ver RETOMAR.md, "instrumentation.ts en el lugar
+    // un fallo real (ver HISTORIAL.md, "instrumentation.ts en el lugar
     // equivocado"): al menos queda en el log del servidor.
     console.error('[carpetas] fallo el ciclo de escaneo, reintenta en la proxima vuelta:', err)
   } finally {

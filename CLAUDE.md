@@ -2,7 +2,7 @@
 
 Aplicación web para el equipo de cuentas a pagar. El operador importa comprobantes de compra en PDF, Claude extrae los campos, el operador revisa contra el PDF original, y el comprobante se graba en el ERP **Tango Gestión** sobre SQL Server.
 
-**Antes de trabajar, leé `docs/superpowers/RETOMAR.md`**: tiene el estado actual, qué fase sigue, y tres cosas pendientes que hay que arrastrar a las fases siguientes. El diseño completo está en `docs/superpowers/specs/2026-08-04-importador-facturas-tango-design.md`.
+**Antes de trabajar, leé `docs/superpowers/RETOMAR.md`**: entorno, qué hace la app, pendientes y decisiones vigentes del usuario, en una página. La bitácora detallada de cada cambio está en `docs/superpowers/HISTORIAL.md`. Al cerrar una sesión, actualizá las dos. El diseño original está en `docs/superpowers/specs/2026-08-04-importador-facturas-tango-design.md`.
 
 ## Stack
 

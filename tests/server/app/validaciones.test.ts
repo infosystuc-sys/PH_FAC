@@ -75,7 +75,7 @@ describe('validarComprobanteEn', () => {
   it('duplicado en error si el N_COMP ya existe en CPA04 para ese proveedor', async () => {
     await conRollback(async (tx) => {
       // Excluye proveedores con CUIT duplicado en CPA01 (hay 7 reales, ver
-      // RETOMAR.md): si la fila mas reciente de CPA04 resulta ser de uno de
+      // HISTORIAL.md): si la fila mas reciente de CPA04 resulta ser de uno de
       // esos proveedores, el CUIT no resuelve a un match unico y el
       // resultado es 'advertencia' (proveedor no verificado), no 'error' --
       // rompe este test sin que el codigo bajo prueba tenga nada mal. Pasó
