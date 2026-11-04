@@ -55,7 +55,7 @@
 2. **Confirmar que el repo `PH_FAC` en GitHub es privado.** No se pudo verificar desde acá (`gh` no está instalado).
 
 **Abiertos, sin urgencia:**
-3. **80 remitos `RP` en estado `'P'`** (28 de 2021, 6 de 2025, 46 de 2026). El consumo automático por factura (2026-11-03) corre solo para las facturas nuevas; estos no se corrigen solos. Antes de tocarlos hay que ver cuáles son pendientes de verdad.
+3. **Fuera de alcance: los datos que Tango ya tiene.** La app no audita ni corrige cómo registró Tango lo cargado desde sus propias pantallas (por ejemplo, los remitos `RP` que quedaron en `'P'`): decisión del usuario, 2026-11-03. El trabajo es que lo que graba la app quede bien.
 4. **Dividir `src/server/app/acciones.ts` (~1.600 líneas) y `src/server/app/cola.ts` (~1.300).** Conviene antes de la próxima funcionalidad grande.
 5. **Costo de IA por comprobante sin medir.** `extraerDePdf` ya devuelve los tokens; falta guardarlos en `PHF_COMPROBANTE` y mirar unas semanas de uso real.
 6. **`CPA04.UNIDADES`** es la única columna del registro sin fórmula confirmada (hoy va `IMPORTE_TO`). Contrastar contra facturas cargadas a mano si aparece un desvío.
