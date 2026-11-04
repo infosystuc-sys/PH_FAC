@@ -88,6 +88,12 @@ const DEFINICIONES: Definicion[] = [
         ddl: 'CREATE INDEX IX_PHF_COMP_DUP ON PHF_COMPROBANTE (COD_PROVEE, TIPO, NUMERO);',
       },
       { nombre: 'IX_PHF_COMP_CUIT', ddl: 'CREATE INDEX IX_PHF_COMP_CUIT ON PHF_COMPROBANTE (CUIT);' },
+      // La bandeja y la navegacion J/K ordenan por FECHA_ALTA DESC, ID DESC en
+      // cada carga: a 20-100 comprobantes por dia son ~25.000 filas por año.
+      {
+        nombre: 'IX_PHF_COMP_ALTA',
+        ddl: 'CREATE INDEX IX_PHF_COMP_ALTA ON PHF_COMPROBANTE (FECHA_ALTA DESC, ID DESC);',
+      },
     ],
     // Un CHECK constraint no se agrega con ALTER...ADD como una columna: si
     // su cuerpo cambia (un valor mas para ESTADO) hay que reemplazarlo

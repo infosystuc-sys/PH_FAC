@@ -264,6 +264,48 @@ describe('desnormalizarBandejaEn', () => {
     })
   })
 
+  it('recorta lo que no entra en la columna y lo deja asentado en el historial', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await desnormalizarBandejaEn(tx, id, {
+        campos: {
+          tipo: { valor: 'FAC A', confianza: 1 },
+          nro: { valor: '1234567890123456789012345', confianza: 1 }, // 25 > 20
+        },
+        renglones: [],
+        cargos: [],
+        renglonesPdf: [],
+      })
+
+      const c = await tx.request().input('id', sql.Int, id)
+        .query('SELECT TIPO, NUMERO FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(c.recordset[0].NUMERO).toBe('12345678901234567890')
+      expect(c.recordset[0].TIPO).toBe('FAC A')
+
+      const a = await tx.request().input('id', sql.Int, id)
+        .query('SELECT TEXTO FROM PHF_AUDITORIA WHERE COMPROBANTE_ID = @id')
+      const textos = a.recordset.map((x: { TEXTO: string }) => x.TEXTO)
+      expect(textos.some((t) => t.includes('recortado') && t.includes('nro (25 caracteres'))).toBe(true)
+      // El campo que entro entero no se menciona.
+      expect(textos.some((t) => t.includes('tipo ('))).toBe(false)
+    })
+  })
+
+  it('no asienta nada si todo entra en la columna', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await desnormalizarBandejaEn(tx, id, {
+        campos: { nro: { valor: '00063576', confianza: 1 } },
+        renglones: [],
+        cargos: [],
+        renglonesPdf: [],
+      })
+      const a = await tx.request().input('id', sql.Int, id)
+        .query("SELECT COUNT(*) AS n FROM PHF_AUDITORIA WHERE COMPROBANTE_ID = @id AND TEXTO LIKE '%recortado%'")
+      expect(a.recordset[0].n).toBe(0)
+    })
+  })
+
   it('deja NULL el total y la fecha si la IA leyo algo que no parsea', async () => {
     await conRollback(async (tx) => {
       const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })

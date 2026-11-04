@@ -251,13 +251,25 @@ export async function desnormalizarBandejaEn(
 ): Promise<void> {
   const v = (clave: string) => extraccion.campos[clave]?.valor ?? null
 
+  // Recorta al ancho de la columna para que el driver no rechace el
+  // parametro y tumbe la importacion entera, pero deja constancia: el valor
+  // completo sigue en PHF_CAMPO, y lo que se corta aca es lo que la bandeja
+  // y el chequeo de duplicados por PUNTO_VENTA/NUMERO van a usar.
+  const recortados: string[] = []
+  const recortar = (clave: string, max: number): string | null => {
+    const valor = v(clave)
+    if (valor === null || valor.length <= max) return valor
+    recortados.push(`${clave} (${valor.length} caracteres, se guardan ${max})`)
+    return valor.slice(0, max)
+  }
+
   await e
     .request()
     .input('id', sql.Int, id)
-    .input('tipo', sql.VarChar(10), v('tipo')?.slice(0, 10) ?? null)
-    .input('pv', sql.VarChar(10), v('ptovta')?.slice(0, 10) ?? null)
-    .input('nro', sql.VarChar(20), v('nro')?.slice(0, 20) ?? null)
-    .input('cuit', sql.VarChar(15), v('cuit')?.slice(0, 15) ?? null)
+    .input('tipo', sql.VarChar(10), recortar('tipo', 10))
+    .input('pv', sql.VarChar(10), recortar('ptovta', 10))
+    .input('nro', sql.VarChar(20), recortar('nro', 20))
+    .input('cuit', sql.VarChar(15), recortar('cuit', 15))
     .input('total', sql.Decimal(19, 4), parsearImporteONulo(v('total')))
     // Canonica y truncada. Era el unico de los cinco sin .slice(), y una
     // factura que imprime "18 de Septiembre de 2026" --24 caracteres, mas que
@@ -278,6 +290,14 @@ export async function desnormalizarBandejaEn(
           FECHA_EMISION = TRY_CONVERT(DATE, @fecha, 103)
       WHERE ID = @id
     `)
+
+  if (recortados.length > 0) {
+    await auditarEn(
+      e,
+      id,
+      `La bandeja guardó recortado: ${recortados.join('; ')}. El valor leído completo está en el formulario; revisalo contra el PDF.`,
+    )
+  }
 }
 
 /**

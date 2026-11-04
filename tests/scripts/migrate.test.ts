@@ -149,7 +149,8 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
         JOIN sys.tables t ON t.object_id = i.object_id
         WHERE t.name = @t AND i.name LIKE 'IX[_]%'
       `)
-    expect(idx.recordset[0].n).toBe(3)
+    // ESTADO, DUP, CUIT y ALTA.
+    expect(idx.recordset[0].n).toBe(4)
   })
 
   it('siembra la fila unica (ID=1) de PHF_CONFIGURACION, sin duplicarla en corridas siguientes', async () => {
@@ -202,6 +203,17 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
       .input('t', `${prefijo}ROTA`)
       .query('SELECT COUNT(*) AS n FROM sys.tables WHERE name = @t')
     expect(r.recordset[0].n).toBe(0)
+  })
+
+  it('crea el indice por fecha de alta que usan la bandeja y la navegacion J/K', async () => {
+    const prefijo = prefijoUnico()
+    await migrar(prefijo)
+    const pool = await getPool()
+    const r = await pool
+      .request()
+      .input('t', 'IX_PHF_COMP_ALTA'.replace('PHF_', prefijo))
+      .query('SELECT COUNT(*) AS n FROM sys.indexes WHERE name = @t')
+    expect(r.recordset[0].n).toBe(1)
   })
 
   it('repara una tabla existente a la que le falta un indice, sin tocar el CREATE TABLE', async () => {
