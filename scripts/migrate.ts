@@ -70,6 +70,11 @@ const DEFINICIONES: Definicion[] = [
         ERROR_MENSAJE       NVARCHAR(1000) NULL,
         EXTRACCION_MS       INT            NULL,
         EXTRACCION_MODELO   VARCHAR(40)    NULL,
+        IA_LLAMADAS         INT            NULL,
+        IA_TOKENS_ENTRADA   INT            NULL,
+        IA_TOKENS_SALIDA    INT            NULL,
+        IA_TOKENS_CACHE_LECTURA   INT      NULL,
+        IA_TOKENS_CACHE_ESCRITURA INT      NULL,
         FECHA_ALTA          DATETIME2      NOT NULL CONSTRAINT DF_PHF_COMP_ALTA DEFAULT SYSDATETIME(),
         USUARIO_ALTA        NVARCHAR(60)   NOT NULL,
         FECHA_MODIF         DATETIME2      NULL,
@@ -130,6 +135,17 @@ const DEFINICIONES: Definicion[] = [
       // cuenta, y calcularlo por comprobante en cada listado seria una
       // consulta por fila.
       { nombre: 'RENGLONES_A_VINCULAR', ddl: 'RENGLONES_A_VINCULAR INT NOT NULL CONSTRAINT DF_PHF_COMP_AVINCULAR DEFAULT 0' },
+      // Lo que consumió la IA para leer este comprobante (2026-11-03): la
+      // cantidad de llamados a la API y sus tokens, ACUMULADOS -- un
+      // reproceso o un reintento suman, porque se pagan igual. NULL en los
+      // comprobantes leídos antes de que existieran: no se midieron, que no
+      // es lo mismo que 0. El costo se calcula con src/lib/usoIa.ts
+      // (`pnpm costo-ia`), no se guarda.
+      { nombre: 'IA_LLAMADAS', ddl: 'IA_LLAMADAS INT NULL' },
+      { nombre: 'IA_TOKENS_ENTRADA', ddl: 'IA_TOKENS_ENTRADA INT NULL' },
+      { nombre: 'IA_TOKENS_SALIDA', ddl: 'IA_TOKENS_SALIDA INT NULL' },
+      { nombre: 'IA_TOKENS_CACHE_LECTURA', ddl: 'IA_TOKENS_CACHE_LECTURA INT NULL' },
+      { nombre: 'IA_TOKENS_CACHE_ESCRITURA', ddl: 'IA_TOKENS_CACHE_ESCRITURA INT NULL' },
     ],
   },
   {

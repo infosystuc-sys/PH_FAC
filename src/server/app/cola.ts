@@ -9,6 +9,7 @@ import { conTransaccion } from '../db/tx'
 import { extraerDePdf } from '../ia/extraccion'
 import { extraerRenglonesFacturados } from '../ia/renglones'
 import { cotejarRenglones, type RenglonFacturado } from '@/lib/cotejo'
+import type { UsoTokens } from '@/lib/usoIa'
 import {
   tipoFacturaODefault,
   TIPOS_FACTURA,
@@ -171,6 +172,37 @@ export async function marcarLeidoEn(
 }
 
 /**
+ * Suma a la cabecera lo que consumió UN llamado a la API. Acumula en vez de
+ * pisar: la segunda pasada de renglones, un reintento y un reproceso se
+ * pagan igual, y lo que se quiere medir es cuánto costó el comprobante.
+ * `uso` undefined (el llamado falló antes de que la API respondiera) no
+ * suma nada: no hay tokens que contar, y en general tampoco se cobra.
+ */
+export async function sumarUsoIaEn(
+  e: Ejecutor,
+  id: number,
+  uso: UsoTokens | undefined,
+): Promise<void> {
+  if (!uso) return
+  await e
+    .request()
+    .input('id', sql.Int, id)
+    .input('ent', sql.Int, uso.entrada)
+    .input('sal', sql.Int, uso.salida)
+    .input('cl', sql.Int, uso.cacheLectura)
+    .input('ce', sql.Int, uso.cacheEscritura)
+    .query(`
+      UPDATE PHF_COMPROBANTE
+      SET IA_LLAMADAS = ISNULL(IA_LLAMADAS, 0) + 1,
+          IA_TOKENS_ENTRADA = ISNULL(IA_TOKENS_ENTRADA, 0) + @ent,
+          IA_TOKENS_SALIDA = ISNULL(IA_TOKENS_SALIDA, 0) + @sal,
+          IA_TOKENS_CACHE_LECTURA = ISNULL(IA_TOKENS_CACHE_LECTURA, 0) + @cl,
+          IA_TOKENS_CACHE_ESCRITURA = ISNULL(IA_TOKENS_CACHE_ESCRITURA, 0) + @ce
+      WHERE ID = @id
+    `)
+}
+
+/**
  * Suma un intento. Si quedan reintentos lo deja en `procesando` para que
  * la repesca lo vuelva a tomar; si se agotaron, lo pasa a `error`.
  */
@@ -197,6 +229,9 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
   try {
     const pdf = await leerPdf(ruta)
     const r = await extraerDePdf(pdf, tipoFactura)
+    // Suelto, antes y fuera de toda transacción: si lo que sigue falla y se
+    // revierte, los tokens ya se pagaron y tienen que quedar contados.
+    await sumarUsoIaEn(await getPool(), id, r.usage)
 
     if (!r.ok) {
       await conTransaccion((tx) => marcarFalloEn(tx, id, r.error))
@@ -333,6 +368,7 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
     let errorRenglones: string | null = null
     if (lineas.length > 0) {
       const segunda = await extraerRenglonesFacturados(pdf, lineas)
+      await sumarUsoIaEn(await getPool(), id, segunda.usage)
       if (segunda.ok) facturados = segunda.renglones
       else errorRenglones = segunda.error
     }

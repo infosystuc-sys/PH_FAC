@@ -11,6 +11,7 @@ import {
 } from '@/lib/tipoFactura'
 import { PROMPTS_EXTRACCION } from './prompt'
 import { tipoPorContenido, TIPOS_ARCHIVO } from '@/lib/tipoArchivo'
+import { usoDeRespuesta, type UsoTokens } from '@/lib/usoIa'
 
 export type CampoExtraido = { valor: string | null; confianza: number }
 
@@ -27,11 +28,16 @@ export type Extraccion = {
   renglonesPdf: RenglonPdf[]
 }
 
-export type UsoTokens = { inputTokens: number; outputTokens: number }
+export type { UsoTokens }
 
+/**
+ * `usage` viene también en una falla cuando la API llegó a responder (un
+ * rechazo, una respuesta sin texto, un JSON que no parsea): esos tokens se
+ * cobran igual. Solo falta cuando el llamado mismo falló.
+ */
 export type ResultadoExtraccion =
-  | { ok: true; extraccion: Extraccion; ms: number; modelo: string; usage: UsoTokens }
-  | { ok: false; error: string }
+  | { ok: true; extraccion: Extraccion; ms: number; modelo: string; usage?: UsoTokens }
+  | { ok: false; error: string; modelo: string; usage?: UsoTokens }
 
 const MODELO = process.env.ANTHROPIC_MODELO || 'claude-opus-5'
 
@@ -190,6 +196,7 @@ export async function extraerDePdf(
   tipo: TipoFactura,
 ): Promise<ResultadoExtraccion> {
   const arranque = Date.now()
+  let usage: UsoTokens | undefined
   try {
     const r = await getCliente().messages.create({
       model: MODELO,
@@ -221,14 +228,15 @@ export async function extraerDePdf(
         },
       ],
     })
+    usage = usoDeRespuesta(r.usage)
 
     if (r.stop_reason === 'refusal') {
-      return { ok: false, error: 'El modelo no procesó el comprobante.' }
+      return { ok: false, error: 'El modelo no procesó el comprobante.', modelo: MODELO, usage }
     }
 
     const bloque = r.content.find((b) => b.type === 'text')
     if (!bloque || bloque.type !== 'text') {
-      return { ok: false, error: 'La respuesta no trajo contenido de texto.' }
+      return { ok: false, error: 'La respuesta no trajo contenido de texto.', modelo: MODELO, usage }
     }
 
     return {
@@ -236,14 +244,8 @@ export async function extraerDePdf(
       extraccion: parsearRespuesta(bloque.text, tipo),
       ms: Date.now() - arranque,
       modelo: MODELO,
-      // Base para medir el costo real por comprobante (RETOMAR.md): sin
-      // esto, ni con más PDFs reales se podría calcular. La muestra en sí
-      // (4-5 comprobantes más) sigue diferida a la Fase 4 por falta de
-      // material, no por falta de este dato.
-      usage: {
-        inputTokens: r.usage.input_tokens,
-        outputTokens: r.usage.output_tokens,
-      },
+      // Con esto se mide el costo por comprobante (src/lib/usoIa.ts).
+      usage,
     }
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : String(err)
@@ -252,6 +254,6 @@ export async function extraerDePdf(
     // programación (a diferencia de una lectura de PDF que salió mal) sin
     // esperar a que la cola de la Task 6 agote los reintentos en silencio.
     console.error(`extraerDePdf[${arranque}]: fallo la extraccion:`, err)
-    return { ok: false, error: mensaje.slice(0, 900) }
+    return { ok: false, error: mensaje.slice(0, 900), modelo: MODELO, usage }
   }
 }

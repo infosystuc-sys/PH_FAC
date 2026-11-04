@@ -9,6 +9,7 @@
     "start": "next start",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
+    "costo-ia": "tsx scripts/costo-ia.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

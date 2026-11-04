@@ -102,18 +102,37 @@ describe('parsearRenglones', () => {
 })
 
 describe('extraerDePdf', () => {
-  it('propaga el usage (tokens de entrada y salida) de la respuesta de la API', async () => {
+  it('propaga el usage de la respuesta de la API, caché incluida', async () => {
     mockCreate.mockResolvedValueOnce({
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: OK }],
-      usage: { input_tokens: 12345, output_tokens: 678 },
+      usage: {
+        input_tokens: 12345,
+        output_tokens: 678,
+        cache_read_input_tokens: 3000,
+        cache_creation_input_tokens: null,
+      },
     })
 
     const r = await extraerDePdf(Buffer.from('%PDF-1.4 fake'), 'conceptos')
 
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.usage).toEqual({ inputTokens: 12345, outputTokens: 678 })
+    expect(r.usage).toEqual({ entrada: 12345, salida: 678, cacheLectura: 3000, cacheEscritura: 0 })
+  })
+
+  it('devuelve el usage tambien cuando la respuesta llega pero no sirve', async () => {
+    // Un rechazo o un JSON roto se cobran igual: tienen que poder contarse.
+    mockCreate.mockResolvedValueOnce({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: 'esto no es JSON' }],
+      usage: { input_tokens: 100, output_tokens: 20 },
+    })
+
+    const r = await extraerDePdf(Buffer.from('%PDF-1.4 fake'), 'conceptos')
+
+    expect(r.ok).toBe(false)
+    expect(r.usage).toEqual({ entrada: 100, salida: 20, cacheLectura: 0, cacheEscritura: 0 })
   })
 
   it('no lanza y devuelve ok:false si la llamada a la API falla', async () => {
@@ -124,6 +143,7 @@ describe('extraerDePdf', () => {
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.error).toMatch(/fallo de red simulado/)
+    expect(r.usage).toBeUndefined()
   })
 })
 

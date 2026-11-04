@@ -8,6 +8,7 @@ import {
   importarComprobanteEn,
   tomarPendientesEn,
   marcarLeidoEn,
+  sumarUsoIaEn,
   marcarFalloEn,
   MAX_INTENTOS,
 } from '@/server/app/cola'
@@ -232,6 +233,49 @@ describe('marcarLeidoEn', () => {
       await marcarLeidoEn(tx, id, 0.97, 2400, 'claude-opus-5', 21)
       const d = await obtenerDetalleEn(tx, id)
       expect(d.auditoria.some((a) => a.texto.includes('21'))).toBe(true)
+    })
+  })
+})
+
+describe('sumarUsoIaEn', () => {
+  async function usoDe(tx: sql.Transaction, id: number) {
+    const r = await tx.request().input('id', sql.Int, id).query(`
+      SELECT IA_LLAMADAS, IA_TOKENS_ENTRADA, IA_TOKENS_SALIDA,
+             IA_TOKENS_CACHE_LECTURA, IA_TOKENS_CACHE_ESCRITURA
+      FROM PHF_COMPROBANTE WHERE ID = @id
+    `)
+    return r.recordset[0]
+  }
+
+  it('arranca en NULL: sin llamados medidos no hay dato', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      const u = await usoDe(tx, id)
+      expect(u.IA_LLAMADAS).toBeNull()
+      expect(u.IA_TOKENS_ENTRADA).toBeNull()
+    })
+  })
+
+  it('acumula los llamados en vez de pisarlos', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await sumarUsoIaEn(tx, id, { entrada: 1000, salida: 200, cacheLectura: 3000, cacheEscritura: 0 })
+      await sumarUsoIaEn(tx, id, { entrada: 500, salida: 100, cacheLectura: 0, cacheEscritura: 40 })
+      expect(await usoDe(tx, id)).toEqual({
+        IA_LLAMADAS: 2,
+        IA_TOKENS_ENTRADA: 1500,
+        IA_TOKENS_SALIDA: 300,
+        IA_TOKENS_CACHE_LECTURA: 3000,
+        IA_TOKENS_CACHE_ESCRITURA: 40,
+      })
+    })
+  })
+
+  it('sin usage no suma un llamado', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'procesando' })
+      await sumarUsoIaEn(tx, id, undefined)
+      expect((await usoDe(tx, id)).IA_LLAMADAS).toBeNull()
     })
   })
 })

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { bloqueComprobante } from './extraccion'
 import type { LineaRemito, RenglonFacturado } from '@/lib/cotejo'
+import { usoDeRespuesta, type UsoTokens } from '@/lib/usoIa'
 
 /**
  * Segunda pasada de extracción: lee los renglones de una factura de
@@ -33,9 +34,10 @@ function getCliente(): Anthropic {
   return cliente
 }
 
+/** `usage` falta solo si no hubo llamado (sin líneas) o si el llamado mismo falló. */
 export type ResultadoRenglones =
-  | { ok: true; renglones: RenglonFacturado[]; ms: number }
-  | { ok: false; error: string }
+  | { ok: true; renglones: RenglonFacturado[]; ms: number; usage?: UsoTokens }
+  | { ok: false; error: string; usage?: UsoTokens }
 
 /**
  * Misma convención que el schema de la cabecera: cadena vacía en vez de
@@ -233,6 +235,7 @@ export async function extraerRenglonesFacturados(
   if (lineas.length === 0) return { ok: true, renglones: [], ms: 0 }
 
   const arranque = Date.now()
+  let usage: UsoTokens | undefined
   try {
     const r = await getCliente().messages.create({
       model: MODELO,
@@ -255,24 +258,26 @@ export async function extraerRenglonesFacturados(
         },
       ],
     })
+    usage = usoDeRespuesta(r.usage)
 
     if (r.stop_reason === 'refusal') {
-      return { ok: false, error: 'El modelo no procesó los renglones del comprobante.' }
+      return { ok: false, error: 'El modelo no procesó los renglones del comprobante.', usage }
     }
 
     const bloque = r.content.find((b) => b.type === 'text')
     if (!bloque || bloque.type !== 'text') {
-      return { ok: false, error: 'La respuesta de renglones no trajo contenido de texto.' }
+      return { ok: false, error: 'La respuesta de renglones no trajo contenido de texto.', usage }
     }
 
     return {
       ok: true,
       renglones: parsearRenglonesFacturados(bloque.text),
       ms: Date.now() - arranque,
+      usage,
     }
   } catch (err) {
     const mensaje = err instanceof Error ? err.message : String(err)
     console.error(`extraerRenglonesFacturados[${arranque}]: fallo la segunda pasada:`, err)
-    return { ok: false, error: mensaje.slice(0, 900) }
+    return { ok: false, error: mensaje.slice(0, 900), usage }
   }
 }
