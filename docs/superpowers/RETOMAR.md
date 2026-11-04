@@ -79,6 +79,7 @@ Están documentadas junto al código que las aplica: buscá "decisión del usuar
 - **`CPA36`**: `PENDIENTE_FACTURAR_RECIBIDA` y `PENDIENTE_RECIBIR_FACTURADA` siguen la regla de Tango (la diferencia entre recibido y facturado, sin bajar de 0) desde el 2026-11-03; antes se grababa la cantidad facturada.
 - **Al consumir un remito, `STA20.CANT_FACTU` no se toca**: solo baja `CANT_PEND` (2026-11-03).
 - **El remito de proveedor entra siempre al depósito 01** (2026-10-25). Los cargos del proveedor van al mismo depósito que los artículos de la factura (2026-09-22).
+- **La app no graba en ninguna tabla `CTA*`** (2026-11-03): si hace falta el espejo de Tango Central, lo tiene que llenar Tango.
 - **El precio de última compra (`STA12`) se pisa al registrar aunque la factura sea más vieja** que la última compra que ya tiene, como hace Tango (2026-09-23).
 
 ---
@@ -86,7 +87,7 @@ Están documentadas junto al código que las aplica: buscá "decisión del usuar
 ## Datos de la base que costó descubrir
 
 - **Un ingreso de factura de compra toca 11 tablas.** Ver el spec §2 y `registrarComprobanteEn`.
-- **Tablas que se pueden tocar:** las de la documentación oficial de Axoft, más las excepciones que lista `CLAUDE.md`. Las `CTA*` son el espejo de Tango Central y no se leen. Se escriben solo cuatro, las que Tango graba al registrar una factura: `CTA05`/`CTA06`/`CTA07` (espejo de `CPA04`/`CPA18`/`CPA46`) y `CTA_COMPROBANTE_COMPRAS_CLASIFICACION_IVA` (junto a `CPA63`). El usuario pidió no tocar ninguna `CTA*` y, al ver que Tango las llena en el 99,97% de sus facturas de 2026, decidió mantener esas cuatro (2026-11-03).
+- **Tablas que se pueden tocar:** las de la documentación oficial de Axoft, más las excepciones que lista `CLAUDE.md`. **Ninguna `CTA*` se lee ni se escribe** (el espejo de Tango Central): decisión del usuario, 2026-11-03. Hasta esa fecha el registro grababa `CTA05`/`CTA06`/`CTA07` y `CTA_COMPROBANTE_COMPRAS_CLASIFICACION_IVA`. Tango sí las graba cuando se registra desde su pantalla (3.833 de 3.834 facturas de 2026) y ningún trigger lo hace, así que las facturas de la app quedan sin esas filas. `tests/fronteraCta.test.ts` lo protege.
 - **CUIT en `CPA01` con guiones** (`23-23292431-4`). Hay 7 CUIT duplicados: la app pregunta cuál.
 - **`TCOMP_IN_C` y `T_COMP` son cosas distintas**: `'FP'` (interno, 2 caracteres) contra `'FAC'` (visible, 3).
 - **`CPA04.LEYENDA` es `varchar(30)`** y `ASIENTO_CP.DESC_LEYENDA` es `varchar(100)`.

@@ -142,11 +142,6 @@ describe('registrarComprobanteEn', () => {
       expect(Number(cpa04.recordset[0].IMPORTE_TO)).toBe(12100)
       expect(Number(cpa04.recordset[0].COD_IVA1)).toBe(1) // 21% -> COD_IVA 1
 
-      const cta05 = await tx.request()
-        .input('n', sql.Float, registro.ncompInC)
-        .query(`SELECT * FROM CTA05 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
-      expect(cta05.recordset).toHaveLength(1)
-
       const cpa54 = await tx.request()
         .input('t', sql.VarChar(10), registro.tComp)
         .input('n', sql.VarChar(20), registro.nComp)
@@ -837,11 +832,6 @@ describe('registrarComprobanteEn con liquidacion de tarjeta', () => {
         .input('n', sql.Float, registro.ncompInC)
         .query(`SELECT IMPORTE_TO FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
       expect(Number(cpa04.recordset[0].IMPORTE_TO)).toBe(12100)
-
-      const cta05 = await tx.request()
-        .input('n', sql.Float, registro.ncompInC)
-        .query(`SELECT IMPORTE_TO FROM CTA05 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
-      expect(Number(cta05.recordset[0].IMPORTE_TO)).toBe(12100)
     })
   }, 120_000)
 })

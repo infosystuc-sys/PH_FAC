@@ -10,7 +10,7 @@ import {
 } from './tipoFactura'
 
 /**
- * El largo de `CPA04.LEYENDA` y su espejo `CTA05.LEYENDA`: varchar(30),
+ * El largo de `CPA04.LEYENDA`: varchar(30),
  * verificado contra la base real.
  *
  * Vive en el catalogo de campos y no al lado del INSERT porque es el tope

@@ -352,7 +352,14 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const horaAhora = horaActual()
   const hoy = new Date()
 
-  // 3. CPA04 + CTA05. Los literales fijos del VALUES (FILLER, CCONTROL, los
+  // Ninguna tabla CTA* (el espejo de Tango Central: CTA05/CTA06/CTA07,
+  // CTA_COMPROBANTE_COMPRAS_CLASIFICACION_IVA) se escribe desde esta app --
+  // decision del usuario, 2026-11-03. Tango las graba al registrar desde su
+  // propia pantalla, pero ningun trigger lo hace, asi que un comprobante
+  // registrado por la app queda sin esas filas. Si algun dia hacen falta,
+  // las tiene que llenar Tango, no esta app.
+  //
+  // 3. CPA04. Los literales fijos del VALUES (FILLER, CCONTROL, los
   // RG_3572_*/RG_3685_*, etc.) son columnas legacy de Tango copiadas tal
   // cual de la factura de referencia (NCOMP_IN_C=16591, proveedor 010246),
   // verificadas contra la base durante el diseño de esta fase -- no varian
@@ -451,70 +458,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       SELECT ID_CPA04 FROM @idsCpa04;`)
   const idCpa04 = Number(cpa04Result.recordset[0].ID_CPA04)
 
-  await tx.request()
-    .input('tcompInC', sql.VarChar(2), tcompInC)
-    .input('ncompInC', sql.Float, ncompInC)
-    .input('nComp', sql.VarChar(20), nComprobante)
-    .input('codProvee', sql.VarChar(6), codProvee)
-    .input('cuitPro', sql.VarChar(20), proveedor.cuit)
-    .input('nombrePro', sql.VarChar(60), proveedor.razon)
-    .input('condPro', sql.VarChar(10), proveedor.condIva || 'RI')
-    .input('catIva', sql.VarChar(10), proveedor.condIva || 'RI')
-    .input('condCompr', sql.SmallInt, codCondCompra)
-    .input('cotizacion', sql.Decimal(18, 4), cotizacion)
-    .input('fechaEmis', sql.DateTime, fechaEmision)
-    .input('fechaCont', sql.DateTime, fechaContable)
-    .input('importeNe', sql.Decimal(18, 2), neto)
-    .input('importeEx', sql.Decimal(18, 2), exento)
-    .input('importeTo', sql.Decimal(18, 2), total)
-    .input('leyenda', sql.VarChar(LARGO_LEYENDA_COMPROBANTE), leyenda)
-    .input('monCte', sql.Bit, moneda === 'ARS')
-    .input('impIva1', sql.Decimal(18, 2), alicuotas[0].importe).input('porcIva1', sql.Decimal(9, 4), alicuotas[0].porcentaje).input('codIva1', sql.SmallInt, alicuotas[0].codigo)
-    .input('impIva2', sql.Decimal(18, 2), alicuotas[1].importe).input('porcIva2', sql.Decimal(9, 4), alicuotas[1].porcentaje).input('codIva2', sql.SmallInt, alicuotas[1].codigo)
-    .input('impIva3', sql.Decimal(18, 2), alicuotas[2].importe).input('porcIva3', sql.Decimal(9, 4), alicuotas[2].porcentaje).input('codIva3', sql.SmallInt, alicuotas[2].codigo)
-    .input('impIva4', sql.Decimal(18, 2), alicuotas[3].importe).input('porcIva4', sql.Decimal(9, 4), alicuotas[3].porcentaje).input('codIva4', sql.SmallInt, alicuotas[3].codigo)
-    .input('impIva5', sql.Decimal(18, 2), alicuotas[4].importe).input('porcIva5', sql.Decimal(9, 4), alicuotas[4].porcentaje).input('codIva5', sql.SmallInt, alicuotas[4].codigo)
-    .input('sinFecha', sql.DateTime, SIN_FECHA)
-    .query(`
-      INSERT INTO CTA05 (
-        TCOMP_IN_C, NCOMP_IN_C, T_COMP, N_COMP, COD_PROVEE, CUIT_PRO, NOMBRE_PRO,
-        COND_PRO, CAT_IVA, COND_COMPR, COTIZACION, FECHA_EMIS, FECHA_CONT, FECHA_VTO,
-        IMP_NETO, SUBT_GRAVA, IMPORTE_EX, SUBT_EXENT, IMPORTE_TO, LEYENDA, MON_CTE,
-        IMPOR_IVA1, PORC_IVA1, COD_IVA1, IMPOR_IVA2, PORC_IVA2, COD_IVA2,
-        IMPOR_IVA3, PORC_IVA3, COD_IVA3, IMPOR_IVA4, PORC_IVA4, COD_IVA4,
-        IMPOR_IVA5, PORC_IVA5, COD_IVA5, UNIDADES, NRO_SUCURS,
-        FILLER, APLICA_PER, CAI, COD_GASTO, COMP_AFIP, CONTFISCAL, DESPACHO,
-        ESTADO, ESTADO_AUT, FECHA_IMPO, HORA_IMPO, IMPORTE_AN, IMPORTE_BO,
-        IMPORTE_FL, IMPORTE_IN, INC_II, INC_IVA, INGB_PRO, LOTE, T_FORM,
-        TIPO_ASIEN, TIPO_IMPOR, CCONTROL, BO_AUTORIZ, DOC_ELECTR, INF_IVA,
-        IVA_CHILE, T_DOC_DTE, SUCURS_SII, N_INT_MES, COD_CLASIF, AFECTO_AF,
-        EXENTO_AF, IVA_AF, ACTIVOFIJO, ID_ASIENTO_MODELO_CP,
-        RG_3572_TIPO_OPERACION_HABITUAL_COMPRAS, RG_3572_DENOMINACION_INTERMEDIARIO,
-        RG_3685_IVA_COMISION, RG_3685_TIPO_OPERACION_COMPRAS, RG_3685_COMPROBANTE_COMPRAS,
-        RG_3572_CUIT_INTERMEDIARIO, RG_3685_GENERA_INFORMACION_PROV_HABITUAL,
-        RG_3685_GENERA_INFORMACION_PROV_OCASIONAL, COD_NO_RECUP, ESTADO_UNIDADES,
-        TIPO_TRANSACCION_COMPRA, DOC_PRO
-      ) VALUES (
-        @tcompInC, @ncompInC, 'FAC', @nComp, @codProvee, @cuitPro, @nombrePro,
-        @condPro, @catIva, @condCompr, @cotizacion, @fechaEmis, @fechaCont, @sinFecha,
-        @importeNe, @importeNe, @importeEx, @importeEx, @importeTo, @leyenda, @monCte,
-        @impIva1, @porcIva1, @codIva1, @impIva2, @porcIva2, @codIva2,
-        @impIva3, @porcIva3, @codIva3, @impIva4, @porcIva4, @codIva4,
-        @impIva5, @porcIva5, @codIva5, @importeTo, 1001,
-        '', 1, '', '', 0, 0, '',
-        'PEN', '', @fechaEmis, '0000', 0, 0,
-        0, 0, 0, 0, '', 0, '',
-        '', '', '', 0, 0, 'S',
-        '', '', 0, 0, '', 0,
-        0, 0, 'N', 1,
-        NULL, '',
-        0, '0', '001',
-        '', 1,
-        NULL, '', 'PEN',
-        0, 80
-      )`)
-
-  // 4. CPA18 + CTA06 (percepciones de IIBB e impuestos varios). Una fila
+  // 4. CPA18 (percepciones de IIBB e impuestos varios). Una fila
   // por slot con importe, resueltas con las mismas funciones que usa el
   // panel de la revision: si el panel dijo "listo", esto no puede fallar.
   const codigosImpuesto = await listarCodigosImpuesto()
@@ -564,16 +508,9 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         INSERT INTO CPA18 (TCOMP_IN_C, NCOMP_IN_C, COD_IMPUES, COD_PROVEE, COD_PROV, F_COMP, IMPORTE, FILLER, COD_SII)
         VALUES (@tcompInC, @ncompInC, @codImpues, @codProvee, '', @fComp, @importe, '', '')`)
 
-    await tx.request()
-      .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
-      .input('codImpues', sql.SmallInt, Number(p.codigo)).input('codProvee', sql.VarChar(6), codProvee)
-      .input('fechaCont', sql.DateTime, fechaEmision).input('importe', sql.Decimal(18, 2), p.importe)
-      .query(`
-        INSERT INTO CTA06 (TCOMP_IN_C, NCOMP_IN_C, COD_IMPUES, COD_PROVEE, FECHA_CONT, IMPORTE, NRO_SUCURS, FILLER, COD_SII)
-        VALUES (@tcompInC, @ncompInC, @codImpues, @codProvee, @fechaCont, @importe, 1001, '', '')`)
   }
 
-  // 5. CPA63 + clasificacion IVA (una fila por alicuota con importe, clasificacion SIN = sin categoria especial).
+  // 5. CPA63 (una fila por alicuota con importe, clasificacion SIN = sin categoria especial).
   for (const a of alicuotas.filter((x) => x.importe > 0)) {
     await tx.request()
       .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
@@ -582,12 +519,6 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         INSERT INTO CPA63 (TCOMP_IN_C, NCOMP_IN_C, CLAS_SIAP, IMPORTE, PORC_ALICU, FILLER)
         VALUES (@tcompInC, @ncompInC, 'SIN', @importe, @porcAlicu, '')`)
 
-    await tx.request()
-      .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
-      .input('importe', sql.Decimal(18, 2), a.importe).input('porcAlicu', sql.Decimal(9, 4), a.porcentaje)
-      .query(`
-        INSERT INTO CTA_COMPROBANTE_COMPRAS_CLASIFICACION_IVA (ID_SUCURSAL, TCOMP_IN_C, NCOMP_IN_C, CLAS_SIAP, IMPORTE, PORC_ALICU)
-        VALUES (1, @tcompInC, @ncompInC, 'SIN', @importe, @porcAlicu)`)
   }
 
   // 6. CPA54 (vencimientos), uno por cuota de la condicion de compra --
@@ -784,26 +715,6 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
           0, NULL
         )`)
 
-    await tx.request()
-      .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
-      .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
-      .input('codDeposi', sql.VarChar(10), codDeposi).input('cantidad', sql.Decimal(18, 4), cantidad)
-      .input('precioNet', sql.Decimal(18, 4), precioNeto)
-      .input('precioPan', sql.Decimal(18, 4), precioLista)
-      .input('bonif', sql.Decimal(9, 4), bonificacion)
-      .input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
-      .input('fechaMov', sql.DateTime, fechaEmision).input('nroSucurs', sql.SmallInt, Number(sta.NRO_SUCURS) || 1001)
-      .query(`
-        INSERT INTO CTA07 (
-          TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_ARTICU, COD_DEPOSI, CANTIDAD,
-          PRECIO_NET, PRECIO_PAN, IMP_NETO_P, FECHA_MOV, EQUIVALENC, NRO_SUCURS,
-          PORC_DTO, FILLER, COD_CLASIF, CANTIDAD_2, UNIDAD_MEDIDA_SELECCIONADA
-        ) VALUES (
-          @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
-          @precioNet, @precioNet, @impNetoP, @fechaMov, 1, @nroSucurs,
-          0, '', '', 0, 'P'
-        )`)
-
     // El vinculo entre el renglon de la factura y el de la orden de compra.
     // `TALONARIO_OC` sale de CPA35.TALONARIO -- verificado sobre las 9.975
     // filas reales de CPA_OC_FACTURA, coincide siempre.
@@ -912,7 +823,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // LOGISTICA S.A.": el operador las vincula a un articulo de Tango, la app
   // lo recuerda (SIN_OC en PHF_ARTICULO_PROVEEDOR) y se registran igual.
   //
-  // Van a CPA46/CTA07 como cualquier renglon --por eso entran en la factura
+  // Van a CPA46 como cualquier renglon --por eso entran en la factura
   // y en el asiento, que agrupa los renglones por su cuenta de compras--
   // pero NO generan vinculo en CPA_OC_FACTURA ni descuentan CPA36: no hay
   // orden que consumir.
@@ -977,26 +888,6 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
             0, '', '', 0, @impNetoP,
             0, 0, 'P', 0,
             0, NULL
-          )`)
-
-      await tx.request()
-        .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
-        .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
-        .input('codDeposi', sql.VarChar(10), codDeposiCargo)
-        .input('cantidad', sql.Decimal(18, 4), cantidad)
-        .input('precioNet', sql.Decimal(18, 4), neto.precioNeto)
-        .input('impNetoP', sql.Decimal(18, 2), neto.importeNeto)
-        .input('fechaMov', sql.DateTime, fechaEmision)
-        .input('nroSucurs', sql.SmallInt, 1001)
-        .query(`
-          INSERT INTO CTA07 (
-            TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_ARTICU, COD_DEPOSI, CANTIDAD,
-            PRECIO_NET, PRECIO_PAN, IMP_NETO_P, FECHA_MOV, EQUIVALENC, NRO_SUCURS,
-            PORC_DTO, FILLER, COD_CLASIF, CANTIDAD_2, UNIDAD_MEDIDA_SELECCIONADA
-          ) VALUES (
-            @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
-            @precioNet, @precioNet, @impNetoP, @fechaMov, 1, @nroSucurs,
-            0, '', '', 0, 'P'
           )`)
 
       // Un cargo tambien mueve el precio de ultima compra del articulo al
