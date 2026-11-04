@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-**Actualizado: 2026-11-03.** Esto es lo que hay que saber para retomar. El detalle de cada funcionalidad (cómo se construyó, cómo se verificó, por qué se decidió lo que se decidió) está en la bitácora, [`HISTORIAL.md`](HISTORIAL.md). Si algo de la bitácora contradice esta página, gana esta página.
+**Actualizado: 2026-11-04.** Esto es lo que hay que saber para retomar. El detalle de cada funcionalidad (cómo se construyó, cómo se verificó, por qué se decidió lo que se decidió) está en la bitácora, [`HISTORIAL.md`](HISTORIAL.md). Si algo de la bitácora contradice esta página, gana esta página.
 
 **Al terminar una sesión:** actualizá esta página (estado, pendientes, decisiones nuevas) y agregá el detalle en `HISTORIAL.md`, arriba de todo y con fecha. Esta página tiene que seguir entrando en una lectura.
 
@@ -34,7 +34,7 @@
 | Tipo | Se registra como | Notas |
 |---|---|---|
 | `conceptos` | Factura con concepto (`CPA47`), sin renglones | Condición de compra fija "CONTADO 1 DIA" |
-| `articulos` | Factura con renglones (`CPA46`) imputados a una **orden de compra** | Si la OC tiene un remito recibido, la factura lo consume (`CPA48`) |
+| `articulos` | Factura con renglones (`CPA46`) imputados a una **orden de compra** | Si la OC tiene un remito recibido, la factura lo consume (`CPA48` + `CPA_OC_REMITO_FACTURA`) |
 | `tarjeta` | Liquidación, letra `A` fija, punto de venta aprendido por proveedor | El total se calcula, no se lee |
 | `remito` | Movimiento de stock `RP` (`STA14`/`STA20`), entra al depósito 01, contra la OC | Mueve stock y lo pendiente de recibir |
 
@@ -71,7 +71,7 @@ Los componentes importan cada server action de su archivo, no hay un índice com
 **Abiertos, sin urgencia:**
 3. **Fuera de alcance: los datos que Tango ya tiene.** La app no audita ni corrige cómo registró Tango lo cargado desde sus propias pantallas (por ejemplo, los remitos `RP` que quedaron en `'P'`): decisión del usuario, 2026-11-03. El trabajo es que lo que graba la app quede bien.
 4. ~~Dividir `acciones.ts` y `cola.ts`~~ — hecho el 2026-11-03, ver "Dónde está cada cosa".
-5. **Costo de IA por comprobante sin medir.** `extraerDePdf` ya devuelve los tokens; falta guardarlos en `PHF_COMPROBANTE` y mirar unas semanas de uso real.
+5. **Costo de IA por comprobante: ya se mide desde el 2026-11-03, falta mirarlo.** Los tokens se acumulan en las columnas `IA_*` de `PHF_COMPROBANTE` y `pnpm costo-ia [días]` arma el informe por tipo y por día. Falta dejar pasar unas semanas de uso real y decidir con eso, por ejemplo si conviene bajar el `effort` o cambiar de modelo. Las tarifas están en `src/lib/usoIa.ts`.
 6. **`CPA04.UNIDADES`** es la única columna del registro sin fórmula confirmada (hoy va `IMPORTE_TO`). Contrastar contra facturas cargadas a mano si aparece un desvío.
 7. **Sin pantalla de "sin conexión a la base".** Si SQL Server cae antes de cargar la revisión, la página da 500 (la base de la app y la de Tango son la misma instancia).
 8. **Registrar en `CENTRAL`.** Solo si ese Tango se va a usar en producción.
@@ -92,6 +92,7 @@ Están documentadas junto al código que las aplica: buscá "decisión del usuar
 - **El asiento se graba contabilizado** (`CONTABILIZADO='S'`, usuario `PHF_WEB`, fecha de la factura) (2026-08-22). La leyenda que carga el operador reemplaza la del modelo.
 - **`CPA36`**: `PENDIENTE_FACTURAR_RECIBIDA` y `PENDIENTE_RECIBIR_FACTURADA` siguen la regla de Tango (la diferencia entre recibido y facturado, sin bajar de 0) desde el 2026-11-03; antes se grababa la cantidad facturada.
 - **Al consumir un remito, `STA20.CANT_FACTU` no se toca**: solo baja `CANT_PEND` (2026-11-03).
+- **`CPA46.FALTA_REM` sigue la regla de Tango**: `CANTIDAD − lo cubierto en CPA48`. Cuando un remito entra después de la factura, Tango le resta lo recibido. El 2026-11-04 se corrigieron con `scripts/corregir-falta-rem.ts` los 146 renglones que la app había grabado en 0 (108 de ellos ya estaban negativos). El script vuelve a listar sin grabar: tiene que dar 0.
 - **El remito de proveedor entra siempre al depósito 01** (2026-10-25). Los cargos del proveedor van al mismo depósito que los artículos de la factura (2026-09-22).
 - **La app no graba en ninguna tabla `CTA*`** (2026-11-03): si hace falta el espejo de Tango Central, lo tiene que llenar Tango.
 - **El precio de última compra (`STA12`) se pisa al registrar aunque la factura sea más vieja** que la última compra que ya tiene, como hace Tango (2026-09-23).

@@ -731,9 +731,15 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
           (TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, TALONARIO_OC, N_ORDEN_CO, N_RENGL_OC, CANTIDAD, CANTIDAD_2)
         VALUES (@tcompInC, @ncompInC, @nRenglC, @talonario, @oc, @nRenglOc, @cantidad, 0)`)
 
-    // El consumo del remito: CPA48, el pendiente de STA20 y el estado de
-    // STA14. Ver remitosFactura.ts.
-    await consumirRemitosEn(tx, { tcompInC, ncompInC, nRenglC, partes: remitos.partes })
+    // El consumo del remito: CPA48, CPA_OC_REMITO_FACTURA, el pendiente de
+    // STA20 y el estado de STA14. Ver remitosFactura.ts.
+    await consumirRemitosEn(tx, {
+      tcompInC,
+      ncompInC,
+      nRenglC,
+      partes: remitos.partes,
+      oc: { talonario: Number(sta.TALONARIO) || 0, nOrdenCo, nRenglOc, cantidadImputada: cantidad },
+    })
     for (const parte of remitos.partes) {
       remitosConsumidos.push(`${parte.cantidad} de ${codArticu} del remito interno ${parte.ncompInS.trim()}`)
     }

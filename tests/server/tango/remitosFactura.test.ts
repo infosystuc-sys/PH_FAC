@@ -9,7 +9,12 @@ import {
 } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
 import { registrarComprobanteEn } from '@/server/tango/comprobantes'
-import { contadoresAlFacturar, ncompInCEnCpa48 } from '@/server/tango/remitosFactura'
+import {
+  contadoresAlFacturar,
+  ncompInCEnCpa48,
+  faltaRemDesalineadosEn,
+  corregirFaltaRemEn,
+} from '@/server/tango/remitosFactura'
 
 afterAll(async () => {
   await cerrarPool()
@@ -129,6 +134,15 @@ async function registrarFactura(tx: sql.Transaction, oc: Oc, cantidad: number) {
   return registrarComprobanteEn(tx, id)
 }
 
+/** El vínculo de tres puntas de la factura (`NCOMP_IN_C` numérico, como en CPA04). */
+async function orfDe(tx: sql.Transaction, ncompInC: number) {
+  const r = await tx.request().input('n', sql.Float, ncompInC).query(`
+    SELECT CANTIDAD, CANTIDAD_2, TALONARIO_OC, N_ORDEN_CO, N_RENGL_OC, N_RENGL_C,
+           TCOMP_IN_S, NCOMP_IN_S, N_RENGL_S
+    FROM CPA_OC_REMITO_FACTURA WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+  return r.recordset
+}
+
 describe('registrarComprobanteEn: la factura consume el remito de su orden', () => {
   it('con el remito recibido por completo: CPA48, el pendiente en 0, el remito Facturado y FALTA_REM en 0', async () => {
     await conRollback(async (tx) => {
@@ -154,6 +168,20 @@ describe('registrarComprobanteEn: la factura consume el remito de su orden', () 
       expect(Number(link.recordset[0].N_RENGL_S)).toBe(1)
       expect(Number(link.recordset[0].N_RENGL_C)).toBe(1)
       expect(Number(link.recordset[0].CANTIDAD)).toBe(1)
+
+      // El vinculo de tres puntas: la misma OC que CPA_OC_FACTURA, el mismo
+      // renglon de remito que CPA48.
+      const orf = await orfDe(tx, factura.ncompInC)
+      expect(orf).toHaveLength(1)
+      expect(Number(orf[0].CANTIDAD)).toBe(1)
+      expect(Number(orf[0].CANTIDAD_2)).toBe(0)
+      expect(Number(orf[0].TALONARIO_OC)).toBe(Number(oc.TALONARIO))
+      expect(orf[0].N_ORDEN_CO).toBe(oc.N_ORDEN_CO)
+      expect(Number(orf[0].N_RENGL_OC)).toBe(Number(oc.N_RENGL_OC))
+      expect(Number(orf[0].N_RENGL_C)).toBe(1)
+      expect(orf[0].TCOMP_IN_S).toBe('RP')
+      expect(orf[0].NCOMP_IN_S).toBe(ncompInS)
+      expect(Number(orf[0].N_RENGL_S)).toBe(1)
 
       // CANT_PEND baja; CANT_FACTU no se toca (decision del usuario).
       const ren = await tx.request().input('n', sql.VarChar(8), ncompInS)
@@ -207,6 +235,15 @@ describe('registrarComprobanteEn: la factura consume el remito de su orden', () 
       expect(Number(cpa46.recordset[0].CANTIDAD)).toBe(2)
       expect(Number(cpa46.recordset[0].FALTA_REM)).toBe(1)
 
+      // El caso de referencia de Tango (OC 0000100001701, factura 17774):
+      // CPA_OC_FACTURA lleva 2, CPA48 y CPA_OC_REMITO_FACTURA llevan 1.
+      const orf = await orfDe(tx, factura.ncompInC)
+      expect(orf).toHaveLength(1)
+      expect(Number(orf[0].CANTIDAD)).toBe(1)
+      const ocf = await tx.request().input('n', sql.Float, factura.ncompInC)
+        .query(`SELECT CANTIDAD FROM CPA_OC_FACTURA WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      expect(Number(ocf.recordset[0].CANTIDAD)).toBe(2)
+
       const cab = await tx.request().input('n', sql.Float, remito.ncompInC)
         .query(`SELECT ESTADO_MOV FROM STA14 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S = RIGHT('00000000' + CAST(CAST(@n AS bigint) AS varchar(8)), 8)`)
       expect(cab.recordset[0].ESTADO_MOV).toBe('F')
@@ -224,10 +261,53 @@ describe('registrarComprobanteEn: la factura consume el remito de su orden', () 
         .input('c', sql.VarChar(8), String(factura.ncompInC).padStart(8, ' '))
         .query(`SELECT COUNT(*) AS n FROM CPA48 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@c`)
       expect(Number(link.recordset[0].n)).toBe(0)
+      expect(await orfDe(tx, factura.ncompInC)).toHaveLength(0)
 
       const cpa46 = await tx.request().input('n', sql.Float, factura.ncompInC)
         .query(`SELECT FALTA_REM FROM CPA46 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
       expect(Number(cpa46.recordset[0].FALTA_REM)).toBe(1)
+    })
+  }, 180000)
+})
+
+describe('faltaRemDesalineadosEn / corregirFaltaRemEn', () => {
+  it('encuentra el FALTA_REM que no cumple la regla de Tango y lo corrige', async () => {
+    await conRollback(async (tx) => {
+      const oc = await renglonOcParaRemitoYFactura(tx)
+      expect(oc).not.toBeNull()
+
+      // Una factura de 2 con 1 recibido: lo correcto es FALTA_REM = 1. Se
+      // simula lo que dejaba la app antes del 2026-11-03 y Tango despues
+      // (0 menos lo recibido).
+      await registrarRemito(tx, oc, 1)
+      const factura = await registrarFactura(tx, oc, 2)
+      expect(await faltaRemDesalineadosEn(tx, factura.ncompInC)).toEqual([])
+
+      await tx.request().input('n', sql.Float, factura.ncompInC)
+        .query(`UPDATE CPA46 SET FALTA_REM = -1 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+
+      const mal = await faltaRemDesalineadosEn(tx, factura.ncompInC)
+      expect(mal).toHaveLength(1)
+      expect(mal[0]).toMatchObject({ nRenglC: 1, cantidad: 2, cubierto: 1, faltaRemActual: -1, faltaRemCorrecto: 1 })
+
+      await corregirFaltaRemEn(tx, factura.ncompInC, mal[0])
+      expect(await faltaRemDesalineadosEn(tx, factura.ncompInC)).toEqual([])
+      const cpa46 = await tx.request().input('n', sql.Float, factura.ncompInC)
+        .query(`SELECT FALTA_REM FROM CPA46 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      expect(Number(cpa46.recordset[0].FALTA_REM)).toBe(1)
+    })
+  }, 180000)
+
+  it('no pisa un renglon que cambio desde el listado', async () => {
+    await conRollback(async (tx) => {
+      const oc = await renglonOcParaRemitoYFactura(tx)
+      expect(oc).not.toBeNull()
+      const factura = await registrarFactura(tx, oc, 1)
+      await expect(
+        corregirFaltaRemEn(tx, factura.ncompInC, {
+          nRenglC: 1, codArticu: 'x', cantidad: 1, cubierto: 0, faltaRemActual: -5, faltaRemCorrecto: 1,
+        }),
+      ).rejects.toThrow(/cambió desde el listado/)
     })
   }, 180000)
 })

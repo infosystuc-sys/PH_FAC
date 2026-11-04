@@ -2,6 +2,25 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Vínculo OC ↔ remito ↔ factura y `FALTA_REM` (2026-11-04)
+
+El usuario cargó en Tango un caso de referencia (OC `0000100001701`, remito `RP 00004209`, factura `FP 17774`) y pidió replicar cómo graba la relación. El análisis y el plan están en `plans/2026-11-03-cpa-oc-remito-factura.md`. Se aprobaron y se hicieron las dos etapas.
+
+- **Etapa 1:** `consumirRemitosEn` (`src/server/tango/remitosFactura.ts`) inserta, además del `CPA48`, una fila en **`CPA_OC_REMITO_FACTURA`** por cada remito que cubre el renglón. Lleva la OC de `CPA_OC_FACTURA`, el remito de la parte, `NCOMP_IN_C` como número (no como texto relleno, como en `CPA48`) y `CANTIDAD = min(parte, imputado a la OC sin asignar)`. Es la regla que cumplen las 10.248 filas reales: 10.228 con la cantidad del `CPA48` y 14 recortadas a lo imputado a la OC. La tabla figura en la documentación de Compras de Axoft.
+- **Etapa 2:** la app grababa `CPA46.FALTA_REM = 0` antes del 2026-11-03. Cuando el remito entraba después, Tango le restaba lo recibido y el renglón quedaba negativo (−35 en la `17537`). `scripts/corregir-falta-rem.ts` (lógica en `faltaRemDesalineadosEn`/`corregirFaltaRemEn`) corrigió **146 renglones de 31 facturas de la app** a `CANTIDAD − Σ CPA48`, con una entrada en el historial de cada comprobante. Antes, 0 de 146 renglones cumplían la regla, contra 1.508 de 1.508 de Tango; después, 146 de 146 y ninguno negativo. No se tocó ningún dato que grabó Tango.
+- Tests en `tests/server/tango/remitosFactura.test.ts`: el caso de referencia (factura de 2 con 1 recibido), remito completo, sin remito, y la detección y corrección de `FALTA_REM`.
+
+## Costo de IA por comprobante (2026-11-03)
+
+Pendiente "costo de IA sin medir" de `RETOMAR.md`, pedido del usuario. Cada llamado a la API ahora deja sus tokens en `PHF_COMPROBANTE`, en cinco columnas nuevas: `IA_LLAMADAS`, `IA_TOKENS_ENTRADA`, `IA_TOKENS_SALIDA`, `IA_TOKENS_CACHE_LECTURA` e `IA_TOKENS_CACHE_ESCRITURA` (migración idempotente, ya aplicada en `PUNTO_HOGAR_1`).
+
+- **Se acumula, no se pisa.** La cabecera, la segunda pasada de renglones, cada reintento y cada reproceso suman, porque todos se pagan. Valen NULL en los comprobantes leídos antes del cambio, porque no se midieron (que no es lo mismo que 0).
+- **Se cuentan también las lecturas que fallan después de que la API respondió**: un rechazo, una respuesta sin texto o un JSON que no parsea. `extraerDePdf` y `extraerRenglonesFacturados` devuelven `usage` también en el `ok: false`. Solo falta cuando el llamado mismo falló.
+- **Se graba suelto, fuera de toda transacción** (`sumarUsoIaEn`, en `cola.ts`), apenas vuelve el llamado. Así, si lo que sigue falla y se revierte, los tokens quedan contados igual.
+- **El costo no se guarda, se calcula** con `src/lib/usoIa.ts`, que tiene las tarifas de lista de Opus 5 y Opus 5.5. Se guardan los cuatro contadores por separado porque cada uno se cobra distinto: con eso se puede recalcular para cualquier tarifa.
+- **Informe:** `pnpm costo-ia [días]` (30 por defecto) muestra comprobantes, llamados, tokens y costo, total y por comprobante, agrupado por tipo y por día. Solo lee `PHF_COMPROBANTE`.
+- No hay nada en pantalla: al operador no le sirve. Si hace falta, se puede sumar a `/configuracion` más adelante.
+
 ## Remitos de proveedor (2026-10-25)
 
 Cuarto tipo de comprobante, **"Remito de proveedor"** (`tipoFactura = 'remito'`), pedido del usuario: la IA lee el remito con el mismo método que las facturas de artículos (cabecera + array `renglonesPdf`, prompt propio en `SEGUN_TIPO.remito`, sin las reglas de IVA ni percepciones) y la app lo registra en Tango como movimiento de Stock. Decisiones del usuario: **mueve stock**, **entra siempre al depósito 01**, y **se imputa a la orden de compra** contra lo pendiente de RECIBIR (`CPA36.CAN_PENDIE`), no de facturar.
