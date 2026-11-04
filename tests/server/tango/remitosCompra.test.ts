@@ -6,6 +6,8 @@ import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
 import { registrarComprobanteEn } from '@/server/tango/comprobantes'
 import { contadoresOc, nCompRemito, buscarRemitoEnSta14 } from '@/server/tango/remitosCompra'
+import { guardarSeriesEn } from '@/server/app/series'
+import { validarListoParaRegistrarEn } from '@/server/app/validaciones'
 
 afterAll(async () => {
   await cerrarPool()
@@ -200,6 +202,122 @@ describe('registrarComprobanteEn con un remito', () => {
       await registrarComprobanteEn(tx, primero)
       const segundo = await remitoDePrueba(tx, oc, 1, '87654323')
       await expect(registrarComprobanteEn(tx, segundo)).rejects.toThrow(/ya está en Tango/)
+    })
+  }, 150000)
+})
+
+type ArticuloConSerie = {
+  COD_ARTICU: string
+  COD_PROVEE: string
+  N_ORDEN_CO: string | null
+  N_RENGL_OC: number | null
+  TALONARIO: number | null
+  conOc: boolean
+}
+
+/**
+ * Un articulo con numero de serie que puede entrar por remito y, si hay,
+ * un renglon de orden de compra emitida con al menos 2 pendientes de
+ * recibir. Sin orden, el renglon entra igual (como un cargo): lo que se
+ * prueba aca son las series.
+ */
+async function articuloConSerie(tx: sql.Transaction): Promise<ArticuloConSerie | null> {
+  const conOc = await tx.request().query(`
+    SELECT TOP 1 h.N_ORDEN_CO, h.COD_PROVEE, r.N_RENGL_OC, LTRIM(RTRIM(r.COD_ARTICU)) AS COD_ARTICU, h.TALONARIO
+    FROM CPA36 r
+    JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
+    JOIN STA11 a ON a.COD_ARTICU = r.COD_ARTICU
+    WHERE r.CAN_PENDIE >= 2 AND h.ESTADO = 3
+      AND a.STOCK = 1 AND a.USA_SERIE = 1 AND ISNULL(a.USA_PARTID, 0) = 0
+      AND LTRIM(RTRIM(ISNULL(a.USA_ESC, 'N'))) <> 'B'
+    ORDER BY h.N_ORDEN_CO DESC`)
+  if (conOc.recordset[0]) return { ...conOc.recordset[0], conOc: true }
+  const sinOc = await tx.request().query(`
+    SELECT TOP 1 LTRIM(RTRIM(a.COD_ARTICU)) AS COD_ARTICU, (SELECT TOP 1 COD_PROVEE FROM CPA01) AS COD_PROVEE
+    FROM STA11 a
+    WHERE a.STOCK = 1 AND a.USA_SERIE = 1 AND ISNULL(a.USA_PARTID, 0) = 0
+      AND LTRIM(RTRIM(ISNULL(a.USA_ESC, 'N'))) <> 'B'`)
+  const f = sinOc.recordset[0]
+  return f ? { ...f, N_ORDEN_CO: null, N_RENGL_OC: null, TALONARIO: null, conOc: false } : null
+}
+
+async function remitoConSerie(tx: sql.Transaction, art: ArticuloConSerie, nro: string) {
+  const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+  await guardarCampoEn(tx, id, 'tipoFactura', 'remito')
+  await guardarCampoEn(tx, id, 'tipo', 'Remito R')
+  await guardarCampoEn(tx, id, 'ptovta', '9998')
+  await guardarCampoEn(tx, id, 'nro', nro)
+  await guardarCampoEn(tx, id, 'fecha', '20/10/2026')
+  await guardarCampoEn(tx, id, 'codprovee', String(art.COD_PROVEE).trim())
+  const ins = await tx.request()
+    .input('id', sql.Int, id)
+    .input('cod', sql.NVarChar(60), art.COD_ARTICU)
+    .input('oc', sql.VarChar(14), art.N_ORDEN_CO)
+    .input('tal', sql.Int, art.TALONARIO)
+    .input('nr', sql.Int, art.N_RENGL_OC)
+    .query(`
+      INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
+                               OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN)
+      OUTPUT INSERTED.ID
+      VALUES (@id, 1, @cod, 'prueba', 2, @oc, @tal, @nr, 2, 1)`)
+  return { id, renglonId: Number(ins.recordset[0].ID) }
+}
+
+describe('registrarComprobanteEn con un remito de artículos con número de serie', () => {
+  it('graba una fila por serie en STA07 y en STA06, como Tango', async () => {
+    await conRollback(async (tx) => {
+      const art = await articuloConSerie(tx)
+      // Hay 33 articulos con serie en la base: si esto fallara, el test
+      // estaria pasando sin probar nada.
+      expect(art).not.toBeNull()
+      const { id, renglonId } = await remitoConSerie(tx, art!, '87654331')
+      await guardarSeriesEn(tx, id, renglonId, [
+        { nSerie: 'phf-test-s1', desc1: 'M1111', desc2: 'C1111', comentario: 'CERT 1' },
+        { nSerie: 'PHF-TEST-S2', desc1: 'M2222', desc2: 'C2222' },
+      ])
+
+      const listo = await validarListoParaRegistrarEn(tx, id)
+      expect(listo.renglonesNeto.estado).toBe('ok')
+      expect(listo.renglonesNeto.mensaje).toMatch(/Con 2 número\(s\) de serie/)
+
+      const registro = await registrarComprobanteEn(tx, id)
+      const ncompInS = String(registro.ncompInC).padStart(8, '0')
+
+      const h = await tx.request().input('n', sql.VarChar(8), ncompInS).query(`
+        SELECT * FROM STA07 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n ORDER BY N_SERIE`)
+      expect(h.recordset).toHaveLength(2)
+      expect(h.recordset[0]).toMatchObject({
+        FILLER: '', COD_ARTICU: art!.COD_ARTICU, DESC1: 'M1111', DESC2: 'C1111', N_RENGL_S: 1,
+        N_SERIE: 'PHF-TEST-S1', COD_DEPOSI: '01', COMENTARIO: 'CERT 1', N_PARTIDA: '',
+      })
+      expect(h.recordset[1]).toMatchObject({ N_SERIE: 'PHF-TEST-S2', COMENTARIO: '' })
+
+      const enStock = await tx.request().input('a', sql.VarChar(15), art!.COD_ARTICU).query(`
+        SELECT * FROM STA06 WHERE COD_ARTICU=@a AND N_SERIE LIKE 'PHF-TEST-S%' ORDER BY N_SERIE`)
+      expect(enStock.recordset).toHaveLength(2)
+      expect(enStock.recordset[0]).toMatchObject({
+        FILLER: '', DESC1: 'M1111', DESC2: 'C1111', COD_DEPOSI: '01', COMENTARIO: 'CERT 1', N_PARTIDA: '',
+      })
+
+      // Una serie ya en stock no puede volver a entrar.
+      const otro = await remitoConSerie(tx, art!, '87654332')
+      await guardarSeriesEn(tx, otro.id, otro.renglonId, [{ nSerie: 'PHF-TEST-S1' }, { nSerie: 'PHF-TEST-S3' }])
+      const listoOtro = await validarListoParaRegistrarEn(tx, otro.id)
+      expect(listoOtro.renglonesNeto.mensaje).toMatch(/ya tiene en stock la serie PHF-TEST-S1/)
+      expect(listoOtro.bloqueante).toBe(true)
+    })
+  }, 150000)
+
+  it('sin una serie por unidad no registra y "Listo para registrar" bloquea', async () => {
+    await conRollback(async (tx) => {
+      const art = await articuloConSerie(tx)
+      if (!art) return
+      const { id, renglonId } = await remitoConSerie(tx, art, '87654333')
+      await guardarSeriesEn(tx, id, renglonId, [{ nSerie: 'PHF-TEST-S9' }])
+      const listo = await validarListoParaRegistrarEn(tx, id)
+      expect(listo.renglonesNeto.estado).toBe('error')
+      expect(listo.renglonesNeto.mensaje).toMatch(/1 de 2/)
+      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/1 de 2/)
     })
   }, 150000)
 })

@@ -2,6 +2,17 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Números de serie en los remitos (2026-11-04)
+
+Pedido del usuario: al registrar un remito, los artículos con `STA11.USA_SERIE` graban sus series en **`STA06`** (series en stock) y **`STA07`** (historial del movimiento), como Tango. Referencia: el remito `RP 00004210` (OC `0000100001702`, artículo `100063`, 2 unidades) que el usuario cargó desde Tango. Hasta hoy el registro rechazaba esos artículos ("ese remito hay que cargarlo desde Tango").
+
+- **Cómo graba Tango**, copiado de ese remito y de los 1.444 renglones `RP` reales de `STA07`: una fila por unidad en cada tabla. `STA07` lleva `TCOMP_IN_S`/`NCOMP_IN_S`/`N_RENGL_S` del renglón de `STA20` (coinciden en los 1.444) y el depósito; `STA06` lleva artículo + serie + depósito (índice único). `FILLER`, `COMENTARIO` y `N_PARTIDA` van en `''`, nunca NULL. `DESC1`/`DESC2` vienen cargados en los 1.444 (en las motos `105164`: número de motor y color) y `COMENTARIO` en 1.044 (el certificado). Ningún trigger toca esas tablas.
+- **Carga:** el operador carga las series en la revisión, en la tarjeta nueva "Números de serie" (`src/components/revision/series-remito.tsx`), que aparece solo si algún renglón del remito es de un artículo con serie. Una fila por unidad: N° de serie (obligatorio, se pasa a mayúsculas), Descripción 1, Descripción 2 y Comentario, con los largos de Tango (30/25/25/25). Se guardan en la tabla nueva **`PHF_SERIE`**, que cuelga de `PHF_RENGLON` en cascada: si cambia la OC del renglón, el renglón se recrea y las series se pierden. **La IA no las lee del PDF**: se cargan a mano.
+- **Validación** (`revisarSeriesEn`, `src/server/app/series.ts`): "Listo para registrar" bloquea si falta alguna serie, si hay repetidas (en el renglón o entre renglones del mismo artículo), si la cantidad no es entera o si Tango ya tiene esa serie en stock en cualquier depósito (`STA06`).
+- **Registro:** `grabarSeriesRemitoEn` (`src/server/tango/series.ts`), llamado desde `registrarRemitoEn` después del `INSERT` en `STA20` de cada renglón. Vuelve a chequear cantidad y `STA06` adentro de la transacción. El historial del comprobante dice cuántas series se grabaron.
+- Las partidas (`USA_PARTID`) siguen rechazadas. La factura que consume un remito con series no toca `STA06`/`STA07`: Tango las saca de `STA06` recién con la venta.
+- Tests: `tests/lib/series.test.ts` y dos casos nuevos en `tests/server/tango/remitosCompra.test.ts` (graba las dos tablas campo por campo contra una OC real con artículo con serie; bloquea una serie ya en stock; bloquea y rechaza con series de menos).
+
 ## Vínculo OC ↔ remito ↔ factura y `FALTA_REM` (2026-11-04)
 
 El usuario cargó en Tango un caso de referencia (OC `0000100001701`, remito `RP 00004209`, factura `FP 17774`) y pidió replicar cómo graba la relación. El análisis y el plan están en `plans/2026-11-03-cpa-oc-remito-factura.md`. Se aprobaron y se hicieron las dos etapas.

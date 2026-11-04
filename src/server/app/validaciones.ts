@@ -42,6 +42,7 @@ import { lineasContraOc, abrirPorTalle } from '@/lib/matchOc'
 import { reglaDeProveedorEn } from './lecturaProveedor'
 import { analizaCampo, tipoFacturaODefault, vaContraOc } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
+import { revisarSeriesEn } from './series'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -418,16 +419,30 @@ export async function validarListoParaRegistrarEn(
   // mismo lo cubren el cotejo contra la orden y los renglones contra el neto;
   // el remito no tiene neto, asi que se pide aca.
   const sinArticulo = detalle.renglones.filter((r) => !(r.codigoFinal ?? r.codigo ?? '').trim())
+  // Y los articulos con numero de serie piden una por unidad (2026-11-04):
+  // sin eso Tango no los deja entrar al stock.
+  const conSerie = esRemito ? await revisarSeriesEn(e, id, detalle.renglones) : []
+  const seriesMal = conSerie.filter((r) => r.problema)
+  const totalSeries = conSerie.reduce((t, r) => t + r.cantidad, 0)
   const renglonesRemito: ResultadoValidacion | null = !esRemito
     ? null
     : detalle.renglones.length === 0
       ? { estado: 'error', mensaje: 'El remito no tiene renglones para registrar: imputale la orden de compra.' }
       : sinArticulo.length > 0
         ? { estado: 'error', mensaje: `Hay ${sinArticulo.length} renglón(es) sin artículo de Tango.` }
-        : {
-            estado: 'ok',
-            mensaje: `${detalle.renglones.length} renglón(es) entran al depósito 01.`,
-          }
+        : seriesMal.length > 0
+          ? {
+              estado: 'error',
+              mensaje:
+                seriesMal[0].problema! +
+                (seriesMal.length > 1 ? ` Y ${seriesMal.length - 1} renglón(es) más con series pendientes.` : ''),
+            }
+          : {
+              estado: 'ok',
+              mensaje:
+                `${detalle.renglones.length} renglón(es) entran al depósito 01.` +
+                (totalSeries > 0 ? ` Con ${totalSeries} número(s) de serie.` : ''),
+            }
 
   const bloqueante = [
     condCompra,

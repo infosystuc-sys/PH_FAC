@@ -10,6 +10,7 @@ import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
 import { RenglonesOc } from './renglones-oc'
 import { RenglonesFactura } from './renglones-factura'
+import { SeriesRemito } from './series-remito'
 import { Cargos } from './cargos'
 import { Historial } from './historial'
 import { VisorImagen } from './visor-imagen'
@@ -329,6 +330,18 @@ export function Pantalla({
             codProvee={codProvee}
             netoFactura={iniciales.neto?.valor ?? null}
             soloLectura={soloLectura}
+          />
+        )}
+        {/* Los numeros de serie de los articulos que los usan (2026-11-04):
+            solo en remitos, y solo aparece si algun renglon los pide. */}
+        {iniciales.tipoFactura?.valor === 'remito' && (
+          <SeriesRemito
+            comprobanteId={comprobanteId}
+            renglonesClave={renglones
+              .map((r) => `${r.id}:${r.codigoFinal ?? r.codigo ?? ''}:${r.cantidad ?? ''}`)
+              .join('|')}
+            soloLectura={soloLectura}
+            version={auditoria.length}
           />
         )}
         <Historial entradas={auditoria} />

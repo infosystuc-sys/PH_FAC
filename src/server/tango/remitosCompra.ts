@@ -5,6 +5,9 @@ import { nComp as armarNComp, parsearFechaArg } from '@/lib/validaciones'
 import { parsearImporte } from '@/lib/formato'
 import { usuarioActual } from '@/lib/usuario'
 import type { RegistroTango } from './comprobantes'
+import { seriesDelComprobanteEn } from '@/server/app/series'
+import { problemaSeries } from '@/lib/series'
+import { grabarSeriesRemitoEn } from './series'
 
 /**
  * El alta de un REMITO DE PROVEEDOR en Tango: la entrada de mercadería que
@@ -30,6 +33,11 @@ import type { RegistroTango } from './comprobantes'
  *
  * Y lo que Tango mantiene por fuera del comprobante, que ningún trigger
  * hace solo (los triggers de STA14/STA19 solo replican a otras sucursales):
+ *
+ * - Los números de serie de los artículos con `STA11.USA_SERIE`, uno por
+ *   unidad, en `STA07` (historial) y `STA06` (series en stock). Pedido del
+ *   usuario, 2026-11-04: los carga el operador en la revisión. Ver
+ *   `series.ts`.
  *
  * - El vínculo de cada renglón con su orden en `CPA_OC_REMITO`: una fila
  *   por renglón de STA20 que va contra una OC (10.355 de 10.364 renglones
@@ -111,6 +119,7 @@ function horaActual(): string {
 }
 
 type RenglonARegistrar = {
+  renglonId: number
   codArticu: string
   cantidad: number
   oc: { nOrdenCo: string; nRenglOc: number } | null
@@ -170,6 +179,7 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
       throw new Error(`El artículo ${codArticu} no tiene una cantidad válida.`)
     }
     renglones.push({
+      renglonId: r.id,
       codArticu,
       cantidad,
       oc: r.ocNOrdenCo && r.ocNRenglOc ? { nOrdenCo: r.ocNOrdenCo, nRenglOc: r.ocNRenglOc } : null,
@@ -237,14 +247,20 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     .query(`SELECT ID_STA22 FROM STA22 WHERE COD_SUCURS = @dep`)
   const idSta22: number | null = deposito.recordset[0]?.ID_STA22 ?? null
 
+  // Las series que cargo el operador, para los articulos que las usan.
+  const seriesGuardadas = await seriesDelComprobanteEn(tx, id)
+  let totalSeries = 0
+
   const ocsAfectadas = new Set<string>()
   let nRenglS = 0
   for (const r of renglones) {
     nRenglS += 1
 
     // El articulo tiene que poder entrar a stock: Tango no deja un articulo
-    // sin stock ni uno con numero de serie en un remito sin pedir los datos
-    // que esta app no tiene, y un base de escala no es un articulo real.
+    // sin stock ni uno con partidas en un remito sin pedir los datos que
+    // esta app no tiene, y un base de escala no es un articulo real. Los que
+    // usan numero de serie si entran desde el 2026-11-04: el operador carga
+    // una serie por unidad en la revision (PHF_SERIE).
     const art = await tx.request().input('art', sql.VarChar(15), r.codArticu).query(`
       SELECT ID_STA11, ID_MEDIDA_STOCK, ID_MEDIDA_VENTAS, STOCK, USA_SERIE, USA_PARTID,
              LTRIM(RTRIM(ISNULL(USA_ESC, 'N'))) AS USA_ESC
@@ -252,8 +268,12 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     const a = art.recordset[0]
     if (!a) throw new Error(`El artículo ${r.codArticu} no existe en Tango.`)
     if (!a.STOCK) throw new Error(`El artículo ${r.codArticu} no lleva stock en Tango: no puede entrar por remito.`)
+    const series = a.USA_SERIE
+      ? (seriesGuardadas.get(r.renglonId) ?? []).filter((s) => s.nSerie !== '')
+      : []
     if (a.USA_SERIE) {
-      throw new Error(`El artículo ${r.codArticu} usa número de serie: ese remito hay que cargarlo desde Tango.`)
+      const problema = problemaSeries(r.codArticu, r.cantidad, series)
+      if (problema) throw new Error(problema)
     }
     if (a.USA_PARTID) {
       throw new Error(`El artículo ${r.codArticu} usa partidas: ese remito hay que cargarlo desde Tango.`)
@@ -341,6 +361,13 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
           0, 'P',
           @medidaStock, @medidaVentas, @idSta11, @idSta14
         )`)
+
+    // 6b. Los numeros de serie: STA07 (historial del renglon) y STA06 (en
+    // stock), al mismo deposito que el renglon. Ver series.ts.
+    if (series.length > 0) {
+      await grabarSeriesRemitoEn(tx, { ncompInS, nRenglS, codArticu: r.codArticu, deposito: DEPOSITO, series })
+      totalSeries += series.length
+    }
 
     // 7. STA19: el saldo del deposito sube. Si el articulo nunca tuvo saldo
     // en el 01 la fila no existe y se crea.
@@ -447,7 +474,8 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     id,
     `Registrado en Tango: remito ${nComp} (interno ${TCOMP_IN_S} ${ncompInS}) — ` +
       `${renglones.length} renglón(es) al depósito ${DEPOSITO}` +
-      (conOc > 0 ? `, ${conOc} contra orden de compra` : ''),
+      (conOc > 0 ? `, ${conOc} contra orden de compra` : '') +
+      (totalSeries > 0 ? `, ${totalSeries} número(s) de serie` : ''),
   )
 
   return { ncompInC: numero, tComp: T_COMP, nComp }

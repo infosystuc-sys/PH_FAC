@@ -6,7 +6,9 @@ import sql from 'mssql'
 import { revalidatePath } from 'next/cache'
 import { getPool } from '../../db/pool'
 import { conTransaccion } from '../../db/tx'
-import { auditarEn } from '../detalle'
+import { auditarEn, obtenerDetalleEn } from '../detalle'
+import { guardarSeriesEn, revisarSeriesEn, type RenglonConSerie } from '../series'
+import type { Serie } from '@/lib/series'
 import { renglonesDelRemitoInterno } from '@/server/tango/remitos'
 
 type Ejecutor = { request(): sql.Request }
@@ -144,4 +146,28 @@ export async function actualizarCantidadesRemito(comprobanteId: number): Promise
 
   revalidatePath(`/comprobantes/${comprobanteId}`)
   return actualizados
+}
+
+/**
+ * Los renglones del remito que piden número de serie, con lo cargado y lo
+ * que les falta (2026-11-04). Vacío si ningún artículo usa serie.
+ */
+export async function listarSeriesRemito(comprobanteId: number): Promise<RenglonConSerie[]> {
+  const pool = await getPool()
+  const detalle = await obtenerDetalleEn(pool, comprobanteId)
+  return revisarSeriesEn(pool, comprobanteId, detalle.renglones)
+}
+
+/** Reemplaza las series de un renglón del remito y lo anota en el historial. */
+export async function guardarSeriesRenglon(
+  comprobanteId: number,
+  renglonId: number,
+  series: Partial<Serie>[],
+): Promise<void> {
+  await conTransaccion(async (tx) => {
+    await guardarSeriesEn(tx, comprobanteId, renglonId, series)
+    const cargadas = series.filter((s) => (s.nSerie ?? '').trim() !== '').length
+    await auditarEn(tx, comprobanteId, `Números de serie cargados en un renglón — ${cargadas} serie(s)`)
+  })
+  revalidatePath(`/comprobantes/${comprobanteId}`)
 }

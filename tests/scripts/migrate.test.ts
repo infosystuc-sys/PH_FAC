@@ -9,6 +9,7 @@ const TABLAS = [
   'PHF_CARGO',
   'PHF_RENGLON_PDF',
   'PHF_RENGLON',
+  'PHF_SERIE',
   'PHF_AUDITORIA',
   'PHF_ALICUOTA_PROVEEDOR',
   'PHF_ARTICULO_PROVEEDOR',
@@ -34,7 +35,7 @@ async function limpiarPrefijo(pool: sql.ConnectionPool, prefijo: string): Promis
   // Orden inverso al de creacion por las FK. ALICUOTA_PROVEEDOR y
   // CONFIGURACION no tienen FK a ninguna otra tabla propia, asi que su
   // lugar en el orden no importa.
-  for (const t of ['AUDITORIA', 'CARGO', 'RENGLON_PDF', 'RENGLON', 'CAMPO', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'ARTICULO_PROVEEDOR', 'CONFIGURACION']) {
+  for (const t of ['AUDITORIA', 'CARGO', 'RENGLON_PDF', 'SERIE', 'RENGLON', 'CAMPO', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'ARTICULO_PROVEEDOR', 'CONFIGURACION']) {
     await pool.request().batch(`DROP TABLE IF EXISTS ${prefijo}${t}`)
   }
 }
@@ -95,7 +96,7 @@ describe('migracion: ejercitando el CREATE de verdad', () => {
       const pool = await getPool()
       // Los hijos (FK con ON DELETE CASCADE) tienen que caer antes que
       // PHF_COMPROBANTE, que es la tabla referenciada.
-      const sufijosEnOrden = ['CAMPO', 'CARGO', 'RENGLON_PDF', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'ARTICULO_PROVEEDOR', 'LECTURA_PROVEEDOR', 'ARCA_COMPROBANTE', 'ARCA_IMPORTACION', 'CONFIGURACION', 'ROTA']
+      const sufijosEnOrden = ['CAMPO', 'CARGO', 'RENGLON_PDF', 'SERIE', 'RENGLON', 'AUDITORIA', 'COMPROBANTE', 'ALICUOTA_PROVEEDOR', 'ARTICULO_PROVEEDOR', 'LECTURA_PROVEEDOR', 'ARCA_COMPROBANTE', 'ARCA_IMPORTACION', 'CONFIGURACION', 'ROTA']
       for (const prefijo of prefijosUsados) {
         for (const sufijo of sufijosEnOrden) {
           const tabla = `${prefijo}${sufijo}`

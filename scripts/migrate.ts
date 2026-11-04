@@ -329,6 +329,34 @@ const DEFINICIONES: Definicion[] = [
     ],
   },
   {
+    // Los numeros de serie de un renglon de remito cuyo articulo los usa
+    // (STA11.USA_SERIE), uno por unidad recibida. Los carga el operador en
+    // la revision y van a STA07/STA06 al registrar (2026-11-04, pedido del
+    // usuario). Mismos largos que esas columnas de Tango.
+    //
+    // Cuelga del renglon y no del comprobante: si el operador cambia la OC
+    // de un renglon, el renglon se borra y se vuelve a crear, y las series
+    // que tenia ya no son de nada. La FK es solo contra PHF_RENGLON (que a
+    // su vez cae en cascada con el comprobante) porque SQL Server no admite
+    // dos caminos de cascada hacia la misma fila.
+    tabla: 'PHF_SERIE',
+    ddlTabla: `
+      CREATE TABLE PHF_SERIE (
+        ID          INT IDENTITY(1,1) NOT NULL,
+        RENGLON_ID  INT            NOT NULL,
+        ORDEN       INT            NOT NULL,
+        N_SERIE     NVARCHAR(30)   NOT NULL,
+        DESC1       NVARCHAR(25)   NULL,
+        DESC2       NVARCHAR(25)   NULL,
+        COMENTARIO  NVARCHAR(25)   NULL,
+        CONSTRAINT PK_PHF_SERIE PRIMARY KEY (ID),
+        CONSTRAINT UQ_PHF_SERIE UNIQUE (RENGLON_ID, ORDEN),
+        CONSTRAINT FK_PHF_SERIE_RENGLON FOREIGN KEY (RENGLON_ID)
+          REFERENCES PHF_RENGLON (ID) ON DELETE CASCADE
+      );
+    `,
+  },
+  {
     tabla: 'PHF_AUDITORIA',
     ddlTabla: `
       CREATE TABLE PHF_AUDITORIA (
