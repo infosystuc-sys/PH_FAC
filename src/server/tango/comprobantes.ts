@@ -25,6 +25,7 @@ import { repartirNetoEntreHermanos } from '@/lib/talles'
 import { cierreContable } from './parametros'
 import { actualizarPrecioUltimaCompraEn } from './preciosCompra'
 import { registrarRemitoEn } from './remitosCompra'
+import { planificarRemitosEn, consumirRemitosEn, contadoresAlFacturar } from './remitosFactura'
 
 export type ComprobanteCpa04 = {
   nComp: string
@@ -627,6 +628,8 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // descuentan son los de CPA36 en vez de los de STA20.
   const renglonesConOc = detalle.renglones.filter((r) => r.ocNOrdenCo && r.ocNRenglOc)
   const ocsAfectadas = new Set<string>()
+  // Lo que esta factura consumio de remitos, para dejarlo en el historial.
+  const remitosConsumidos: string[] = []
   // El deposito al que entra la mercaderia de ESTA factura. Lo usan tambien
   // los cargos, mas abajo: van al mismo que los articulos del comprobante
   // (decision del usuario, 2026-09-22).
@@ -676,6 +679,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
                ISNULL(r.CANTIDAD_FACTURADA, 0) AS CANTIDAD_FACTURADA,
                ISNULL(r.PENDIENTE_FACTURAR, 0) AS PENDIENTE_FACTURAR,
                ISNULL(r.PENDIENTE_RECIBIR_FACTURADA, 0) AS PENDIENTE_RECIBIR_FACTURADA,
+               ISNULL(r.CAN_RECIBI, 0) AS CAN_RECIBI,
                h.NRO_SUCURS, h.TALONARIO
         FROM CPA36 r JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
         WHERE r.N_ORDEN_CO=@oc AND r.N_RENGL_OC=@r`)
@@ -744,6 +748,17 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
 
     const nRenglC = renglonesConOc.indexOf(renglon) + 1
 
+    // Si la mercaderia de este renglon ya entro por remito, la factura lo
+    // consume (2026-11-03). Se decide antes de grabar CPA46 porque lo que
+    // ningun remito cubre va en FALTA_REM.
+    const remitos = await planificarRemitosEn(tx, {
+      codProvee,
+      nOrdenCo,
+      nRenglOc,
+      codArticu,
+      cantidad,
+    })
+
     await tx.request()
       .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
       .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
@@ -753,6 +768,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       .input('bonif', sql.Decimal(9, 4), bonificacion)
       .input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
       .input('fechaMov', sql.DateTime, fechaEmision).input('idSta11', sql.Int, null)
+      .input('faltaRem', sql.Decimal(18, 4), remitos.faltaRem)
       .query(`
         INSERT INTO CPA46 (
           TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_ARTICU, COD_DEPOSI, CANTIDAD,
@@ -762,7 +778,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
           IMPORTE_IMPUESTOS_COSTOS, ID_STA11
         ) VALUES (
           @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
-          @precioNet, @precioPan, @impNetoP, @fechaMov, 1, 0,
+          @precioNet, @precioPan, @impNetoP, @fechaMov, 1, @faltaRem,
           @bonif, '', '', 0, @impNetoP,
           0, 0, 'P', 0,
           0, NULL
@@ -804,6 +820,13 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
           (TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, TALONARIO_OC, N_ORDEN_CO, N_RENGL_OC, CANTIDAD, CANTIDAD_2)
         VALUES (@tcompInC, @ncompInC, @nRenglC, @talonario, @oc, @nRenglOc, @cantidad, 0)`)
 
+    // El consumo del remito: CPA48, el pendiente de STA20 y el estado de
+    // STA14. Ver remitosFactura.ts.
+    await consumirRemitosEn(tx, { tcompInC, ncompInC, nRenglC, partes: remitos.partes })
+    for (const parte of remitos.partes) {
+      remitosConsumidos.push(`${parte.cantidad} de ${codArticu} del remito interno ${parte.ncompInS.trim()}`)
+    }
+
     // Los contadores de la OC. No hay ningun trigger que los mantenga --
     // verificado sobre CPA36 y CPA_OC_FACTURA --: los lleva el cliente de
     // Tango, asi que si esta app no los actualiza la orden quedaria
@@ -818,33 +841,36 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     // sola. Sin esto, una orden facturada por esta app le figuraba en cero
     // al usuario dentro de Tango -- que es como aparecio (2026-09-07).
     //
-    // PENDIENTE_RECIBIR_FACTURADA lleva lo facturado que todavia no se
-    // recibio. Se escribe con la cantidad facturada por indicacion expresa
-    // del usuario, 2026-09-07.
+    // PENDIENTE_FACTURAR_RECIBIDA y PENDIENTE_RECIBIR_FACTURADA son la
+    // diferencia entre lo recibido y lo facturado, sin bajar de 0: lo que
+    // entro por remito y falta facturar, y lo facturado que falta recibir.
+    // Es la regla que cumplen 6.397 y 6.400 de las 6.431 filas reales con
+    // algo recibido y facturado (ver contadoresAlFacturar).
     //
-    //   OJO, y esta escrito para que se pueda revisar: los datos de la base
-    //   dicen otra cosa. En las 9 filas donde Tango lo dejo distinto de cero
-    //   vale exactamente CANTIDAD_FACTURADA - CAN_RECIBI, las 9 sobre 9. Con
-    //   la mercaderia ya recibida --79 de los 165 renglones con pendiente lo
-    //   estan-- esa cuenta da cero y esto en cambio graba la cantidad, o sea
-    //   deja dicho que esta pendiente de recibir algo que ya entro. Si
-    //   aparece mal en Tango, el cambio es poner Math.max(0, facturada -
-    //   CAN_RECIBI) aca.
+    // Hasta 2026-11-03 esta app grababa PENDIENTE_RECIBIR_FACTURADA con la
+    // cantidad facturada -- indicacion del usuario, 2026-09-07 --, lo que
+    // dejaba dicho que faltaba recibir algo que ya habia entrado cuando la
+    // orden tenia un remito. El usuario aprobo pasar a la regla de Tango el
+    // 2026-11-03; sin remito recibido da lo mismo que antes.
     //
-    // Las variantes _2 y PENDIENTE_FACTURAR_RECIBIDA siguen sin tocarse:
-    // miden lo pendiente contra lo RECIBIDO y esta app no las usa.
-    const facturada = Number(sta.CANTIDAD_FACTURADA) + cantidad
+    // Las variantes _2 siguen sin tocarse: esta app no las usa.
+    const contadores = contadoresAlFacturar(
+      { recibida: Number(sta.CAN_RECIBI), facturada: Number(sta.CANTIDAD_FACTURADA) },
+      cantidad,
+    )
     await tx.request()
       .input('oc', sql.VarChar(14), nOrdenCo).input('r', sql.Int, nRenglOc)
-      .input('facturada', sql.Decimal(18, 4), facturada)
+      .input('facturada', sql.Decimal(18, 4), contadores.facturada)
       .input('pend', sql.Decimal(18, 4), Math.max(0, pendiente - cantidad))
-      .input('pendRecibir', sql.Decimal(18, 4), Number(sta.PENDIENTE_RECIBIR_FACTURADA) + cantidad)
+      .input('pfr', sql.Decimal(18, 4), contadores.pendienteFacturarRecibida)
+      .input('prf', sql.Decimal(18, 4), contadores.pendienteRecibirFacturada)
       .query(`
         UPDATE CPA36
         SET CANTIDAD_FACTURADA = @facturada,
             CANTIDAD_FACTURADA_PANTALLA = @facturada,
             PENDIENTE_FACTURAR = @pend,
-            PENDIENTE_RECIBIR_FACTURADA = @pendRecibir
+            PENDIENTE_FACTURAR_RECIBIDA = @pfr,
+            PENDIENTE_RECIBIR_FACTURADA = @prf
         WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
 
     // El precio de ultima compra del articulo (STA12): lo que Tango
@@ -874,6 +900,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         UPDATE CPA35 SET ESTADO=10, ID_ESTADO_ORDEN_COMPRA=10
         WHERE N_ORDEN_CO=@oc AND ESTADO IN (1, 2, 3, 9)`)
     }
+  }
+
+  if (remitosConsumidos.length > 0) {
+    await auditarEn(tx, id, `Facturó contra remito: ${remitosConsumidos.join('; ')}`)
   }
 
   // 7b. Los CARGOS del proveedor: renglones que la factura cobra y que no

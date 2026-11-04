@@ -385,6 +385,7 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
              ISNULL(g.CANTIDAD_FACTURADA, 0) AS CANTIDAD_FACTURADA,
              ISNULL(g.CANTIDAD_FACTURADA_PANTALLA, 0) AS CANTIDAD_FACTURADA_PANTALLA,
              ISNULL(g.PENDIENTE_RECIBIR_FACTURADA, 0) AS PENDIENTE_RECIBIR_FACTURADA,
+             ISNULL(g.CAN_RECIBI, 0) AS CAN_RECIBI,
              ISNULL(g.PENDIENTE_FACTURAR, 0) AS PENDIENTE_FACTURAR
       FROM CPA35 h JOIN CPA36 g ON g.N_ORDEN_CO = h.N_ORDEN_CO
       WHERE ISNULL(g.PENDIENTE_FACTURAR, 0) >= 2 AND ISNULL(g.PRECIO, 0) > 0
@@ -487,8 +488,11 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
       expect(Number(cpa36.recordset[0].CANTIDAD_FACTURADA_PANTALLA)).toBe(
         Number(oc.CANTIDAD_FACTURADA) + 1,
       )
+      // Lo facturado que falta recibir: la regla de Tango, que descuenta lo
+      // que ya entro por remito (2026-11-03). Sin nada recibido seria
+      // simplemente la cantidad facturada.
       expect(Number(cpa36.recordset[0].PENDIENTE_RECIBIR_FACTURADA)).toBe(
-        Number(oc.PENDIENTE_RECIBIR_FACTURADA) + 1,
+        Math.max(0, Number(oc.CANTIDAD_FACTURADA) + 1 - Number(oc.CAN_RECIBI)),
       )
       expect(Number(cpa36.recordset[0].PENDIENTE_FACTURAR)).toBe(Number(oc.PENDIENTE_FACTURAR) - 1)
     })
