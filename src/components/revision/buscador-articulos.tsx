@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { buscarArticulosTango } from '@/server/app/acciones'
+import { buscarArticulosTango } from '@/server/app/acciones/articulos'
 import type { ArticuloTango } from '@/server/tango/articulos'
 import styles from './buscador-articulos.module.css'
 import { Icono } from '@/components/icono'

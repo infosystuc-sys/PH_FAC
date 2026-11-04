@@ -27,7 +27,7 @@
 
 ## Qué hace la app hoy
 
-**Entrada.** PDF/JPG/PNG por carga manual (hasta 50 de a una vez) o por escaneo periódico de carpetas. Un worker en proceso (`cola.ts`) los toma, Claude extrae los campos y los renglones, y la app resuelve sola lo que puede: proveedor por CUIT, condición de compra aprendida, alícuotas e IIBB aprendidas, punto de venta de tarjeta, duplicados por hash del PDF.
+**Entrada.** PDF/JPG/PNG por carga manual (hasta 50 de a una vez) o por escaneo periódico de carpetas. Un worker en proceso (`src/server/app/cola.ts`) los toma, Claude extrae los campos y los renglones, y la app resuelve sola lo que puede: proveedor por CUIT, condición de compra aprendida, alícuotas e IIBB aprendidas, punto de venta de tarjeta, duplicados por hash del PDF.
 
 **Cuatro tipos de comprobante** (`src/lib/tipoFactura.ts`):
 
@@ -46,6 +46,20 @@
 
 **Otras pantallas.** `/conciliacion` cruza lo cargado en Tango contra "Mis Comprobantes" de ARCA (CSV o XLSX). `/configuracion` maneja el escaneo de carpetas. La bandeja permite borrar varios comprobantes a la vez.
 
+**Dónde está cada cosa** (`src/server/app/`, dividido el 2026-11-03; antes eran `acciones.ts` y `cola.ts` de ~1.600 y ~1.300 líneas):
+
+| Archivo | Qué tiene |
+|---|---|
+| `acciones/comprobantes.ts` | Server actions del ciclo del comprobante: importar, editar, confirmar, registrar, observar, borrar, revalidar, "Ver asiento"/"Ver cuotas" |
+| `acciones/articulos.ts` | Buscar artículos, vincular códigos y descripciones (`CPA15`), cargos, renglones sin OC |
+| `acciones/ordenesCompra.ts` | Ofrecer OC por renglón (`listarOcParaComprobante`), imputarlas y quitarlas |
+| `acciones/proveedores.ts`, `acciones/imputacion.ts`, `acciones/remitos.ts`, `acciones/configuracion.ts` | Proveedor; impuestos y conceptos; circuito de remito; carpetas y ARCA |
+| `cola.ts` | Alta en el pipeline, el worker y `procesarUno` |
+| `completarLectura.ts` | Lo que la app resuelve sola después de la IA (proveedor, condición, neto, fecha contable, percepciones, cargos, tarjeta, "ya existe en Tango") |
+| `remitosLectura.ts` | Remitos citados por la factura y sus diferencias |
+
+Los componentes importan cada server action de su archivo, no hay un índice común.
+
 ---
 
 ## Pendientes
@@ -56,7 +70,7 @@
 
 **Abiertos, sin urgencia:**
 3. **Fuera de alcance: los datos que Tango ya tiene.** La app no audita ni corrige cómo registró Tango lo cargado desde sus propias pantallas (por ejemplo, los remitos `RP` que quedaron en `'P'`): decisión del usuario, 2026-11-03. El trabajo es que lo que graba la app quede bien.
-4. **Dividir `src/server/app/acciones.ts` (~1.600 líneas) y `src/server/app/cola.ts` (~1.300).** Conviene antes de la próxima funcionalidad grande.
+4. ~~Dividir `acciones.ts` y `cola.ts`~~ — hecho el 2026-11-03, ver "Dónde está cada cosa".
 5. **Costo de IA por comprobante sin medir.** `extraerDePdf` ya devuelve los tokens; falta guardarlos en `PHF_COMPROBANTE` y mirar unas semanas de uso real.
 6. **`CPA04.UNIDADES`** es la única columna del registro sin fórmula confirmada (hoy va `IMPORTE_TO`). Contrastar contra facturas cargadas a mano si aparece un desvío.
 7. **Sin pantalla de "sin conexión a la base".** Si SQL Server cae antes de cargar la revisión, la página da 500 (la base de la app y la de Tango son la misma instancia).

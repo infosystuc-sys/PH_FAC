@@ -9,6 +9,9 @@ import {
   tomarPendientesEn,
   marcarLeidoEn,
   marcarFalloEn,
+  MAX_INTENTOS,
+} from '@/server/app/cola'
+import {
   resolverProveedorEn,
   resolverCondicionCompraEn,
   completarIdentificacionTarjetaEn,
@@ -19,13 +22,14 @@ import {
   PTOVTA_TARJETA,
   marcarExistenteEnTangoEn,
   observarSinConceptoEn,
+  desnormalizarBandejaEn,
+} from '@/server/app/completarLectura'
+import {
   lineasDeRemitos,
   guardarRenglonesFacturadosEn,
   observarRemitosEn,
   observarDiferenciasEn,
-  desnormalizarBandejaEn,
-  MAX_INTENTOS,
-} from '@/server/app/cola'
+} from '@/server/app/remitosLectura'
 import {
   MOTIVO_SIN_CONCEPTO,
   MOTIVO_REMITO_SIN_SALDO,

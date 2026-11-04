@@ -6,7 +6,7 @@ import { getPool, cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
 import { guardarCampoEn } from '@/server/app/detalle'
 import { validarComprobanteEn, validarListoParaRegistrarEn } from '@/server/app/validaciones'
-import { elegirProveedorEn } from '@/server/app/acciones'
+import { elegirProveedorEn } from '@/server/app/acciones/proveedores'
 
 afterAll(async () => {
   await cerrarPool()

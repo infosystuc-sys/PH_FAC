@@ -23,7 +23,7 @@ type Ejecutor = { request(): sql.Request }
  * Tango necesita para armar el N_COMP. Se aprendía por proveedor porque
  * CPA04 mostraba convenciones distintas ('00000' en VALLE FERTIL y el Banco
  * de Santiago del Estero, '10077' en el Banco Macro). El usuario decidió
- * unificar en una constante -- `PTOVTA_TARJETA` en cola.ts -- así que el
+ * unificar en una constante -- `PTOVTA_TARJETA` en completarLectura.ts -- así que el
  * tipo se sacó: era el único que no se identificaba por algo del
  * comprobante, y sin él la regla de arriba no tiene excepciones.
  *

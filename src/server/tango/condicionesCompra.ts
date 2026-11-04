@@ -12,7 +12,7 @@ export type CondicionCompra = {
 /**
  * Deja el texto de condición de pago/venta que imprime el proveedor en la
  * misma forma con la que después se busca (`resolverCondicionCompraEn` en
- * cola.ts), para que una fila aprendida con una grafía de la factura
+ * completarLectura.ts), para que una fila aprendida con una grafía de la factura
  * ("Cuenta Corriente", " CUENTA CORRIENTE ") haga match con la próxima
  * aunque venga escrita con otro casing o espacios de más. Mismo criterio
  * que `normalizar` en percepcionIibb.ts.

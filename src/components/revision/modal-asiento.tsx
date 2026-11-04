@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { verAsiento, type AsientoPreview } from '@/server/app/acciones'
+import { verAsiento, type AsientoPreview } from '@/server/app/acciones/comprobantes'
 import { formatMoneda } from '@/lib/formato'
 import styles from './modal-asiento.module.css'
 

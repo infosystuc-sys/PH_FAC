@@ -3,7 +3,7 @@
  * cargaron antes de que la cola la pusiera sola.
  *
  * La norma es que toda factura de conceptos va con la condición de compra
- * 2 (ver COND_COMPRA_CONCEPTOS en src/server/app/cola.ts). Desde ahora la
+ * 2 (ver COND_COMPRA_CONCEPTOS en src/server/app/completarLectura.ts). Desde ahora la
  * escribe `procesarUno` al terminar la extracción, pero los que ya estaban
  * en la bandeja quedaron sin ella.
  *
@@ -19,7 +19,7 @@ import { config as cargarEnv } from 'dotenv'
 import sql from 'mssql'
 import { getPool, cerrarPool } from '../src/server/db/pool'
 import { conTransaccion } from '../src/server/db/tx'
-import { COND_COMPRA_CONCEPTOS } from '../src/server/app/cola'
+import { COND_COMPRA_CONCEPTOS } from '../src/server/app/completarLectura'
 
 cargarEnv({ path: '.env.local' })
 

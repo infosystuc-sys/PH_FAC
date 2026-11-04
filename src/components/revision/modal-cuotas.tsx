@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { verCuotas, type CuotasPreview } from '@/server/app/acciones'
+import { verCuotas, type CuotasPreview } from '@/server/app/acciones/comprobantes'
 import { formatMoneda, formatFecha } from '@/lib/formato'
 import styles from './modal-cuotas.module.css'
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { importarArcaDesdeTexto } from '@/server/app/acciones'
+import { importarArcaDesdeTexto } from '@/server/app/acciones/configuracion'
 import { formatMoneda } from '@/lib/formato'
 import type { EstadoConciliacion } from '@/lib/conciliacion'
 import styles from './panel.module.css'

@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { guardarCampo } from '@/server/app/acciones'
+import { guardarCampo } from '@/server/app/acciones/comprobantes'
 import { useToast } from '@/components/toast/toast-provider'
 import { formatMoneda } from '@/lib/formato'
 import styles from './aplicar-neto-iva.module.css'

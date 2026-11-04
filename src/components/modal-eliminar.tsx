@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { eliminarComprobante } from '@/server/app/acciones'
+import { eliminarComprobante } from '@/server/app/acciones/comprobantes'
 import { useToast } from '@/components/toast/toast-provider'
 import styles from './modal-eliminar.module.css'
 

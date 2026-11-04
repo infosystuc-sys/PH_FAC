@@ -1,14 +1,14 @@
 'use client'
 
 import { useTransition } from 'react'
-import { actualizarCantidadesRemito } from '@/server/app/acciones'
+import { actualizarCantidadesRemito } from '@/server/app/acciones/remitos'
 import { useToast } from '@/components/toast/toast-provider'
 import styles from './renglones.module.css'
 
 /**
  * Botón para refrescar `CANTIDAD_REMITO` contra Tango. Existe porque esa
  * columna es una foto tomada una sola vez al leer la factura (ver el
- * comentario de `actualizarCantidadesRemitoEn` en acciones.ts): si alguien
+ * comentario de `actualizarCantidadesRemitoEn` en acciones/remitos.ts): si alguien
  * corrige el remito en Tango después, esta app no se entera sola.
  *
  * Acción explícita del operador, no un efecto automático -- la lectura de

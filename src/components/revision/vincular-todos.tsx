@@ -1,7 +1,7 @@
 'use client'
 
 import { useTransition } from 'react'
-import { asociarCodigosProveedorEnLote } from '@/server/app/acciones'
+import { asociarCodigosProveedorEnLote } from '@/server/app/acciones/articulos'
 import { useToast } from '@/components/toast/toast-provider'
 import styles from './renglones.module.css'
 

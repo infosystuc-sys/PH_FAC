@@ -5,21 +5,19 @@ import { conRollback } from '@/server/db/tx'
 import { cerrarPool, getPool } from '@/server/db/pool'
 import {
   importarComprobantes,
-  elegirProveedorEn,
   confirmarComprobante,
   marcarObservacionEn,
   marcarObservacion,
   registrarComprobante as registrarComprobanteAccion,
-  asignarRemitoEn,
-  actualizarCantidadesRemitoEn,
   revalidarContraTangoEn,
-} from '@/server/app/acciones'
+} from '@/server/app/acciones/comprobantes'
+import { elegirProveedorEn } from '@/server/app/acciones/proveedores'
+import { asignarRemitoEn, actualizarCantidadesRemitoEn } from '@/server/app/acciones/remitos'
 import {
   eliminarComprobanteEn,
   eliminarComprobantesEnLote,
-  elegirArticuloEn,
-  asociarCodigosProveedorEnLote,
-} from '@/server/app/acciones'
+} from '@/server/app/acciones/comprobantes'
+import { elegirArticuloEn, asociarCodigosProveedorEnLote } from '@/server/app/acciones/articulos'
 import {
   MOTIVOS_OBSERVACION,
   MOTIVO_SIN_CONCEPTO,
@@ -470,7 +468,7 @@ describe('asignarRemitoEn al reapuntar un renglon', () => {
 describe('asociarCodigosProveedorEnLote', () => {
   // No se ejercita el camino que escribe de verdad: `asociarArticuloProveedor`
   // usa getPool() (no una transaccion propia, ver el comentario en
-  // acciones.ts), asi que llamarlo de verdad pegaria contra CPA15 real sin
+  // acciones/articulos.ts), asi que llamarlo de verdad pegaria contra CPA15 real sin
   // poder revertirlo -- mismo motivo por el que `asociarArticuloProveedor`
   // (tests/server/tango/articulos.test.ts) tampoco se llama directo, solo
   // se reproduce su MERGE dentro de un conRollback. Lo que sí se puede

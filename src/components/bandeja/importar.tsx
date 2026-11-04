@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { importarComprobantes } from '@/server/app/acciones'
+import { importarComprobantes } from '@/server/app/acciones/comprobantes'
 import { useToast } from '@/components/toast/toast-provider'
 import { TIPOS_FACTURA, TIPO_FACTURA_DEFAULT, type TipoFactura } from '@/lib/tipoFactura'
 import { ACCEPT_ARCHIVOS, NOMBRES_ADMITIDOS, tipoPorMime, tipoPorNombre } from '@/lib/tipoArchivo'

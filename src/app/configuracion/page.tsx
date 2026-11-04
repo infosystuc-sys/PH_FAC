@@ -1,4 +1,4 @@
-import { leerConfiguracionCarpetas } from '@/server/app/acciones'
+import { leerConfiguracionCarpetas } from '@/server/app/acciones/configuracion'
 import { FormularioCarpetas } from '@/components/configuracion/formulario-carpetas'
 import styles from './configuracion.module.css'
 

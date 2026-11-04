@@ -3,7 +3,7 @@
  * bandeja cuando se agregó el campo (2026-09-07).
  *
  * Los nuevos la calculan solos al leerse (`calcularFechaContableEn` en
- * cola.ts) y al corregir la fecha de emisión; los que ya estaban cargados
+ * completarLectura.ts) y al corregir la fecha de emisión; los que ya estaban cargados
  * quedarían con el campo vacío hasta que alguien los tocara. Usa la misma
  * función que la cola, así que si la regla cambia, cambia en los dos lados.
  *
@@ -16,7 +16,7 @@
 import { config as cargarEnv } from 'dotenv'
 import { getPool, cerrarPool } from '../src/server/db/pool'
 import { conTransaccion } from '../src/server/db/tx'
-import { calcularFechaContableEn } from '../src/server/app/cola'
+import { calcularFechaContableEn } from '../src/server/app/completarLectura'
 import { cierreContable } from '../src/server/tango/parametros'
 
 cargarEnv({ path: '.env.local' })

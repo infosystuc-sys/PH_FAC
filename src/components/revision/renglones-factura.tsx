@@ -7,7 +7,7 @@ import {
   imputarOrdenCompra,
   quitarOcDeRenglon,
   type OfertaOc,
-} from '@/server/app/acciones'
+} from '@/server/app/acciones/ordenesCompra'
 import type { RenglonGuardado, RenglonPdfGuardado } from '@/server/app/detalle'
 import { useToast } from '@/components/toast/toast-provider'
 import {

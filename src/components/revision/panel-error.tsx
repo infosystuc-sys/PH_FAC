@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { reprocesarComprobante } from '@/server/app/acciones'
+import { reprocesarComprobante } from '@/server/app/acciones/comprobantes'
 import styles from './panel-error.module.css'
 import { Icono } from '@/components/icono'
 

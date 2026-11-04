@@ -271,7 +271,7 @@ export function resolverPercepcionIibb(
  * imputacion del usuario (`scripts/cargar-imputacion-tarjetas.ts`: 48 filas
  * que mapean CUIT + rotulo impreso al codigo de Tango). Un rotulo que no
  * este en la tabla deja la linea en `sin-codigo`, la elige el operador, y
- * esa eleccion se aprende -- `aprenderImpuestoTango` en `acciones.ts` -- y
+ * esa eleccion se aprende -- `aprenderImpuestoTango` en `acciones/imputacion.ts` -- y
  * pasa a ser la regla para ese emisor. Decision del usuario del 2026-09-11:
  * "solo debes respetar las equivalencias que te subi; si no coincide debes
  * dejar que el usuario elija la alicuota y escribe la regla para esa

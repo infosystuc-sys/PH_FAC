@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { listarConceptosTango, asignarConcepto } from '@/server/app/acciones'
+import { listarConceptosTango, asignarConcepto } from '@/server/app/acciones/imputacion'
 import type { ConceptoProveedor } from '@/server/tango/conceptos'
 import { useToast } from '@/components/toast/toast-provider'
 import styles from './selector-concepto.module.css'

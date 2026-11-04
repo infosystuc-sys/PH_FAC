@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { marcarObservacion } from '@/server/app/acciones'
+import { marcarObservacion } from '@/server/app/acciones/comprobantes'
 import { MOTIVOS_OBSERVACION } from '@/lib/observacion'
 import { useToast } from '@/components/toast/toast-provider'
 import styles from './modal-observacion.module.css'

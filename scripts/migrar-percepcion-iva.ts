@@ -3,7 +3,7 @@
  * atrapadas en los de impuestos varios, en los comprobantes ya leídos.
  *
  * Desde el 2026-09-06 la cola lo hace sola al procesar (`mudarPercepcionIvaEn`
- * en cola.ts), pero los comprobantes que ya estaban en la bandeja quedaron
+ * en completarLectura.ts), pero los comprobantes que ya estaban en la bandeja quedaron
  * como estaban: con el desplegable de "Impuestos varios" en rojo y ninguna
  * opción correcta para elegir, porque los códigos de percepción de IVA no
  * pertenecen a esa lista. Este script los arregla sin volver a llamar a la
@@ -21,7 +21,7 @@
 import { config as cargarEnv } from 'dotenv'
 import { getPool, cerrarPool } from '../src/server/db/pool'
 import { conTransaccion } from '../src/server/db/tx'
-import { mudarPercepcionIvaEn } from '../src/server/app/cola'
+import { mudarPercepcionIvaEn } from '../src/server/app/completarLectura'
 import { tipoFacturaODefault } from '../src/lib/tipoFactura'
 
 cargarEnv({ path: '.env.local' })

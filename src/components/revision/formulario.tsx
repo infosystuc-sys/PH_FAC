@@ -10,7 +10,8 @@ import {
   type GrupoCampo,
   type DefCampo,
 } from '@/lib/campos'
-import { guardarCampo, aprenderImpuestoTango } from '@/server/app/acciones'
+import { guardarCampo } from '@/server/app/acciones/comprobantes'
+import { aprenderImpuestoTango } from '@/server/app/acciones/imputacion'
 import { totalImputado, formatMoneda } from '@/lib/formato'
 import { TIPOS_FACTURA, analizaCampo, spanDe, tipoFacturaODefault } from '@/lib/tipoFactura'
 import type { AlicuotaTango } from '@/lib/alicuotas'
@@ -346,7 +347,7 @@ export function Formulario({
         // el proveedor, se aprende la relación -- misma idea que IVA/IIBB,
         // para que la próxima factura de artículos de este proveedor con
         // el mismo texto ya no necesite elegirla de nuevo (ver
-        // resolverCondicionCompraEn en cola.ts).
+        // resolverCondicionCompraEn en completarLectura.ts).
         if (clave === 'condcompra') {
           const condicionTexto = (valores.condpago ?? '').trim()
           if (condicionTexto) {

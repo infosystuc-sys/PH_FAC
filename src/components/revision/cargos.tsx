@@ -1,7 +1,7 @@
 'use client'
 
 import { useTransition } from 'react'
-import { marcarCargoGravado } from '@/server/app/acciones'
+import { marcarCargoGravado } from '@/server/app/acciones/articulos'
 import { useToast } from '@/components/toast/toast-provider'
 import { formatMoneda } from '@/lib/formato'
 import { parsearImporte } from '@/lib/formato'

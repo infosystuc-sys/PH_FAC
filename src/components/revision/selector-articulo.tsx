@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef } from 'react'
-import { buscarArticulosTango, elegirArticulo, asignarRemito } from '@/server/app/acciones'
+import { buscarArticulosTango, elegirArticulo } from '@/server/app/acciones/articulos'
+import { asignarRemito } from '@/server/app/acciones/remitos'
 import type { ArticuloTango } from '@/server/tango/articulos'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import { useToast } from '@/components/toast/toast-provider'

@@ -6,8 +6,8 @@ import {
   vincularDescripcionArticulo,
   marcarRenglonSinOc,
   buscarArticuloPorCodigo,
-  type OfertaOc,
-} from '@/server/app/acciones'
+} from '@/server/app/acciones/articulos'
+import { type OfertaOc } from '@/server/app/acciones/ordenesCompra'
 import { useToast } from '@/components/toast/toast-provider'
 import { BuscadorArticulos } from './buscador-articulos'
 import styles from './problema-renglon.module.css'

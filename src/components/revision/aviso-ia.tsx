@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { reprocesarComprobante, revalidarContraTango } from '@/server/app/acciones'
+import { reprocesarComprobante, revalidarContraTango } from '@/server/app/acciones/comprobantes'
 import { useToast } from '@/components/toast/toast-provider'
 import styles from './aviso-ia.module.css'
 import { Icono } from '@/components/icono'

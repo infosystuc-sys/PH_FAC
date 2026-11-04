@@ -117,10 +117,10 @@ const REMITOS = ['remito1', 'remito2'] as const
  * el proveedor, ej. "Cuenta Corriente", "D026", "30-60-90 días") solo se
  * pide en artículos: es la única familia que deja `condcompra` vacía para
  * que el operador la elija -- conceptos y tarjeta arrancan siempre con
- * `COND_COMPRA_CONCEPTOS` fija (ver cola.ts), así que ahí no hay nada que
+ * `COND_COMPRA_CONCEPTOS` fija (ver completarLectura.ts), así que ahí no hay nada que
  * ayudar a resolver. Se usa para aprender, por proveedor, a qué condición
  * de compra de Tango corresponde ese texto (`resolverCondicionCompraEn` en
- * cola.ts, mismo mecanismo que aprendizajeImpuestos.ts para IVA/IIBB) --
+ * completarLectura.ts, mismo mecanismo que aprendizajeImpuestos.ts para IVA/IIBB) --
  * decisión del usuario, 2026-08-23.
  */
 const CONDICION_PAGO = ['condpago'] as const

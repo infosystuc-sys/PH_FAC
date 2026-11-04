@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { confirmarComprobante, registrarComprobante } from '@/server/app/acciones'
+import { confirmarComprobante, registrarComprobante } from '@/server/app/acciones/comprobantes'
 import type { Estado } from '@/lib/estados'
 import { BadgeEstado } from '@/components/badge-estado'
 import { useToast } from '@/components/toast/toast-provider'

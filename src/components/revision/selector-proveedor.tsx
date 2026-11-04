@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect, useRef } from 'react'
-import { buscarProveedores, elegirProveedor } from '@/server/app/acciones'
+import { buscarProveedores, elegirProveedor } from '@/server/app/acciones/proveedores'
 import type { Proveedor } from '@/server/tango/proveedores'
 import { formatCuit } from '@/lib/formato'
 import { useToast } from '@/components/toast/toast-provider'

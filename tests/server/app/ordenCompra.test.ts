@@ -9,7 +9,10 @@ import {
   marcarSinOcEn,
   articulosPorDescripcionEn,
 } from '@/server/app/articulosProveedor'
-import { vincularDescripcionArticuloEn, comprobanteCerradoEn } from '@/server/app/acciones'
+import {
+  vincularDescripcionArticuloEn,
+  comprobanteCerradoEn,
+} from '@/server/app/acciones/articulos'
 import { guardarReglaEn } from '@/server/app/lecturaProveedor'
 import { normalizarDescripcionArticulo } from '@/lib/matchOc'
 import {

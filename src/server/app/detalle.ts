@@ -149,7 +149,7 @@ export async function guardarExtraccionEn(
       .input('codigo', sql.NVarChar(60), r.codigo)
       .input('desc', sql.NVarChar(500), r.descripcion)
       // Se parsean en JS con parsearImporteONulo -- ver el comentario en
-      // desnormalizarBandejaEn (src/server/app/cola.ts) sobre por qué un
+      // desnormalizarBandejaEn (src/server/app/completarLectura.ts) sobre por qué un
       // REPLACE a ciegas en SQL rompe con comprobantes que mezclan
       // separadores en el mismo PDF.
       .input('cant', sql.Decimal(19, 4), parsearImporteONulo(r.cantidad))
@@ -303,7 +303,7 @@ export async function obtenerDetalle(comprobanteId: number): Promise<Detalle> {
  *
  * `registrado` y `existente` son terminales e inmutables (design/README.md
  * §2 para `registrado`; `existente` es el mismo criterio -- ver
- * `marcarExistenteEnTangoEn` en cola.ts -- porque no hay nada que corregir
+ * `marcarExistenteEnTangoEn` en completarLectura.ts -- porque no hay nada que corregir
  * en una factura que ya está en Tango). Formulario no conoce el estado del
  * comprobante -- no se toca, está revisado y aprobado de una tarea
  * anterior -- así que el freno tiene que vivir en la escritura, no en el

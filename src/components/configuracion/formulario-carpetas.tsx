@@ -6,7 +6,7 @@ import {
   guardarConfiguracionCarpetas,
   dispararEscaneoCarpetas,
   type ConfiguracionCarpetas,
-} from '@/server/app/acciones'
+} from '@/server/app/acciones/configuracion'
 import { useToast } from '@/components/toast/toast-provider'
 import styles from './formulario-carpetas.module.css'
 
