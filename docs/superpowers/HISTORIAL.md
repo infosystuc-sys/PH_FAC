@@ -2,6 +2,15 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Sinónimo de IMSA por los 8 primeros caracteres (2026-11-04)
+
+Pedido del usuario: IMPORTADORA MEDITERRANEA SA (IMSA, `010337`, CUIT 30-64202042-7, remitos y facturas de motos) imprime el código del artículo con más datos pegados, y el sinónimo cargado en Tango (`CPA15.COD_SINONI`) son los 8 primeros caracteres: hoy hay uno solo, `MNTD-150` = `105164`.
+
+- La regla vive en `src/lib/codigoProveedor.ts` (`LARGO_SINONIMO_POR_PROVEEDOR`, `codigoParaSinonimo`), por `COD_PROVEE`. Los caracteres se cuentan tal como vienen impresos, guiones incluidos. Los demás proveedores siguen buscando el código entero.
+- Se aplica en `src/server/tango/articulos.ts`, en las tres puntas: `articulosPorSinonimo` busca la parte recortada pero devuelve el mapa indexado por el código impreso ENTERO (así ningún llamador cambió: validación, oferta e imputación de OC); `asociarArticuloProveedor` guarda el sinónimo recortado cuando el operador vincula un renglón, si no nunca más se encontraría; y el buscador manual de artículos (`buscarArticulos`) recorta solo para el join contra `CPA15`.
+- Si la IA lee el código sin el guion (`MNTD150...`), los 8 primeros no coinciden. No se cubrió: el usuario pidió los 8 caracteres literales.
+- Tests: `tests/lib/codigoProveedor.test.ts` y tres de lectura en `tests/server/tango/articulos.test.ts` contra el sinónimo real de IMSA.
+
 ## Números de serie en los remitos (2026-11-04)
 
 Pedido del usuario: al registrar un remito, los artículos con `STA11.USA_SERIE` graban sus series en **`STA06`** (series en stock) y **`STA07`** (historial del movimiento), como Tango. Referencia: el remito `RP 00004210` (OC `0000100001702`, artículo `100063`, 2 unidades) que el usuario cargó desde Tango. Hasta hoy el registro rechazaba esos artículos ("ese remito hay que cargarlo desde Tango").

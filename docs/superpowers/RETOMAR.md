@@ -97,6 +97,7 @@ Están documentadas junto al código que las aplica: buscá "decisión del usuar
 - **`CPA46.FALTA_REM` sigue la regla de Tango**: `CANTIDAD − lo cubierto en CPA48`. Cuando un remito entra después de la factura, Tango le resta lo recibido. El 2026-11-04 se corrigieron con `scripts/corregir-falta-rem.ts` los 146 renglones que la app había grabado en 0 (108 de ellos ya estaban negativos). El script vuelve a listar sin grabar: tiene que dar 0.
 - **El remito de proveedor entra siempre al depósito 01** (2026-10-25). Los cargos del proveedor van al mismo depósito que los artículos de la factura (2026-09-22).
 - **La app no graba en ninguna tabla `CTA*`** (2026-11-03): si hace falta el espejo de Tango Central, lo tiene que llenar Tango.
+- **IMSA (`010337`) se busca en `CPA15` por los 8 primeros caracteres del código impreso** (2026-11-04), y el sinónimo que enseña el operador se guarda recortado igual. Otro proveedor con la misma necesidad se agrega en `LARGO_SINONIMO_POR_PROVEEDOR` (`src/lib/codigoProveedor.ts`).
 - **Los números de serie de un remito los carga el operador**, uno por unidad, y se graban en `STA07` y `STA06` al depósito del renglón (2026-11-04). Sin todas las series, el remito no se registra.
 - **El precio de última compra (`STA12`) se pisa al registrar aunque la factura sea más vieja** que la última compra que ya tiene, como hace Tango (2026-09-23).
 

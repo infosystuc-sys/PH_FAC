@@ -3,6 +3,7 @@ import { getPool } from '../db/pool'
 import { tieneColumna } from './esquema'
 import type { CriterioOc } from '@/lib/tipoFactura'
 import { normalizarCodigo } from '@/lib/cotejoOc'
+import { codigoParaSinonimo } from '@/lib/codigoProveedor'
 
 export type ArticuloTango = {
   codArticu: string
@@ -54,6 +55,9 @@ export async function buscarArticulos(
     .request()
     .input('prov', sql.VarChar(6), codProvee?.trim() || null)
     .input('exacto', sql.VarChar(60), t)
+    // Contra CPA15, con la regla de largo del proveedor si tiene (IMSA):
+    // pegar el codigo impreso entero tiene que encontrar su sinonimo.
+    .input('sinonimo', sql.VarChar(60), codigoParaSinonimo(codProvee, t))
     .input('like', sql.VarChar(62), `${t}%`)
     .input('contiene', sql.NVarChar(64), `%${t}%`)
     .input('lim', sql.Int, MAX_RESULTADOS)
@@ -87,7 +91,7 @@ export async function buscarArticulos(
         ON sin.COD_ARTICU = a.COD_ARTICU
        AND @prov IS NOT NULL
        AND LTRIM(RTRIM(sin.COD_PROVEE)) = @prov
-       AND LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @exacto
+       AND LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @sinonimo
       WHERE sin.COD_ARTICU IS NOT NULL
          OR LTRIM(RTRIM(ISNULL(a.COD_BARRA,''))) = @exacto
          OR LTRIM(RTRIM(a.COD_ARTICU))           = @exacto
@@ -138,7 +142,9 @@ export async function asociarArticuloProveedor(
 ): Promise<void> {
   const prov = codProvee.trim()
   const art = codArticu.trim()
-  const sinonimo = codSinoni.trim()
+  // Recortado si el proveedor tiene regla (IMSA: los 8 primeros), para que
+  // `articulosPorSinonimo` lo encuentre despues. Ver codigoProveedor.ts.
+  const sinonimo = codigoParaSinonimo(prov, codSinoni)
   if (!prov || !art || !sinonimo) return
 
   const pool = await getPool()
@@ -187,13 +193,24 @@ export async function asociarArticuloProveedor(
  * está en `Latin1_General_BIN`, que distingue mayúsculas, y el código sale
  * de un PDF transcripto por el modelo: exigir que coincida byte a byte
  * dejaría sin emparejar un artículo que sí está cargado.
+ *
+ * Si el proveedor tiene regla de largo (IMSA, 2026-11-04: ver
+ * `codigoProveedor.ts`), se busca solo el principio del código impreso, pero
+ * el mapa sigue indexado por el código ENTERO normalizado: es lo que tienen
+ * a mano los que lo consultan.
  */
 export async function articulosPorSinonimo(
   codProvee: string,
   sinonimos: string[],
 ): Promise<Map<string, string>> {
   const prov = codProvee.trim()
-  const buscados = new Set(sinonimos.map(normalizarCodigo).filter((x) => x !== ''))
+  // codigo entero normalizado -> la parte que se busca, normalizada
+  const buscados = new Map<string, string>()
+  for (const s of sinonimos) {
+    const entero = normalizarCodigo(s)
+    const parte = normalizarCodigo(codigoParaSinonimo(prov, s))
+    if (entero !== '' && parte !== '') buscados.set(entero, parte)
+  }
   if (!prov || buscados.size === 0) return new Map()
 
   const pool = await getPool()
@@ -207,10 +224,13 @@ export async function articulosPorSinonimo(
         AND LTRIM(RTRIM(ISNULL(COD_SINONI,''))) <> ''
     `)
 
+  const artPorSinonimo = new Map<string, string>()
+  for (const f of r.recordset) artPorSinonimo.set(normalizarCodigo(String(f.sinonimo)), String(f.art))
+
   const m = new Map<string, string>()
-  for (const f of r.recordset) {
-    const sinonimo = normalizarCodigo(String(f.sinonimo))
-    if (buscados.has(sinonimo)) m.set(sinonimo, String(f.art))
+  for (const [entero, parte] of buscados) {
+    const art = artPorSinonimo.get(parte)
+    if (art !== undefined) m.set(entero, art)
   }
   return m
 }

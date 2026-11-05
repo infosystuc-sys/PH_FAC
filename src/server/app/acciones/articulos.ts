@@ -21,6 +21,7 @@ import { normalizarCodigo } from '@/lib/cotejoOc'
 import { aprenderArticuloEn, marcarSinOcEn } from '../articulosProveedor'
 import { recalcularAVincularEn, sincronizarCargosEn } from '../ordenCompra'
 import { aprenderImpuesto } from '../aprendizajeImpuestos'
+import { codigoParaSinonimo } from '@/lib/codigoProveedor'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -77,7 +78,7 @@ export async function asociarCodigoProveedor(
     auditarEn(
       tx,
       comprobanteId,
-      `Código del proveedor asociado en Tango: "${codSinoni}" = ${codArticu}`,
+      `Código del proveedor asociado en Tango: "${codigoParaSinonimo(codProvee, codSinoni)}" = ${codArticu}`,
     ),
   )
 

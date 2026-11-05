@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { buscarArticulos, sinonimosDelProveedor } from '@/server/tango/articulos'
+import { buscarArticulos, sinonimosDelProveedor, articulosPorSinonimo } from '@/server/tango/articulos'
+import { normalizarCodigo } from '@/lib/cotejoOc'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { conRollback } from '@/server/db/tx'
 
@@ -183,5 +184,52 @@ describe('sinonimosDelProveedor', () => {
     const m = await sinonimosDelProveedor(String(x.prov), [String(x.art), 'NO-EXISTE-ZZZ'])
     expect(m.get(String(x.art))).toBe(String(x.sinonimo))
     expect(m.has('NO-EXISTE-ZZZ')).toBe(false)
+  })
+})
+
+/**
+ * IMSA (010337) imprime el codigo del modelo con mas datos pegados y en
+ * Tango el sinonimo son los 8 primeros caracteres (2026-11-04, decision del
+ * usuario). Se usa su sinonimo real, descubierto: si ya no esta, el test no
+ * tiene que probar.
+ */
+describe('regla de largo de IMSA', () => {
+  async function sinonimoImsa() {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(COD_ARTICU)) AS art, LTRIM(RTRIM(COD_SINONI)) AS sinonimo
+      FROM CPA15
+      WHERE LTRIM(RTRIM(COD_PROVEE)) = '010337' AND LEN(LTRIM(RTRIM(ISNULL(COD_SINONI,'')))) = 8`)
+    return r.recordset[0] ?? null
+  }
+
+  it('articulosPorSinonimo encuentra el articulo con el codigo impreso entero', async () => {
+    const x = await sinonimoImsa()
+    if (!x) return
+    const impreso = `${x.sinonimo}AZUL2026`
+    const m = await articulosPorSinonimo('010337', [impreso])
+    // Indexado por el codigo ENTERO: es lo que tienen los que consultan.
+    expect(m.get(normalizarCodigo(impreso))).toBe(String(x.art))
+  })
+
+  it('otro proveedor no recorta: el mismo codigo largo no encuentra nada', async () => {
+    const x = await sinonimoImsa()
+    if (!x) return
+    const pool = await getPool()
+    const otro = await pool.request().input('s', String(x.sinonimo)).query(`
+      SELECT TOP 1 LTRIM(RTRIM(COD_PROVEE)) AS prov FROM CPA01
+      WHERE LTRIM(RTRIM(COD_PROVEE)) <> '010337'
+        AND NOT EXISTS (SELECT 1 FROM CPA15 c WHERE c.COD_PROVEE = CPA01.COD_PROVEE
+                        AND LTRIM(RTRIM(c.COD_SINONI)) LIKE LEFT(@s, 4) + '%')`)
+    const m = await articulosPorSinonimo(String(otro.recordset[0].prov), [`${x.sinonimo}AZUL2026`])
+    expect(m.size).toBe(0)
+  })
+
+  it('el buscador encuentra el articulo pegando el codigo impreso entero', async () => {
+    const x = await sinonimoImsa()
+    if (!x) return
+    const r = await buscarArticulos(`${x.sinonimo}AZUL2026`, '010337')
+    expect(r[0]?.codArticu).toBe(String(x.art))
+    expect(r[0]?.porQue).toBe('código del proveedor')
   })
 })
