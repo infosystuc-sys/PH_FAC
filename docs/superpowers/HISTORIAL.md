@@ -2,6 +2,12 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## La app compilada desde `D:\app\ph_fac` no abría ninguna pantalla (2026-11-05)
+
+Después de recompilar con `.\iniciar-app.bat --recompilar` desde una consola parada en `D:\app\ph_fac` (en minúsculas), todas las pantallas daban "Application error: a client-side exception" con `invariant expected layout router to be mounted`. No era el código: una compilación limpia del mismo commit desde `D:\APP\PH_FAC` salía con todos los chunks distintos (React incluido) y era igual a las que andaban. `required-server-files.json` mostraba `appDir: D:\app\ph_fac`. Windows no distingue mayúsculas, pero webpack sí: los módulos de Next quedan duplicados y el router no encuentra su propio contexto.
+
+`iniciar-app.bat` e `iniciar-local.bat` ahora averiguan la carpeta con sus mayúsculas reales (PowerShell, recorriendo cada nivel con `GetDirectories`) y salen y vuelven a entrar a ella, porque un `cd` a la misma carpeta no cambia cómo se escribe. Probado invocando desde PowerShell en `d:\app\ph_fac`: queda `D:\APP\PH_FAC`.
+
 ## Series de IMSA leídas del comprobante y campo DNRPA (2026-11-05)
 
 Pedido del usuario: en los remitos de IMSA (`010337`) las series de las motos se leen del papel en vez de tipearlas. Correspondencia (captura del usuario): `N_SERIE` = columna "Chasis", `DESC1` = columna "Motor", `DESC2` = el color, que sale del código del artículo (`MNTD-150NE-LLE2` → `NE`: lo que sigue a los 8 caracteres del sinónimo, hasta el próximo guion) y `COMENTARIO` = **DNRPA**, que carga el operador. La regla es solo de IMSA; otro proveedor lo va a pasar el usuario más adelante.

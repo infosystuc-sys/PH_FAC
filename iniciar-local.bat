@@ -22,6 +22,17 @@ if "%~1"=="--abrir-navegador" goto ABRIR
 
 cd /d "%~dp0"
 
+REM La carpeta con sus mayusculas reales, no como la tipeo el operador.
+REM Windows no distingue "D:\app\ph_fac" de "D:\APP\PH_FAC", pero la
+REM compilacion si: desde la ruta en minusculas webpack duplica los modulos
+REM de Next y la app compilada no abre ninguna pantalla ("invariant
+REM expected layout router to be mounted", 2026-11-05). Hay que salir de la
+REM carpeta y volver a entrar: un cd a la misma carpeta no cambia como se
+REM escribe.
+set RAIZ=
+for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$d=[IO.DirectoryInfo]((Resolve-Path -LiteralPath '.').Path); $p=@(); while($d.Parent){$p=,($d.Parent.GetDirectories($d.Name)[0].Name)+$p; $d=$d.Parent}; $d.Name.ToUpper()+($p -join '\')"`) do set "RAIZ=%%P"
+if defined RAIZ (cd /d "%SystemRoot%" & cd /d "%RAIZ%")
+
 if not exist ".env.local" (
   echo.
   echo   FALTA EL ARCHIVO .env.local
