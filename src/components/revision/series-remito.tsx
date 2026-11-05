@@ -23,9 +23,14 @@ function filasDe(r: RenglonConSerie): Serie[] {
  *
  * Aparece solo si algún renglón es de un artículo que usa número de serie
  * en Tango (`STA11.USA_SERIE`): uno por unidad, con las dos descripciones y
- * el comentario que Tango guarda junto a cada serie (en las motos, el
- * número de motor, el color y el certificado). Al registrar van a `STA07` y
- * `STA06`. Sin las series completas, "Listo para registrar" bloquea.
+ * el comentario que Tango guarda junto a cada serie. En las motos son el
+ * chasis, el motor, el color y el DNRPA, que es como se llama acá el
+ * comentario (2026-11-05). Al registrar van a `STA07` y `STA06`. Sin las
+ * series completas, "Listo para registrar" bloquea.
+ *
+ * Si el proveedor tiene regla de series (seriesProveedor.ts, hoy IMSA), las
+ * series vienen leídas del comprobante: el operador las revisa contra el
+ * PDF, carga el DNRPA y guarda.
  */
 export function SeriesRemito({
   comprobanteId,
@@ -115,7 +120,13 @@ export function SeriesRemito({
                 {formatCantidad(r.cantidad)} u.
               </span>
               <span className={r.problema || sucia ? styles.estadoMal : styles.estadoBien}>
-                {sucia ? 'Sin guardar' : r.problema ? 'Incompleto' : 'Completo'}
+                {sucia
+                  ? 'Sin guardar'
+                  : r.problema
+                    ? 'Incompleto'
+                    : r.origen === 'leidas'
+                      ? 'Leídas del PDF'
+                      : 'Completo'}
               </span>
             </div>
 
@@ -124,7 +135,7 @@ export function SeriesRemito({
               <span>N° de serie</span>
               <span>Descripción 1</span>
               <span>Descripción 2</span>
-              <span>Comentario</span>
+              <span title="Va al comentario de la serie en Tango">DNRPA</span>
             </div>
             {filas.map((f, i) => (
               <div key={i} className={styles.fila}>
@@ -160,6 +171,11 @@ export function SeriesRemito({
               </div>
             ))}
 
+            {r.origen === 'leidas' && !sucia && (
+              <p className={styles.aviso}>
+                Leídas del comprobante. Revisalas contra el PDF, cargá el DNRPA y guardá.
+              </p>
+            )}
             <div className={styles.pie}>
               <span className={styles.problema}>{!sucia && r.problema ? r.problema : ''}</span>
               {!soloLectura && (

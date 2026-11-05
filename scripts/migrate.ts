@@ -329,6 +329,31 @@ const DEFINICIONES: Definicion[] = [
     ],
   },
   {
+    // Los numeros de serie tal como los lee la IA del comprobante, por
+    // renglon del PDF (PHF_RENGLON_PDF.ORDEN). Solo para los proveedores con
+    // regla de series (src/lib/seriesProveedor.ts; hoy IMSA, 2026-11-05).
+    // Cuelgan del comprobante y no de PHF_RENGLON: los renglones que se
+    // registran salen de la OC y se recrean cada vez que se cambia la orden,
+    // mientras que lo leido del papel no cambia. Mientras el operador no
+    // guarde las series del renglon (PHF_SERIE), valen estas.
+    tabla: 'PHF_SERIE_PDF',
+    ddlTabla: `
+      CREATE TABLE PHF_SERIE_PDF (
+        ID              INT IDENTITY(1,1) NOT NULL,
+        COMPROBANTE_ID  INT            NOT NULL,
+        PDF_ORDEN       INT            NOT NULL,
+        ORDEN           INT            NOT NULL,
+        N_SERIE         NVARCHAR(30)   NOT NULL,
+        DESC1           NVARCHAR(25)   NULL,
+        DESC2           NVARCHAR(25)   NULL,
+        CONSTRAINT PK_PHF_SERIE_PDF PRIMARY KEY (ID),
+        CONSTRAINT UQ_PHF_SERIE_PDF UNIQUE (COMPROBANTE_ID, PDF_ORDEN, ORDEN),
+        CONSTRAINT FK_PHF_SERIE_PDF_COMP FOREIGN KEY (COMPROBANTE_ID)
+          REFERENCES PHF_COMPROBANTE (ID) ON DELETE CASCADE
+      );
+    `,
+  },
+  {
     // Los numeros de serie de un renglon de remito cuyo articulo los usa
     // (STA11.USA_SERIE), uno por unidad recibida. Los carga el operador en
     // la revision y van a STA07/STA06 al registrar (2026-11-04, pedido del

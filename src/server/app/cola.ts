@@ -44,6 +44,9 @@ import {
   observarRemitosEn,
   observarDiferenciasEn,
 } from './remitosLectura'
+import { reglaSeriesDe } from '@/lib/seriesProveedor'
+import { extraerSeries } from '../ia/series'
+import { guardarSeriesPdfEn } from './series'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -224,6 +227,40 @@ export async function marcarFalloEn(e: Ejecutor, id: number, error: string): Pro
   await auditarEn(e, id, `Falló la lectura automática: ${error}`.slice(0, 500))
 }
 
+/**
+ * Lee del comprobante los numeros de serie de cada renglon y los guarda en
+ * PHF_SERIE_PDF, traducidos con la regla del proveedor. No hace nada si el
+ * proveedor no tiene regla (ver src/lib/seriesProveedor.ts).
+ */
+async function leerSeriesDelPdf(
+  id: number,
+  pdf: Buffer,
+  codProvee: string | null,
+  renglonesPdf: { codigo: string | null; cantidad: string | null }[],
+): Promise<void> {
+  const regla = reglaSeriesDe(codProvee)
+  if (!regla || renglonesPdf.length === 0) return
+  // El orden es el de PHF_RENGLON_PDF.ORDEN: guardarExtraccionEn los numera
+  // de 1 en adelante en el mismo orden en que vinieron.
+  const renglones = renglonesPdf.map((x, i) => ({ orden: i + 1, codigo: x.codigo, cantidad: x.cantidad }))
+  const leido = await extraerSeries(pdf, renglones, regla)
+  await sumarUsoIaEn(await getPool(), id, leido.usage)
+  await conTransaccion(async (tx) => {
+    if (!leido.ok) {
+      await auditarEn(tx, id, `No se pudieron leer los números de serie: ${leido.error.slice(0, 200)}`)
+      return
+    }
+    const n = await guardarSeriesPdfEn(
+      tx,
+      id,
+      leido.unidades,
+      new Map(renglones.map((x) => [x.orden, x.codigo])),
+      regla,
+    )
+    await auditarEn(tx, id, `Números de serie leídos del comprobante — ${n} unidad(es)`)
+  })
+}
+
 /** Extrae un comprobante y deja el resultado en la base. No lanza. */
 export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise<void> {
   try {
@@ -353,6 +390,16 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
     })
 
     if (yaExisteEnTango) return
+
+    // Los numeros de serie, solo en los remitos de un proveedor con regla
+    // (2026-11-05: IMSA). Otro llamado a la API, fuera de la transaccion por
+    // lo mismo que la segunda pasada de abajo. Si falla, el remito se revisa
+    // igual y las series se cargan a mano.
+    if (tipoFactura === 'remito') {
+      await leerSeriesDelPdf(id, pdf, codProvee, r.extraccion.renglonesPdf).catch((e: unknown) =>
+        console.error(`leerSeriesDelPdf[${id}]:`, e),
+      )
+    }
 
     // Segunda pasada: los renglones. Va FUERA de la transaccion de arriba a
     // proposito -- es otro llamado a la API, de unos diez segundos, y

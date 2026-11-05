@@ -36,7 +36,7 @@
 | `conceptos` | Factura con concepto (`CPA47`), sin renglones | Condición de compra fija "CONTADO 1 DIA" |
 | `articulos` | Factura con renglones (`CPA46`) imputados a una **orden de compra** | Si la OC tiene un remito recibido, la factura lo consume (`CPA48` + `CPA_OC_REMITO_FACTURA`) |
 | `tarjeta` | Liquidación, letra `A` fija, punto de venta aprendido por proveedor | El total se calcula, no se lee |
-| `remito` | Movimiento de stock `RP` (`STA14`/`STA20`), entra al depósito 01, contra la OC | Mueve stock y lo pendiente de recibir. Los artículos con número de serie graban `STA06`/`STA07` con las series que carga el operador (desde 2026-11-04) |
+| `remito` | Movimiento de stock `RP` (`STA14`/`STA20`), entra al depósito 01, contra la OC | Mueve stock y lo pendiente de recibir. Los artículos con número de serie graban `STA06`/`STA07` (desde 2026-11-04): las series las carga el operador o, en IMSA, las lee la IA del comprobante (2026-11-05) |
 
 **Estados** (`src/lib/estados.ts`): `procesando`, `leido`, `observacion`, `confirmado`, `registrado`, `existente` (ya estaba en Tango antes de importarlo), `error`. `registrado` y `existente` son terminales y de solo lectura.
 
@@ -57,7 +57,7 @@
 | `cola.ts` | Alta en el pipeline, el worker y `procesarUno` |
 | `completarLectura.ts` | Lo que la app resuelve sola después de la IA (proveedor, condición, neto, fecha contable, percepciones, cargos, tarjeta, "ya existe en Tango") |
 | `remitosLectura.ts` | Remitos citados por la factura y sus diferencias |
-| `series.ts` | Números de serie de los renglones de remito (`PHF_SERIE`) y su validación |
+| `series.ts` | Números de serie de los renglones de remito (`PHF_SERIE` cargadas, `PHF_SERIE_PDF` leídas) y su validación |
 
 Los componentes importan cada server action de su archivo, no hay un índice común.
 
@@ -80,7 +80,7 @@ Los componentes importan cada server action de su archivo, no hay un índice com
 10. **`PHF_COMPROBANTE.NUMERO` tiene dos convenciones:** los de `pnpm seed` lo guardan con el punto de venta (`"0003-00018742"`), los reales por separado. La bandeja y la barra de acciones muestran `NUMERO` solo, por eso.
 11. **`buscarProveedorPorCuit` (singular)** ya no tiene callers de producción, solo tests. Candidato a borrar.
 12. **Selector manual de remito** en la revisión: hoy el remito que consume una factura se elige solo (el más viejo). Solo si aparecen casos que lo pidan.
-13. **Leer los números de serie del PDF con la IA.** Hoy el operador los tipea en la tarjeta "Números de serie" del remito. Si los remitos de motos los traen impresos, se pueden sumar a la extracción.
+13. **Regla de series del segundo proveedor de motos.** IMSA ya lee chasis, motor y color del comprobante (2026-11-05); el usuario va a pasar cómo trae los datos el otro proveedor. Se agrega en `REGLAS_SERIES_POR_PROVEEDOR` (`src/lib/seriesProveedor.ts`).
 
 ---
 
@@ -98,7 +98,8 @@ Están documentadas junto al código que las aplica: buscá "decisión del usuar
 - **El remito de proveedor entra siempre al depósito 01** (2026-10-25). Los cargos del proveedor van al mismo depósito que los artículos de la factura (2026-09-22).
 - **La app no graba en ninguna tabla `CTA*`** (2026-11-03): si hace falta el espejo de Tango Central, lo tiene que llenar Tango.
 - **IMSA (`010337`) se busca en `CPA15` por los 8 primeros caracteres del código impreso** (2026-11-04), y el sinónimo que enseña el operador se guarda recortado igual. Otro proveedor con la misma necesidad se agrega en `LARGO_SINONIMO_POR_PROVEEDOR` (`src/lib/codigoProveedor.ts`).
-- **Los números de serie de un remito los carga el operador**, uno por unidad, y se graban en `STA07` y `STA06` al depósito del renglón (2026-11-04). Sin todas las series, el remito no se registra.
+- **Los números de serie de un remito**, uno por unidad, se graban en `STA07` y `STA06` al depósito del renglón (2026-11-04). Sin todas las series, el remito no se registra. En IMSA se leen del comprobante: chasis → `N_SERIE`, motor → `DESC1`, color del código → `DESC2`; el `COMENTARIO` es el **DNRPA**, lo carga el operador y es obligatorio (2026-11-05).
+- **La subida de archivos admite hasta 510 MB por lote** (`next.config.ts`, 2026-11-05): Next corta en 1 MB por defecto.
 - **El precio de última compra (`STA12`) se pisa al registrar aunque la factura sea más vieja** que la última compra que ya tiene, como hace Tango (2026-09-23).
 
 ---

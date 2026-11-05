@@ -1,5 +1,6 @@
 import sql from 'mssql'
-import { normalizarSerie, problemaSeries, type Serie } from '@/lib/series'
+import { normalizarSerie, problemaSeries, LARGO_SERIE, type Serie } from '@/lib/series'
+import type { ReglaSeries } from '@/lib/seriesProveedor'
 import { parsearImporte } from '@/lib/formato'
 import { articulosConSerie, seriesYaEnStock } from '@/server/tango/series'
 
@@ -72,6 +73,107 @@ export async function guardarSeriesEn(
   }
 }
 
+/** Un renglón de PHF_RENGLON, con lo justo para resolver sus series. */
+export type RenglonParaSeries = {
+  id: number
+  orden: number
+  codigo: string | null
+  codigoFinal: string | null
+  descripcion: string | null
+  cantidad: string | null
+  /** El renglón del PDF del que salió: ahí están las series leídas. */
+  pdfOrden: number | null
+}
+
+/**
+ * De dónde salen las series que valen para un renglón:
+ * - 'cargadas': las guardó el operador (PHF_SERIE). Ganan siempre.
+ * - 'leidas': las leyó la IA del comprobante (PHF_SERIE_PDF) y el operador
+ *   todavía no las guardó.
+ * - 'ninguna': no hay.
+ */
+export type OrigenSeries = 'cargadas' | 'leidas' | 'ninguna'
+
+/**
+ * Guarda las unidades que leyó la IA del comprobante, ya traducidas a los
+ * datos de Tango con la regla del proveedor: N_SERIE y DESC1 de las
+ * columnas impresas, DESC2 del código del artículo. Reemplaza lo anterior.
+ */
+export async function guardarSeriesPdfEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  unidades: { orden: number; serie: string; adicional1: string }[],
+  codigoPorOrden: Map<number, string | null>,
+  regla: ReglaSeries,
+): Promise<number> {
+  await e.request().input('id', sql.Int, comprobanteId)
+    .query('DELETE FROM PHF_SERIE_PDF WHERE COMPROBANTE_ID = @id')
+  const contador = new Map<number, number>()
+  let total = 0
+  for (const u of unidades) {
+    if (!codigoPorOrden.has(u.orden)) continue
+    const s = normalizarSerie({
+      nSerie: u.serie,
+      desc1: u.adicional1,
+      desc2: regla.adicional2DelCodigo(codigoPorOrden.get(u.orden) ?? ''),
+    })
+    if (!s.nSerie) continue
+    const orden = (contador.get(u.orden) ?? 0) + 1
+    contador.set(u.orden, orden)
+    await e.request()
+      .input('id', sql.Int, comprobanteId)
+      .input('pdf', sql.Int, u.orden)
+      .input('orden', sql.Int, orden)
+      .input('serie', sql.NVarChar(30), s.nSerie.slice(0, LARGO_SERIE.nSerie))
+      .input('desc1', sql.NVarChar(25), s.desc1.slice(0, LARGO_SERIE.desc1))
+      .input('desc2', sql.NVarChar(25), s.desc2.slice(0, LARGO_SERIE.desc2))
+      .query(`
+        INSERT INTO PHF_SERIE_PDF (COMPROBANTE_ID, PDF_ORDEN, ORDEN, N_SERIE, DESC1, DESC2)
+        VALUES (@id, @pdf, @orden, @serie, @desc1, @desc2)`)
+    total += 1
+  }
+  return total
+}
+
+/**
+ * Las series que valen para cada renglón. Las leídas del PDF se reparten
+ * entre los renglones que salieron de esa línea, en orden y según la
+ * cantidad de cada uno: una línea impresa suele ser un solo renglón, pero
+ * podría haberse partido entre dos órdenes de compra.
+ */
+export async function seriesEfectivasEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  renglones: RenglonParaSeries[],
+): Promise<Map<number, { series: Serie[]; origen: OrigenSeries }>> {
+  const guardadas = await seriesDelComprobanteEn(e, comprobanteId)
+  const leidas = await e.request().input('id', sql.Int, comprobanteId).query(`
+    SELECT PDF_ORDEN, N_SERIE, DESC1, DESC2 FROM PHF_SERIE_PDF
+    WHERE COMPROBANTE_ID = @id ORDER BY PDF_ORDEN, ORDEN`)
+  const porPdf = new Map<number, Serie[]>()
+  for (const x of leidas.recordset) {
+    const lista = porPdf.get(Number(x.PDF_ORDEN)) ?? []
+    lista.push(normalizarSerie({ nSerie: x.N_SERIE ?? '', desc1: x.DESC1 ?? '', desc2: x.DESC2 ?? '' }))
+    porPdf.set(Number(x.PDF_ORDEN), lista)
+  }
+
+  const resultado = new Map<number, { series: Serie[]; origen: OrigenSeries }>()
+  const usadas = new Map<number, number>()
+  for (const r of [...renglones].sort((a, b) => a.orden - b.orden)) {
+    const propias = guardadas.get(r.id)
+    const disponibles = r.pdfOrden !== null ? (porPdf.get(r.pdfOrden) ?? []) : []
+    const desde = r.pdfOrden !== null ? (usadas.get(r.pdfOrden) ?? 0) : 0
+    const cantidad = Math.max(0, Math.round(parsearImporte(r.cantidad)))
+    const delPdf = disponibles.slice(desde, desde + cantidad)
+    if (r.pdfOrden !== null) usadas.set(r.pdfOrden, desde + delPdf.length)
+
+    if (propias && propias.length > 0) resultado.set(r.id, { series: propias, origen: 'cargadas' })
+    else if (delPdf.length > 0) resultado.set(r.id, { series: delPdf, origen: 'leidas' })
+    else resultado.set(r.id, { series: [], origen: 'ninguna' })
+  }
+  return resultado
+}
+
 /** Un renglón del remito cuyo artículo usa número de serie, con lo cargado. */
 export type RenglonConSerie = {
   renglonId: number
@@ -79,6 +181,7 @@ export type RenglonConSerie = {
   descripcion: string | null
   cantidad: number
   series: Serie[]
+  origen: OrigenSeries
   /** Lo que falta o está mal, o `null` si se puede registrar. */
   problema: string | null
 }
@@ -93,13 +196,13 @@ export type RenglonConSerie = {
 export async function revisarSeriesEn(
   e: Ejecutor,
   comprobanteId: number,
-  renglones: { id: number; codigo: string | null; codigoFinal: string | null; descripcion: string | null; cantidad: string | null }[],
+  renglones: RenglonParaSeries[],
 ): Promise<RenglonConSerie[]> {
-  const codigoDe = (r: (typeof renglones)[number]) => (r.codigoFinal ?? r.codigo ?? '').trim()
+  const codigoDe = (r: RenglonParaSeries) => (r.codigoFinal ?? r.codigo ?? '').trim()
   // Secuencial: `e` puede ser una transaccion (ver validaciones.ts).
   const conSerie = await articulosConSerie(renglones.map(codigoDe), e)
   if (conSerie.size === 0) return []
-  const guardadas = await seriesDelComprobanteEn(e, comprobanteId)
+  const efectivas = await seriesEfectivasEn(e, comprobanteId, renglones)
 
   const resultado: RenglonConSerie[] = []
   const vistas = new Map<string, number>()
@@ -107,11 +210,11 @@ export async function revisarSeriesEn(
     const codArticu = codigoDe(r)
     if (!conSerie.has(codArticu)) continue
     const cantidad = parsearImporte(r.cantidad)
-    const series = guardadas.get(r.id) ?? []
+    const { series, origen } = efectivas.get(r.id) ?? { series: [], origen: 'ninguna' as const }
     let problema = problemaSeries(codArticu, cantidad, series)
     if (!problema) {
       for (const s of series.filter((x) => x.nSerie !== '')) {
-        const clave = `${codArticu}\u0000${s.nSerie}`
+        const clave = `${codArticu} ${s.nSerie}`
         if (vistas.has(clave) && vistas.get(clave) !== r.id) {
           problema = `La serie ${s.nSerie} del artículo ${codArticu} está en dos renglones.`
           break
@@ -127,7 +230,7 @@ export async function revisarSeriesEn(
           `(depósito ${enStock[0].deposito}).`
       }
     }
-    resultado.push({ renglonId: r.id, codArticu, descripcion: r.descripcion, cantidad, series, problema })
+    resultado.push({ renglonId: r.id, codArticu, descripcion: r.descripcion, cantidad, series, origen, problema })
   }
   return resultado
 }

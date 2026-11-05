@@ -112,6 +112,10 @@ export async function guardarExtraccionEn(
     .query('DELETE FROM PHF_CARGO WHERE COMPROBANTE_ID = @id')
   await e.request().input('id', sql.Int, comprobanteId)
     .query('DELETE FROM PHF_RENGLON_PDF WHERE COMPROBANTE_ID = @id')
+  // Las series leidas son de la lectura anterior: si hacen falta, la cola
+  // las vuelve a leer despues de resolver el proveedor.
+  await e.request().input('id', sql.Int, comprobanteId)
+    .query('DELETE FROM PHF_SERIE_PDF WHERE COMPROBANTE_ID = @id')
 
   const conValor: number[] = []
 

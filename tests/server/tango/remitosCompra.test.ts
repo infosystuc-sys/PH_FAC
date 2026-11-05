@@ -3,10 +3,11 @@ import sql from 'mssql'
 import { cerrarPool } from '@/server/db/pool'
 import { conRollback } from '@/server/db/tx'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
-import { guardarCampoEn } from '@/server/app/detalle'
+import { guardarCampoEn, obtenerDetalleEn } from '@/server/app/detalle'
 import { registrarComprobanteEn } from '@/server/tango/comprobantes'
 import { contadoresOc, nCompRemito, buscarRemitoEnSta14 } from '@/server/tango/remitosCompra'
-import { guardarSeriesEn } from '@/server/app/series'
+import { guardarSeriesEn, guardarSeriesPdfEn, revisarSeriesEn } from '@/server/app/series'
+import { reglaSeriesDe } from '@/lib/seriesProveedor'
 import { validarListoParaRegistrarEn } from '@/server/app/validaciones'
 
 afterAll(async () => {
@@ -273,7 +274,7 @@ describe('registrarComprobanteEn con un remito de artículos con número de seri
       const { id, renglonId } = await remitoConSerie(tx, art!, '87654331')
       await guardarSeriesEn(tx, id, renglonId, [
         { nSerie: 'phf-test-s1', desc1: 'M1111', desc2: 'C1111', comentario: 'CERT 1' },
-        { nSerie: 'PHF-TEST-S2', desc1: 'M2222', desc2: 'C2222' },
+        { nSerie: 'PHF-TEST-S2', desc1: 'M2222', desc2: 'C2222', comentario: 'CERT 2' },
       ])
 
       const listo = await validarListoParaRegistrarEn(tx, id)
@@ -290,7 +291,7 @@ describe('registrarComprobanteEn con un remito de artículos con número de seri
         FILLER: '', COD_ARTICU: art!.COD_ARTICU, DESC1: 'M1111', DESC2: 'C1111', N_RENGL_S: 1,
         N_SERIE: 'PHF-TEST-S1', COD_DEPOSI: '01', COMENTARIO: 'CERT 1', N_PARTIDA: '',
       })
-      expect(h.recordset[1]).toMatchObject({ N_SERIE: 'PHF-TEST-S2', COMENTARIO: '' })
+      expect(h.recordset[1]).toMatchObject({ N_SERIE: 'PHF-TEST-S2', COMENTARIO: 'CERT 2' })
 
       const enStock = await tx.request().input('a', sql.VarChar(15), art!.COD_ARTICU).query(`
         SELECT * FROM STA06 WHERE COD_ARTICU=@a AND N_SERIE LIKE 'PHF-TEST-S%' ORDER BY N_SERIE`)
@@ -301,7 +302,10 @@ describe('registrarComprobanteEn con un remito de artículos con número de seri
 
       // Una serie ya en stock no puede volver a entrar.
       const otro = await remitoConSerie(tx, art!, '87654332')
-      await guardarSeriesEn(tx, otro.id, otro.renglonId, [{ nSerie: 'PHF-TEST-S1' }, { nSerie: 'PHF-TEST-S3' }])
+      await guardarSeriesEn(tx, otro.id, otro.renglonId, [
+        { nSerie: 'PHF-TEST-S1', comentario: 'D1' },
+        { nSerie: 'PHF-TEST-S3', comentario: 'D3' },
+      ])
       const listoOtro = await validarListoParaRegistrarEn(tx, otro.id)
       expect(listoOtro.renglonesNeto.mensaje).toMatch(/ya tiene en stock la serie PHF-TEST-S1/)
       expect(listoOtro.bloqueante).toBe(true)
@@ -318,6 +322,76 @@ describe('registrarComprobanteEn con un remito de artículos con número de seri
       expect(listo.renglonesNeto.estado).toBe('error')
       expect(listo.renglonesNeto.mensaje).toMatch(/1 de 2/)
       await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/1 de 2/)
+    })
+  }, 150000)
+
+  it('con las series leídas del PDF (IMSA) pide el DNRPA y registra después de cargarlo', async () => {
+    await conRollback(async (tx) => {
+      const art = await articuloConSerie(tx)
+      expect(art).not.toBeNull()
+      const { id, renglonId } = await remitoConSerie(tx, art!, '87654334')
+      // Lo que deja la cola despues de la lectura de series de IMSA: el
+      // renglon del PDF 1 trae dos unidades, y el color sale del codigo.
+      const n = await guardarSeriesPdfEn(
+        tx,
+        id,
+        [
+          { orden: 1, serie: 'phf-test-c1', adicional1: '162FMJ T0000001' },
+          { orden: 1, serie: 'PHF-TEST-C2', adicional1: '162FMJ T0000002' },
+          { orden: 9, serie: 'PHF-TEST-C9', adicional1: 'no hay renglon 9' },
+        ],
+        new Map([[1, 'MNTD-150NE-LLE2']]),
+        reglaSeriesDe('010337')!,
+      )
+      expect(n).toBe(2)
+
+      // Leidas, pero sin el DNRPA, que no sale del papel: bloquea.
+      const revision = await revisarSeriesEn(tx, id, (await obtenerDetalleEn(tx, id)).renglones)
+      expect(revision).toHaveLength(1)
+      expect(revision[0].origen).toBe('leidas')
+      expect(revision[0].problema).toMatch(/Falta el DNRPA de 2 serie/)
+      expect((await validarListoParaRegistrarEn(tx, id)).bloqueante).toBe(true)
+
+      // El operador guarda lo leido con el DNRPA y ahi se registra.
+      await guardarSeriesEn(
+        tx,
+        id,
+        renglonId,
+        revision[0].series.map((s, i) => ({ ...s, comentario: `DNRPA-${i + 1}` })),
+      )
+      const registro = await registrarComprobanteEn(tx, id)
+      const h = await tx.request()
+        .input('n', sql.VarChar(8), String(registro.ncompInC).padStart(8, '0'))
+        .query(`SELECT * FROM STA07 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n ORDER BY N_SERIE`)
+      expect(h.recordset.map((x) => [x.N_SERIE, x.DESC1, x.DESC2, x.COMENTARIO])).toEqual([
+        ['PHF-TEST-C1', '162FMJ T0000001', 'NE', 'DNRPA-1'],
+        ['PHF-TEST-C2', '162FMJ T0000002', 'NE', 'DNRPA-2'],
+      ])
+    })
+  }, 150000)
+
+  it('las series que guarda el operador (con el DNRPA) ganan sobre las leídas', async () => {
+    await conRollback(async (tx) => {
+      const art = await articuloConSerie(tx)
+      if (!art) return
+      const { id, renglonId } = await remitoConSerie(tx, art, '87654335')
+      await guardarSeriesPdfEn(
+        tx,
+        id,
+        [
+          { orden: 1, serie: 'PHF-TEST-D1', adicional1: 'M1' },
+          { orden: 1, serie: 'PHF-TEST-D2', adicional1: 'M2' },
+        ],
+        new Map([[1, 'MNTD-150AZ-LLE2']]),
+        reglaSeriesDe('010337')!,
+      )
+      await guardarSeriesEn(tx, id, renglonId, [
+        { nSerie: 'PHF-TEST-D1', desc1: 'M1', desc2: 'AZ', comentario: 'DNRPA-1' },
+        { nSerie: 'PHF-TEST-D2', desc1: 'M2', desc2: 'AZ', comentario: 'DNRPA-2' },
+      ])
+      const revision = await revisarSeriesEn(tx, id, (await obtenerDetalleEn(tx, id)).renglones)
+      expect(revision[0].origen).toBe('cargadas')
+      expect(revision[0].series.map((s) => s.comentario)).toEqual(['DNRPA-1', 'DNRPA-2'])
     })
   }, 150000)
 })

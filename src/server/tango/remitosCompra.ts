@@ -5,7 +5,7 @@ import { nComp as armarNComp, parsearFechaArg } from '@/lib/validaciones'
 import { parsearImporte } from '@/lib/formato'
 import { usuarioActual } from '@/lib/usuario'
 import type { RegistroTango } from './comprobantes'
-import { seriesDelComprobanteEn } from '@/server/app/series'
+import { seriesEfectivasEn } from '@/server/app/series'
 import { problemaSeries } from '@/lib/series'
 import { grabarSeriesRemitoEn } from './series'
 
@@ -247,8 +247,9 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     .query(`SELECT ID_STA22 FROM STA22 WHERE COD_SUCURS = @dep`)
   const idSta22: number | null = deposito.recordset[0]?.ID_STA22 ?? null
 
-  // Las series que cargo el operador, para los articulos que las usan.
-  const seriesGuardadas = await seriesDelComprobanteEn(tx, id)
+  // Las series de los articulos que las usan: las que guardo el operador o,
+  // si no las toco, las que la IA leyo del comprobante (2026-11-05).
+  const seriesGuardadas = await seriesEfectivasEn(tx, id, detalle.renglones)
   let totalSeries = 0
 
   const ocsAfectadas = new Set<string>()
@@ -269,7 +270,7 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     if (!a) throw new Error(`El artículo ${r.codArticu} no existe en Tango.`)
     if (!a.STOCK) throw new Error(`El artículo ${r.codArticu} no lleva stock en Tango: no puede entrar por remito.`)
     const series = a.USA_SERIE
-      ? (seriesGuardadas.get(r.renglonId) ?? []).filter((s) => s.nSerie !== '')
+      ? (seriesGuardadas.get(r.renglonId)?.series ?? []).filter((s) => s.nSerie !== '')
       : []
     if (a.USA_SERIE) {
       const problema = problemaSeries(r.codArticu, r.cantidad, series)

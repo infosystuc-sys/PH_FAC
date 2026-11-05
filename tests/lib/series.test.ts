@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { normalizarSerie, problemaSeries } from '@/lib/series'
 
-const s = (nSerie: string) => normalizarSerie({ nSerie, desc1: 'MOTOR', desc2: 'AZUL' })
+const s = (nSerie: string, comentario = 'DNRPA') =>
+  normalizarSerie({ nSerie, desc1: 'MOTOR', desc2: 'AZUL', comentario })
 
 describe('problemaSeries', () => {
   it('una serie por unidad, sin repetir, está completo', () => {
@@ -23,6 +24,13 @@ describe('problemaSeries', () => {
 
   it('no admite cantidades fraccionarias', () => {
     expect(problemaSeries('100063', 1.5, [s('S1111')])).toMatch(/entera/)
+  })
+
+  it('exige el DNRPA de cada serie', () => {
+    expect(problemaSeries('100063', 2, [s('S1111'), s('S2222', '')])).toBe(
+      'Falta el DNRPA de 1 serie(s) del artículo 100063 (S2222).',
+    )
+    expect(problemaSeries('100063', 2, [s('S1111', ''), s('S2222', '')])).toMatch(/DNRPA de 2 serie/)
   })
 
   it('respeta el largo de STA06.N_SERIE', () => {

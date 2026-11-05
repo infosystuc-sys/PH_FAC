@@ -2,6 +2,17 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Series de IMSA leídas del comprobante y campo DNRPA (2026-11-05)
+
+Pedido del usuario: en los remitos de IMSA (`010337`) las series de las motos se leen del papel en vez de tipearlas. Correspondencia (captura del usuario): `N_SERIE` = columna "Chasis", `DESC1` = columna "Motor", `DESC2` = el color, que sale del código del artículo (`MNTD-150NE-LLE2` → `NE`: lo que sigue a los 8 caracteres del sinónimo, hasta el próximo guion) y `COMENTARIO` = **DNRPA**, que carga el operador. La regla es solo de IMSA; otro proveedor lo va a pasar el usuario más adelante.
+
+- **Regla por proveedor:** `src/lib/seriesProveedor.ts` (`REGLAS_SERIES_POR_PROVEEDOR`): títulos de las dos columnas y la función que saca `DESC2` del código.
+- **Lectura:** `src/server/ia/series.ts` (`extraerSeries`), un llamado aparte de la cabecera porque el schema principal está en el techo de la gramática. Corre en la cola (`leerSeriesDelPdf`, `cola.ts`) solo para remitos de un proveedor con regla, después de resolver el proveedor. Si falla, queda en el historial y las series se cargan a mano. Probado contra "Legajo Motos IMSA.pdf": las 11 unidades de los 4 renglones salieron exactas.
+- **Guardado:** tabla nueva **`PHF_SERIE_PDF`** (por comprobante y renglón del PDF, se borra al reprocesar). `seriesEfectivasEn` (`src/server/app/series.ts`) decide qué vale para cada renglón: lo que guardó el operador en `PHF_SERIE` y, si no tocó nada, lo leído (repartido por cantidad entre los renglones que salieron de esa línea). La validación y el registro usan eso.
+- **Pantalla:** la columna "Comentario" de la tarjeta "Números de serie" se llama **DNRPA**. Las series leídas se ven precargadas con la marca "Leídas del PDF"; el operador carga el DNRPA y guarda. **El DNRPA es obligatorio** (decisión del usuario, mismo día): sin él "Listo para registrar" bloquea y el registro rechaza, así que las series leídas siempre pasan por el operador.
+- **Límite de subida:** el mismo día, "Legajo Motos IMSA.pdf" (1,86 MB) no se podía importar: Next corta las server actions en 1 MB y el error salía como "An error occurred in the Server Components render". `next.config.ts` lo sube a 510 MB (50 archivos de 10 MB, lo que promete la pantalla). Ningún archivo subido a mano había pasado de 995 KB.
+- Tests: `tests/lib/seriesProveedor.test.ts` y dos casos más en `tests/server/tango/remitosCompra.test.ts` (registra con las series leídas, color `NE` incluido; las guardadas con DNRPA ganan sobre las leídas).
+
 ## Sinónimo de IMSA por los 8 primeros caracteres (2026-11-04)
 
 Pedido del usuario: IMPORTADORA MEDITERRANEA SA (IMSA, `010337`, CUIT 30-64202042-7, remitos y facturas de motos) imprime el código del artículo con más datos pegados, y el sinónimo cargado en Tango (`CPA15.COD_SINONI`) son los 8 primeros caracteres: hoy hay uno solo, `MNTD-150` = `105164`.
