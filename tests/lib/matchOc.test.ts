@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { emparejarOcs, resolverLineasPdf, lineasAVincular, normalizarDescripcionArticulo, lineasContraOc, lineasCargo } from '@/lib/matchOc'
+import { emparejarOcs, resolverLineasPdf, lineasAVincular, normalizarDescripcionArticulo, lineasContraOc, lineasCargo, emparejarRenglones } from '@/lib/matchOc'
 
 /**
  * Las dos OC pendientes reales de CARRIER (010246) al implementar esto, y
@@ -251,5 +251,48 @@ describe('cargos del proveedor (sin orden de compra)', () => {
       { [normalizarDescripcionArticulo('OTRO CARGO')]: { codArticu: '', sinOc: true } },
     )
     expect(lineasCargo(r)).toEqual([])
+  })
+})
+
+describe('emparejarRenglones con el mismo artículo en varios renglones de la OC', () => {
+  // La OC 0000100001703 de IMSA: la moto 105164 en cuatro renglones (1, 4, 3
+  // y 3), y el remito que la entrega en cuatro lineas iguales.
+  const oc = [
+    { nRenglOc: 1, codArticu: '105164', pendiente: 1 },
+    { nRenglOc: 2, codArticu: '105164', pendiente: 4 },
+    { nRenglOc: 3, codArticu: '105164', pendiente: 3 },
+    { nRenglOc: 4, codArticu: '105164', pendiente: 3 },
+  ]
+  const linea = (orden: number, cantidad: string) => ({ orden, codigo: '105164', cantidad })
+  const renglonDe = (r: { enOc: { nRenglOc: number } | null }[]) =>
+    r.map((x) => x.enOc?.nRenglOc ?? null)
+
+  it('cada línea va contra un renglón distinto, el de su misma cantidad', () => {
+    const r = emparejarRenglones([linea(1, '1'), linea(2, '4'), linea(3, '3'), linea(4, '3')], oc, new Map())
+    expect(renglonDe(r)).toEqual([1, 2, 3, 4])
+  })
+
+  it('con las líneas en otro orden, igual respeta la cantidad', () => {
+    const r = emparejarRenglones([linea(1, '3'), linea(2, '1'), linea(3, '3'), linea(4, '4')], oc, new Map())
+    expect(renglonDe(r)).toEqual([3, 1, 4, 2])
+  })
+
+  it('sin cantidad igual, el primer renglón libre que alcance', () => {
+    const r = emparejarRenglones([linea(1, '2'), linea(2, '2')], oc, new Map())
+    expect(renglonDe(r)).toEqual([2, 3])
+  })
+
+  it('no usa los renglones ocupados por otras líneas del comprobante', () => {
+    const r = emparejarRenglones([linea(2, '3')], oc, new Map(), (x) => x.nRenglOc === 3)
+    expect(renglonDe(r)).toEqual([4])
+  })
+
+  it('un artículo en un solo renglón de la OC se empareja como siempre', () => {
+    const r = emparejarRenglones(
+      [{ orden: 1, codigo: 'ABC', cantidad: '5' }],
+      [{ nRenglOc: 7, codArticu: 'ABC', pendiente: 10 }],
+      new Map(),
+    )
+    expect(r[0].enOc?.nRenglOc).toBe(7)
   })
 })

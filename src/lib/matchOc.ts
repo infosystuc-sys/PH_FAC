@@ -77,19 +77,75 @@ export type RenglonEmparejado<T, L extends LineaFactura = LineaFactura> = {
  * obligaba al operador a borrar a mano los que la factura no cobraba;
  * quedó a la vista con una factura de CARRIER que cobra un solo artículo
  * contra una OC de nueve.
+ *
+ * Una orden puede traer el MISMO artículo en varios renglones: la OC
+ * 0000100001703 de IMSA pide la moto 105164 en cuatro (1, 4, 3 y 3, uno
+ * por color), y el remito la entrega en cuatro líneas iguales. Hasta el
+ * 2026-11-05 el emparejamiento indexaba la orden por artículo y ganaba el
+ * último renglón: las cuatro líneas iban contra el de 3 y la de 4 no
+ * entraba. Ahora cada renglón de la orden se usa una sola vez, en dos
+ * pasadas y en el orden de cada lista:
+ *   1. la línea va contra un renglón de su artículo con la MISMA cantidad
+ *      pendiente que la que entrega;
+ *   2. las que quedan, contra el primer renglón libre que alcance, y si
+ *      ninguno alcanza contra el primero libre.
+ * Si hay más líneas que renglones del artículo, las que sobran van contra
+ * el de más pendiente: el control de cantidades lo señala.
+ *
+ * `ocupado` deja afuera los renglones de la orden que ya usa otra línea del
+ * comprobante (al imputar la orden a un solo renglón).
  */
-export function emparejarRenglones<T extends { codArticu: string }, L extends LineaFactura>(
+export function emparejarRenglones<
+  T extends { codArticu: string; pendiente?: number },
+  L extends LineaFactura,
+>(
   pdf: L[],
   renglonesOc: T[],
   sinonimos: Map<string, string>,
+  ocupado: (r: T) => boolean = () => false,
 ): RenglonEmparejado<T, L>[] {
-  const porCodigo = new Map(renglonesOc.map((r) => [normalizarCodigo(r.codArticu), r]))
+  const porCodigo = new Map<string, T[]>()
+  for (const r of renglonesOc) {
+    const clave = normalizarCodigo(r.codArticu)
+    porCodigo.set(clave, [...(porCodigo.get(clave) ?? []), r])
+  }
   const nuestros = new Set(porCodigo.keys())
 
-  return pdf.map((linea) => {
-    const nuestro = resolverCodigoArticulo(linea.codigo, nuestros, sinonimos)
-    return { linea, enOc: nuestro ? (porCodigo.get(nuestro) ?? null) : null }
+  const resueltos = pdf.map((linea) => resolverCodigoArticulo(linea.codigo, nuestros, sinonimos))
+  const usados = new Set<T>(renglonesOc.filter(ocupado))
+  const asignado: (T | null)[] = pdf.map(() => null)
+  const cantidadDe = (l: L) => parsearImporte(l.cantidad)
+  const pendienteDe = (r: T) => r.pendiente ?? 0
+
+  // 1. Cantidad exacta.
+  pdf.forEach((linea, i) => {
+    const candidatos = resueltos[i] ? (porCodigo.get(resueltos[i]!) ?? []) : []
+    const r = candidatos.find(
+      (c) => !usados.has(c) && c.pendiente !== undefined && Math.abs(pendienteDe(c) - cantidadDe(linea)) < 0.00005,
+    )
+    if (r) {
+      asignado[i] = r
+      usados.add(r)
+    }
   })
+
+  // 2. Lo que quedo: el primero libre que alcance, o el primero libre.
+  pdf.forEach((linea, i) => {
+    if (asignado[i] || !resueltos[i]) return
+    const candidatos = porCodigo.get(resueltos[i]!) ?? []
+    const libres = candidatos.filter((c) => !usados.has(c))
+    const r =
+      libres.find((c) => c.pendiente === undefined || pendienteDe(c) + 0.00005 >= cantidadDe(linea)) ??
+      libres[0] ??
+      [...candidatos].filter((c) => !ocupado(c)).sort((a, b) => pendienteDe(b) - pendienteDe(a))[0] ??
+      null
+    if (r) {
+      asignado[i] = r
+      usados.add(r)
+    }
+  })
+
+  return pdf.map((linea, i) => ({ linea, enOc: asignado[i] }))
 }
 
 export type Emparejamiento<T> = {

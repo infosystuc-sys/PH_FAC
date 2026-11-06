@@ -2,6 +2,12 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Una OC con el mismo artículo en varios renglones (2026-11-05)
+
+Reportado por el usuario con el remito de IMSA 34596: la OC `0000100001703` pide la moto 105164 en cuatro renglones (1, 4, 3 y 3, uno por color) y la app imputaba las cuatro líneas del remito contra el renglón 4 (3 pendientes), así que la de 4 unidades quedaba "recibe más de lo pendiente". `emparejarRenglones` (`src/lib/matchOc.ts`) indexaba la orden por artículo y ganaba el último renglón.
+
+Ahora cada renglón de la orden se usa una sola vez: primero contra el de la misma cantidad pendiente y después contra el primero libre que alcance. Al imputar la orden a un solo renglón (`agregarOcEn` con `soloPdfOrden`) no se reusan los renglones de esa orden que ya tienen otras líneas del comprobante. El remito 34596 se reimputó con el arreglo (no tenía series guardadas, no se perdió nada): quedó 1→1, 2→2, 3→3, 4→4. Ningún otro comprobante tenía dos líneas contra el mismo renglón de OC. Tests en `tests/lib/matchOc.test.ts`.
+
 ## El primer DNRPA se propone para el resto de las series (2026-11-05)
 
 Pedido del usuario: al guardar un renglón de la tarjeta "Números de serie" con un DNRPA, ese valor se propone en todas las series del remito que lo tienen vacío, de ese renglón y de los demás. Es una propuesta: los renglones quedan "Sin guardar", con la nota "DNRPA propuesto…", y el operador los revisa y guarda.

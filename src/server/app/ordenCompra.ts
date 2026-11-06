@@ -176,7 +176,26 @@ export async function agregarOcEn(
 
   // Los cargos quedan afuera del emparejamiento: no consumen pendiente de
   // ninguna orden. Sus renglones los crea sincronizarCargosEn.
-  const emparejados = emparejarRenglones(lineasContraOc(abiertas), oc.renglones, sinonimos)
+  // Los renglones de ESTA orden que ya usan otras lineas del comprobante no
+  // se vuelven a usar: con el mismo articulo en varios renglones de la
+  // orden (IMSA, una moto por color), cada linea va contra el suyo.
+  const ocupados = new Set(
+    detalle.renglones
+      .filter(
+        (r) =>
+          r.ocNOrdenCo === oc.nOrdenCo &&
+          r.ocNRenglOc !== null &&
+          soloPdfOrden !== null &&
+          r.pdfOrden !== soloPdfOrden,
+      )
+      .map((r) => r.ocNRenglOc!),
+  )
+  const emparejados = emparejarRenglones(
+    lineasContraOc(abiertas),
+    oc.renglones,
+    sinonimos,
+    (r) => ocupados.has(r.nRenglOc),
+  )
 
   // ORDEN es UNIQUE por comprobante y ya puede haber renglones de otra
   // orden: se sigue desde el mayor en vez de arrancar de 1.
