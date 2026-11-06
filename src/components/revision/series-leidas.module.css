@@ -1,0 +1,54 @@
+/* Ocupa el ancho de la fila desde la descripcion, como ProblemaRenglon. */
+.caja {
+  grid-column: 3 / -1;
+  margin-top: 6px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--acento);
+  cursor: pointer;
+}
+
+.flecha {
+  font-size: 10px;
+}
+
+.alerta {
+  color: var(--error);
+}
+
+.lista {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--borde);
+  background: var(--fondo-panel);
+  border-radius: var(--radius-sm);
+}
+
+.fila {
+  display: grid;
+  grid-template-columns: 24px 190px 170px 80px;
+  column-gap: 12px;
+  padding: 2px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.header {
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--texto-4);
+}
+
+.tenue {
+  color: var(--texto-5);
+}

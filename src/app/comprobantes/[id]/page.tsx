@@ -179,6 +179,7 @@ export default async function RevisionPage({
           hayCorrecciones={hayCorrecciones}
           renglones={detalle.renglones}
           renglonesPdf={detalle.renglonesPdf}
+          seriesPdf={detalle.seriesPdf}
           cargos={detalle.cargos}
           auditoria={detalle.auditoria}
           validaciones={validaciones}

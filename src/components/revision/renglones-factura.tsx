@@ -8,7 +8,7 @@ import {
   quitarOcDeRenglon,
   type OfertaOc,
 } from '@/server/app/acciones/ordenesCompra'
-import type { RenglonGuardado, RenglonPdfGuardado } from '@/server/app/detalle'
+import type { RenglonGuardado, RenglonPdfGuardado, SeriePdfGuardada } from '@/server/app/detalle'
 import { useToast } from '@/components/toast/toast-provider'
 import {
   formatMoneda,
@@ -22,6 +22,7 @@ import {
   describirDescuento,
 } from '@/lib/descuentoGlobal'
 import { ProblemaRenglon } from './problema-renglon'
+import { SeriesLeidas } from './series-leidas'
 import styles from './renglones-factura.module.css'
 
 /** La oferta vacía con la que se sigue cuando falla la búsqueda de OC. */
@@ -65,6 +66,7 @@ export function RenglonesFactura({
   codProvee,
   renglones,
   renglonesPdf,
+  seriesPdf = [],
   descuentoGeneral,
   netoFactura,
   baseSegunImpuestos,
@@ -84,6 +86,8 @@ export function RenglonesFactura({
   renglones: RenglonGuardado[]
   /** Lo que leyó la IA del PDF, con precio y subtotal impresos. */
   renglonesPdf: RenglonPdfGuardado[]
+  /** Los números de serie leídos del comprobante, por renglón del PDF. */
+  seriesPdf?: SeriePdfGuardada[]
   descuentoGeneral: string | null
   netoFactura: string | null
   /** La base que implica el IVA impreso: la evidencia que decide el caso. */
@@ -467,6 +471,13 @@ export function RenglonesFactura({
                 // conocimiento del proveedor, no un cambio de este
                 // comprobante (2026-10-07).
                 permitirVincular
+              />
+
+              {/* Las series que se leyeron de este renglon, para revisarlas
+                  contra el PDF antes de elegir la orden (2026-11-05). */}
+              <SeriesLeidas
+                series={seriesPdf.filter((s) => s.pdfOrden === l.orden)}
+                cantidad={parsearImporteONulo(l.cantidad)}
               />
             </div>
           ))}

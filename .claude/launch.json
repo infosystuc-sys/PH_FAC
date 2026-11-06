@@ -20,6 +20,15 @@
         "3013"
       ],
       "port": 3013
+    },
+    {
+      "name": "ph-fac-prueba",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set PHF_SIN_WORKER=1&& set PHF_DIST_DIR=.next-dev&& pnpm dev -H 127.0.0.1 -p 3014"
+      ],
+      "port": 3014
     }
   ]
 }

@@ -14,7 +14,13 @@ import { SeriesRemito } from './series-remito'
 import { Cargos } from './cargos'
 import { Historial } from './historial'
 import { VisorImagen } from './visor-imagen'
-import type { RenglonGuardado, RenglonPdfGuardado, CargoGuardado, EntradaAuditoria } from '@/server/app/detalle'
+import type {
+  RenglonGuardado,
+  RenglonPdfGuardado,
+  SeriePdfGuardada,
+  CargoGuardado,
+  EntradaAuditoria,
+} from '@/server/app/detalle'
 import type { Validaciones, ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 import type { CondicionCompra } from '@/server/tango/condicionesCompra'
 import type { CodigoImpuesto } from '@/server/tango/impuestos'
@@ -69,6 +75,7 @@ export function Pantalla({
   hayCorrecciones,
   renglones,
   renglonesPdf,
+  seriesPdf,
   cargos,
   auditoria,
   validaciones,
@@ -100,6 +107,8 @@ export function Pantalla({
   renglones: RenglonGuardado[]
   /** Lo que la IA leyó del PDF, con precio y subtotal impresos. Solo artículos. */
   renglonesPdf: RenglonPdfGuardado[]
+  /** Las series leídas del comprobante (remitos de proveedores con regla). */
+  seriesPdf: SeriePdfGuardada[]
   cargos: CargoGuardado[]
   auditoria: EntradaAuditoria[]
   validaciones: Validaciones
@@ -305,6 +314,7 @@ export function Pantalla({
             codProvee={codProvee}
             renglones={renglones}
             renglonesPdf={renglonesPdf}
+            seriesPdf={seriesPdf}
             descuentoGeneral={iniciales.descuentogeneral?.valor ?? null}
             netoFactura={iniciales.neto?.valor ?? null}
             // La base que implica el IVA, ya calculada por el servidor con

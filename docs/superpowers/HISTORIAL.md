@@ -2,6 +2,15 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Revisar las series leídas en la tabla de renglones (2026-11-05)
+
+Pedido del usuario, con el remito de IMSA 34581: las 11 series se habían leído bien (`PHF_SERIE_PDF`), pero no se veían, porque la tarjeta "Números de serie" solo lista los renglones que ya tienen la orden de compra elegida.
+
+- Cada renglón de la tabla de renglones (`RenglonesFactura`) muestra "N número(s) de serie leído(s) del comprobante", que se despliega con chasis, motor y color (`series-leidas.tsx`). Es de solo lectura: se corrigen y se les carga el DNRPA en la tarjeta "Números de serie". Si la cantidad de series no coincide con la del renglón, lo marca en rojo.
+- `obtenerDetalleEn` devuelve también `seriesPdf`.
+- La IA había copiado motor y chasis en la descripción del renglón. El prompt del remito (v17) le pide que no lo haga: solo cambia en los comprobantes que se lean o reprocesen desde ahora.
+- **`PHF_SIN_WORKER=1`** apaga la cola y el escaneo de carpetas (`src/instrumentation.ts`). Sirve para levantar una instancia de prueba contra la misma base sin procesar en paralelo con producción: configuración `ph-fac-prueba` de `.claude/launch.json` (puerto 3014, compila en `.next-dev`).
+
 ## La app compilada desde `D:\app\ph_fac` no abría ninguna pantalla (2026-11-05)
 
 Después de recompilar con `.\iniciar-app.bat --recompilar` desde una consola parada en `D:\app\ph_fac` (en minúsculas), todas las pantallas daban "Application error: a client-side exception" con `invariant expected layout router to be mounted`. No era el código: una compilación limpia del mismo commit desde `D:\APP\PH_FAC` salía con todos los chunks distintos (React incluido) y era igual a las que andaban. `required-server-files.json` mostraba `appDir: D:\app\ph_fac`. Windows no distingue mayúsculas, pero webpack sí: los módulos de Next quedan duplicados y el router no encuentra su propio contexto.

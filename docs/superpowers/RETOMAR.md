@@ -16,6 +16,7 @@
 | App | **Modo producción** en el puerto 3013 (`iniciar-app.bat`: `pnpm build` + `pnpm start -p 3013`) |
 | Remoto | `origin` = `git@github.com:infosystuc-sys/PH_FAC.git` por SSH. El push funciona desde este servidor |
 
+- **Instancia de prueba:** `PHF_SIN_WORKER=1` apaga la cola y el escaneo de carpetas, para levantar otra copia contra la misma base sin procesar en paralelo con producción (configuración `ph-fac-prueba`, puerto 3014).
 - **Compilar siempre desde `D:\APP\PH_FAC` con esas mayúsculas.** Compilada desde `D:\app\ph_fac`, la app no abre ninguna pantalla (`invariant expected layout router to be mounted`). Los `.bat` ya corrigen la ruta solos (2026-11-05); un `pnpm build` a mano, no.
 - **Todo cambio de código necesita rebuild + restart para que el operador lo vea, y un Ctrl+F5 en su navegador.** Sin el Ctrl+F5 se queda con el bundle viejo; ya generó un falso "no funciona" sobre un cambio que estaba aplicado.
 - **Los tests pegan contra la base real.** Los que escriben van en `conRollback`. `migrar()` sin prefijo corre contra las tablas `PHF_*` reales, así que correr la suite aplica las migraciones pendientes en producción (son idempotentes y solo tocan `PHF_*`).

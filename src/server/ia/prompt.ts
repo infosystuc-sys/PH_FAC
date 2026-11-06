@@ -345,6 +345,10 @@ artículo que entrega el remito, con estos datos tal como están impresos:
   Si el renglón trae abajo el desglose por talle ("L : 6  M : 4  S : 2"),
   copialo al final de la descripción tal como está impreso: cada talle es
   un artículo distinto para nosotros.
+  Si el renglón trae una línea POR UNIDAD con su número de serie, chasis,
+  motor o similar, esos datos NO van en la descripción: se leen aparte.
+  En la descripción va solo lo que describe al artículo (por ejemplo, el
+  modelo "TD 150").
 - "cantidad": la CANTIDAD entregada. Es el dato más importante del remito:
   leelo con cuidado. Si hay una columna de cantidad pedida y otra de
   entregada, va la ENTREGADA.
@@ -396,4 +400,4 @@ export const PROMPTS_EXTRACCION: Record<TipoFactura, string> = Object.fromEntrie
 ) as Record<TipoFactura, string>
 
 /** Va en el historial de auditoría, para saber con qué prompt se leyó. */
-export const VERSION_PROMPT = 'v16'
+export const VERSION_PROMPT = 'v17'

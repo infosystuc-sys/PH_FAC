@@ -79,12 +79,27 @@ export type RenglonPdfGuardado = {
   subtotalImpreso: string | null
 }
 
+/**
+ * Un número de serie que la IA leyó del comprobante (PHF_SERIE_PDF), ya
+ * traducido a los datos de Tango con la regla del proveedor. Para revisarlo
+ * en la tabla de renglones antes de elegir la orden de compra (2026-11-05).
+ */
+export type SeriePdfGuardada = {
+  pdfOrden: number
+  orden: number
+  nSerie: string
+  desc1: string | null
+  desc2: string | null
+}
+
 export type Detalle = {
   campos: CampoGuardado[]
   renglones: RenglonGuardado[]
   cargos: CargoGuardado[]
   /** Lo que dice el papel, para cotejar contra `renglones`, que es lo que se factura. */
   renglonesPdf: RenglonPdfGuardado[]
+  /** Las series leídas del comprobante, por renglón del PDF. */
+  seriesPdf: SeriePdfGuardada[]
   auditoria: EntradaAuditoria[]
 }
 
@@ -232,9 +247,12 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
 
       SELECT ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO
       FROM PHF_RENGLON_PDF WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
+
+      SELECT PDF_ORDEN, ORDEN, N_SERIE, DESC1, DESC2
+      FROM PHF_SERIE_PDF WHERE COMPROBANTE_ID = @id ORDER BY PDF_ORDEN, ORDEN;
     `)
 
-  const [c, g, a, cg, rp] = r.recordsets as unknown as Record<string, unknown>[][]
+  const [c, g, a, cg, rp, sp] = r.recordsets as unknown as Record<string, unknown>[][]
 
   return {
     campos: c.map((x) => ({
@@ -273,6 +291,13 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       cantidad: x.CANTIDAD === null ? null : String(x.CANTIDAD),
       precioImpreso: x.PRECIO_IMPRESO === null ? null : String(x.PRECIO_IMPRESO),
       subtotalImpreso: x.SUBTOTAL_IMPRESO === null ? null : String(x.SUBTOTAL_IMPRESO),
+    })),
+    seriesPdf: sp.map((x) => ({
+      pdfOrden: Number(x.PDF_ORDEN),
+      orden: Number(x.ORDEN),
+      nSerie: String(x.N_SERIE),
+      desc1: x.DESC1 === null ? null : String(x.DESC1),
+      desc2: x.DESC2 === null ? null : String(x.DESC2),
     })),
     cargos: cg.map((x) => ({
       id: Number(x.ID),
