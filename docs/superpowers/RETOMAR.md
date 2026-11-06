@@ -100,7 +100,7 @@ Están documentadas junto al código que las aplica: buscá "decisión del usuar
 - **El remito de proveedor entra siempre al depósito 01** (2026-10-25). Los cargos del proveedor van al mismo depósito que los artículos de la factura (2026-09-22).
 - **La app no graba en ninguna tabla `CTA*`** (2026-11-03): si hace falta el espejo de Tango Central, lo tiene que llenar Tango.
 - **IMSA (`010337`) se busca en `CPA15` por los 8 primeros caracteres del código impreso** (2026-11-04), y el sinónimo que enseña el operador se guarda recortado igual. Otro proveedor con la misma necesidad se agrega en `LARGO_SINONIMO_POR_PROVEEDOR` (`src/lib/codigoProveedor.ts`).
-- **Los números de serie de un remito**, uno por unidad, se graban en `STA07` y `STA06` al depósito del renglón (2026-11-04). Sin todas las series, el remito no se registra. En IMSA se leen del comprobante: chasis → `N_SERIE`, motor → `DESC1`, color del código → `DESC2`; el `COMENTARIO` es el **DNRPA**, lo carga el operador y es obligatorio (2026-11-05).
+- **Los números de serie de un remito**, uno por unidad, se graban en `STA07` y `STA06` al depósito del renglón (2026-11-04). Sin todas las series, el remito no se registra. En IMSA se leen del comprobante: chasis → `N_SERIE`, motor → `DESC1`, color del código → `DESC2`; el `COMENTARIO` es el **DNRPA**, lo carga el operador y es obligatorio (2026-11-05); el primero que se guarda se propone para el resto de las series del remito.
 - **La subida de archivos admite hasta 510 MB por lote** (`next.config.ts`, 2026-11-05): Next corta en 1 MB por defecto.
 - **El precio de última compra (`STA12`) se pisa al registrar aunque la factura sea más vieja** que la última compra que ya tiene, como hace Tango (2026-09-23).
 

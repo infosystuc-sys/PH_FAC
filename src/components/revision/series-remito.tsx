@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { listarSeriesRemito, guardarSeriesRenglon } from '@/server/app/acciones/remitos'
 import type { RenglonConSerie } from '@/server/app/series'
 import { LARGO_SERIE, type Serie } from '@/lib/series'
@@ -47,17 +47,39 @@ export function SeriesRemito({
   const [renglones, setRenglones] = useState<RenglonConSerie[] | null>(null)
   const [edicion, setEdicion] = useState<Record<number, Serie[]>>({})
   const [sucias, setSucias] = useState<Set<number>>(new Set())
+  // Los renglones a los que se les propuso el DNRPA de otro, sin guardar.
+  const [propuestos, setPropuestos] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [pendiente, arrancar] = useTransition()
   const toast = useToast()
+
+  // Lo que el operador tiene sin guardar sobrevive a la recarga: guardar un
+  // renglon anota en el historial, eso cambia `version` y la tarjeta se
+  // vuelve a pedir al servidor. Sin esto, guardar un renglon borraba lo
+  // tipeado en los demas -- y el DNRPA que se les acaba de proponer.
+  const edicionRef = useRef(edicion)
+  edicionRef.current = edicion
+  const suciasRef = useRef(sucias)
+  suciasRef.current = sucias
 
   const cargar = useCallback(() => {
     setError(null)
     listarSeriesRemito(comprobanteId)
       .then((lista) => {
+        const sinGuardar = suciasRef.current
+        const local = edicionRef.current
         setRenglones(lista)
-        setEdicion(Object.fromEntries(lista.map((r) => [r.renglonId, filasDe(r)])))
-        setSucias(new Set())
+        setEdicion(
+          Object.fromEntries(
+            lista.map((r) => [
+              r.renglonId,
+              sinGuardar.has(r.renglonId) && local[r.renglonId] ? local[r.renglonId] : filasDe(r),
+            ]),
+          ),
+        )
+        const vivos = new Set(lista.map((r) => r.renglonId))
+        setSucias(new Set([...sinGuardar].filter((id) => vivos.has(id))))
+        setPropuestos((prev) => new Set([...prev].filter((id) => vivos.has(id) && sinGuardar.has(id))))
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'No se pudieron leer los números de serie.')
@@ -85,13 +107,59 @@ export function SeriesRemito({
       return { ...prev, [renglonId]: filas }
     })
     setSucias((prev) => new Set(prev).add(renglonId))
+    if (campo === 'comentario') {
+      setPropuestos((prev) => {
+        const n = new Set(prev)
+        n.delete(renglonId)
+        return n
+      })
+    }
   }
 
   const guardar = (renglonId: number) => {
     arrancar(async () => {
       try {
-        await guardarSeriesRenglon(comprobanteId, renglonId, edicion[renglonId] ?? [])
-        toast('Números de serie guardados')
+        const filasGuardadas = edicion[renglonId] ?? []
+        await guardarSeriesRenglon(comprobanteId, renglonId, filasGuardadas)
+
+        // El DNRPA suele ser el mismo para todo el remito: el primero que se
+        // guarda se propone en todas las series que lo tienen vacio, de
+        // este renglon y de los demas (2026-11-05, pedido del usuario). Es
+        // una propuesta: queda sin guardar hasta que el operador la revise
+        // y guarde cada renglon.
+        const dnrpa = filasGuardadas.map((f) => f.comentario.trim()).find((c) => c !== '')
+        const nuevaEdicion = { ...edicionRef.current }
+        const nuevasSucias = new Set(suciasRef.current)
+        nuevasSucias.delete(renglonId)
+        const nuevosPropuestos = new Set<number>()
+        let propuestas = 0
+        if (dnrpa) {
+          for (const [clave, filas] of Object.entries(nuevaEdicion)) {
+            const id = Number(clave)
+            let cambio = false
+            nuevaEdicion[id] = filas.map((f) => {
+              if (f.comentario.trim() !== '') return f
+              cambio = true
+              propuestas += 1
+              return { ...f, comentario: dnrpa }
+            })
+            if (cambio) {
+              nuevasSucias.add(id)
+              nuevosPropuestos.add(id)
+            }
+          }
+        }
+        edicionRef.current = nuevaEdicion
+        suciasRef.current = nuevasSucias
+        setEdicion(nuevaEdicion)
+        setSucias(nuevasSucias)
+        setPropuestos((prev) => new Set([...[...prev].filter((id) => id !== renglonId), ...nuevosPropuestos]))
+
+        toast(
+          propuestas > 0
+            ? `Números de serie guardados. DNRPA ${dnrpa} propuesto en ${propuestas} serie(s): revisalo y guardá.`
+            : 'Números de serie guardados',
+        )
         cargar()
       } catch (e) {
         toast(e instanceof Error ? e.message : 'No se pudieron guardar los números de serie.')
@@ -171,6 +239,11 @@ export function SeriesRemito({
               </div>
             ))}
 
+            {propuestos.has(r.renglonId) && (
+              <p className={styles.aviso}>
+                DNRPA propuesto a partir del que guardaste: revisalo y guardá este renglón.
+              </p>
+            )}
             {r.origen === 'leidas' && !sucia && (
               <p className={styles.aviso}>
                 Leídas del comprobante. Revisalas contra el PDF, cargá el DNRPA y guardá.

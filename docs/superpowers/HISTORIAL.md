@@ -2,6 +2,12 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## El primer DNRPA se propone para el resto de las series (2026-11-05)
+
+Pedido del usuario: al guardar un renglón de la tarjeta "Números de serie" con un DNRPA, ese valor se propone en todas las series del remito que lo tienen vacío, de ese renglón y de los demás. Es una propuesta: los renglones quedan "Sin guardar", con la nota "DNRPA propuesto…", y el operador los revisa y guarda.
+
+Para que funcione hubo que arreglar algo de antes: guardar un renglón recargaba la tarjeta (el historial cambia la `version`) y pisaba lo que estaba sin guardar en los demás. Ahora la recarga conserva los renglones sin guardar. Probado en la instancia de prueba con un remito temporal (borrado después): el DNRPA se propuso en las 2 series vacías y una serie tipeada sin guardar en otro renglón sobrevivió a la recarga.
+
 ## Revisar las series leídas en la tabla de renglones (2026-11-05)
 
 Pedido del usuario, con el remito de IMSA 34581: las 11 series se habían leído bien (`PHF_SERIE_PDF`), pero no se veían, porque la tarjeta "Números de serie" solo lista los renglones que ya tienen la orden de compra elegida.
