@@ -8,6 +8,8 @@ Reportado por el usuario con el remito de IMSA 34596: la OC `0000100001703` pide
 
 Ahora cada renglón de la orden se usa una sola vez: primero contra el de la misma cantidad pendiente y después contra el primero libre que alcance. Al imputar la orden a un solo renglón (`agregarOcEn` con `soloPdfOrden`) no se reusan los renglones de esa orden que ya tienen otras líneas del comprobante. El remito 34596 se reimputó con el arreglo (no tenía series guardadas, no se perdió nada): quedó 1→1, 2→2, 3→3, 4→4. Ningún otro comprobante tenía dos líneas contra el mismo renglón de OC. Tests en `tests/lib/matchOc.test.ts`.
 
+Mismo día, segunda parte: con la imputación ya bien, "Listo para registrar" seguía bloqueando con "MNTD-150AZ-LLE2 factura 4 y la orden tiene 3 pendiente(s)". El cotejo del comprobante contra la orden (`cotejarConOc`, `src/lib/cotejoOc.ts`) también indexaba la orden por artículo. Ahora compara por artículo los totales: lo que entrega el comprobante contra la suma de lo pendiente de todos sus renglones de la orden (cada renglón cuenta una vez). El control renglón por renglón lo sigue haciendo `validarCantidadesOc`. Con eso el 34596 queda sin bloqueos. Tests en `tests/lib/cotejoOc.test.ts`.
+
 ## El primer DNRPA se propone para el resto de las series (2026-11-05)
 
 Pedido del usuario: al guardar un renglón de la tarjeta "Números de serie" con un DNRPA, ese valor se propone en todas las series del remito que lo tienen vacío, de ese renglón y de los demás. Es una propuesta: los renglones quedan "Sin guardar", con la nota "DNRPA propuesto…", y el operador los revisa y guarda.

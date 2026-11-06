@@ -106,9 +106,26 @@ export function cotejarConOc(
   sinonimos: Map<string, string> = new Map(),
 ): ResultadoCotejoOc {
   const problemas: ProblemaCotejo[] = []
-  const mencionados = new Set<string>()
 
-  const porCodigo = new Map(oc.map((l) => [normalizarCodigo(l.codArticu), l]))
+  // Lo pendiente se SUMA por articulo: una orden puede traer el mismo
+  // articulo en varios renglones (IMSA, una moto por color: 1, 4, 3 y 3) y
+  // el comprobante entregarlo en varias lineas. Hasta el 2026-11-05 la orden
+  // se indexaba por articulo y quedaba un solo renglon, el ultimo: la linea
+  // de 4 se cotejaba contra el de 3 y bloqueaba sin motivo. Cada renglon de
+  // la orden cuenta una vez aunque lo traigan dos lineas.
+  const pendientePorCodigo = new Map<string, number>()
+  const contados = new Set<string>()
+  for (const l of oc) {
+    const clave = normalizarCodigo(l.codArticu)
+    const idRenglon = `${clave}|${l.nRenglOc}`
+    if (contados.has(idRenglon)) continue
+    contados.add(idRenglon)
+    pendientePorCodigo.set(clave, (pendientePorCodigo.get(clave) ?? 0) + l.pendiente)
+  }
+
+  // Lo que el comprobante entrega de cada articulo, con la primera linea en
+  // que aparece y el codigo tal como esta impreso, para el mensaje.
+  const entregado = new Map<string, { cantidad: number; orden: number; codigo: string }>()
 
   for (const linea of pdf) {
     const crudo = (linea.codigo ?? '').trim()
@@ -124,32 +141,39 @@ export function cotejarConOc(
     // primero tal cual y después traducido, en ese orden: si un proveedor
     // usa como sinónimo un código que también es nuestro, gana el nuestro.
     const clave = normalizarCodigo(crudo)
-    const nuestro = porCodigo.has(clave)
+    const nuestro = pendientePorCodigo.has(clave)
       ? clave
       : normalizarCodigo(sinonimos.get(clave) ?? crudo)
-    const enOc = porCodigo.get(nuestro)
 
-    if (!enOc) {
+    if (!pendientePorCodigo.has(nuestro)) {
       problemas.push({ tipo: 'no-esta-en-la-oc', orden: linea.orden, codigo: crudo })
       continue
     }
-    mencionados.add(normalizarCodigo(enOc.codArticu))
 
-    const cantidad = parsearImporte(linea.cantidad)
-    if (cantidad - enOc.pendiente > TOLERANCIA) {
+    const previo = entregado.get(nuestro)
+    entregado.set(nuestro, {
+      cantidad: (previo?.cantidad ?? 0) + parsearImporte(linea.cantidad),
+      orden: previo?.orden ?? linea.orden,
+      codigo: previo?.codigo ?? crudo,
+    })
+  }
+
+  for (const [nuestro, e] of entregado) {
+    const pendiente = pendientePorCodigo.get(nuestro) ?? 0
+    if (e.cantidad - pendiente > TOLERANCIA) {
       problemas.push({
         tipo: 'excede-pendiente',
-        orden: linea.orden,
-        codigo: crudo,
-        factura: cantidad,
-        pendiente: enOc.pendiente,
+        orden: e.orden,
+        codigo: e.codigo,
+        factura: e.cantidad,
+        pendiente,
       })
     }
   }
 
   return {
     problemas,
-    noFacturados: oc.filter((l) => !mencionados.has(normalizarCodigo(l.codArticu))),
+    noFacturados: oc.filter((l) => !entregado.has(normalizarCodigo(l.codArticu))),
   }
 }
 

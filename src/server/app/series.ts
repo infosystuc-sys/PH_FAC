@@ -214,7 +214,7 @@ export async function revisarSeriesEn(
     let problema = problemaSeries(codArticu, cantidad, series)
     if (!problema) {
       for (const s of series.filter((x) => x.nSerie !== '')) {
-        const clave = `${codArticu} ${s.nSerie}`
+        const clave = `${codArticu}|${s.nSerie}`
         if (vistas.has(clave) && vistas.get(clave) !== r.id) {
           problema = `La serie ${s.nSerie} del artículo ${codArticu} está en dos renglones.`
           break

@@ -186,3 +186,44 @@ describe('normalizarCodigo ignora la puntuacion', () => {
     expect(normalizarCodigo('AS-12UW4RLRCD02 N ( 21.00) *')).not.toBe('AS12UW4RLRCD02N')
   })
 })
+
+describe('cotejarConOc con el mismo artículo en varios renglones de la OC', () => {
+  // OC 0000100001703 de IMSA: la moto 105164 en cuatro renglones.
+  const oc = [1, 4, 3, 3].map((pendiente, i) => ({
+    nRenglOc: i + 1,
+    codArticu: '105164',
+    descripcion: 'MOTO MONDIAL TD 150',
+    pendiente,
+  }))
+  const sinonimos = new Map([['MNTD150AZLLE2', '105164'], ['MNTD150NELLE2', '105164'], ['MNTD150BLLLE2', '105164']])
+
+  it('coteja contra la suma de lo pendiente del artículo, no contra un solo renglón', () => {
+    const r = cotejarConOc(
+      [
+        { orden: 1, codigo: 'MNTD-150NE-LLE2', cantidad: '1' },
+        { orden: 2, codigo: 'MNTD-150AZ-LLE2', cantidad: '4' },
+        { orden: 3, codigo: 'MNTD-150BL-LLE2', cantidad: '3' },
+        { orden: 4, codigo: 'MNTD-150AZ-LLE2', cantidad: '3' },
+      ],
+      oc,
+      sinonimos,
+    )
+    expect(r.problemas).toEqual([])
+    expect(r.noFacturados).toEqual([])
+  })
+
+  it('señala cuando el total entregado del artículo supera lo pendiente', () => {
+    const r = cotejarConOc([{ orden: 2, codigo: 'MNTD-150AZ-LLE2', cantidad: '12' }], oc, sinonimos)
+    expect(r.problemas).toEqual([
+      { tipo: 'excede-pendiente', orden: 2, codigo: 'MNTD-150AZ-LLE2', factura: 12, pendiente: 11 },
+    ])
+  })
+
+  it('un renglón de la OC que traen dos líneas cuenta una sola vez', () => {
+    const r = cotejarConOc(
+      [{ orden: 1, codigo: '105164', cantidad: '4' }],
+      [oc[2], { ...oc[2] }],
+    )
+    expect(r.problemas[0]).toMatchObject({ tipo: 'excede-pendiente', factura: 4, pendiente: 3 })
+  })
+})
