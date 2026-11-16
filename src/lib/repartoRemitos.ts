@@ -13,12 +13,19 @@ export type SaldoRemito = {
   nRenglS: number
   /** Lo que ese renglón de remito todavía no se facturó (`STA20.CANT_PEND`). */
   pendiente: number
+  /**
+   * `false` si el remito no se recibió contra ninguna orden (el que la app
+   * graba sin comprobante de referencia, 2026-11-16): se vincula a la
+   * factura en CPA48 pero no entra al vínculo de tres puntas con la OC.
+   */
+  conOc?: boolean
 }
 
 export type ParteRemito = {
   ncompInS: string
   nRenglS: number
   cantidad: number
+  conOc?: boolean
 }
 
 const redondear = (n: number) => Math.round(n * 10000) / 10000
@@ -40,7 +47,12 @@ export function repartirEntreRemitos(
     if (resta <= 0) break
     const aporta = redondear(Math.min(resta, s.pendiente))
     if (aporta <= 0) continue
-    partes.push({ ncompInS: s.ncompInS, nRenglS: s.nRenglS, cantidad: aporta })
+    partes.push({
+      ncompInS: s.ncompInS,
+      nRenglS: s.nRenglS,
+      cantidad: aporta,
+      ...(s.conOc === undefined ? {} : { conOc: s.conOc }),
+    })
     resta = redondear(resta - aporta)
   }
 

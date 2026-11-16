@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-**Actualizado: 2026-11-04.** Esto es lo que hay que saber para retomar. El detalle de cada funcionalidad (cómo se construyó, cómo se verificó, por qué se decidió lo que se decidió) está en la bitácora, [`HISTORIAL.md`](HISTORIAL.md). Si algo de la bitácora contradice esta página, gana esta página.
+**Actualizado: 2026-11-16.** Esto es lo que hay que saber para retomar. El detalle de cada funcionalidad (cómo se construyó, cómo se verificó, por qué se decidió lo que se decidió) está en la bitácora, [`HISTORIAL.md`](HISTORIAL.md). Si algo de la bitácora contradice esta página, gana esta página.
 
 **Al terminar una sesión:** actualizá esta página (estado, pendientes, decisiones nuevas) y agregá el detalle en `HISTORIAL.md`, arriba de todo y con fecha. Esta página tiene que seguir entrando en una lectura.
 
@@ -38,7 +38,7 @@
 | `conceptos` | Factura con concepto (`CPA47`), sin renglones | Condición de compra fija "CONTADO 1 DIA" |
 | `articulos` | Factura con renglones (`CPA46`) imputados a una **orden de compra** | Si la OC tiene un remito recibido, la factura lo consume (`CPA48` + `CPA_OC_REMITO_FACTURA`) |
 | `tarjeta` | Liquidación, letra `A` fija, punto de venta aprendido por proveedor | El total se calcula, no se lee |
-| `remito` | Movimiento de stock `RP` (`STA14`/`STA20`), entra al depósito 01, contra la OC | Mueve stock y lo pendiente de recibir. Los artículos con número de serie graban `STA06`/`STA07` (desde 2026-11-04): las series las carga el operador o, en IMSA, las lee la IA del comprobante (2026-11-05) |
+| `remito` | Movimiento de stock `RP` (`STA14`/`STA20`), entra al depósito 01, **contra la factura ya registrada** que recibe (desde 2026-11-16; antes contra la OC) | Mueve stock y lo pendiente de recibir. Los artículos con número de serie graban `STA06`/`STA07` (desde 2026-11-04): las series las carga el operador o, en IMSA, las lee la IA del comprobante (2026-11-05) |
 
 **Estados** (`src/lib/estados.ts`): `procesando`, `leido`, `observacion`, `confirmado`, `registrado`, `existente` (ya estaba en Tango antes de importarlo), `error`. `registrado` y `existente` son terminales y de solo lectura.
 
@@ -91,6 +91,7 @@ Los componentes importan cada server action de su archivo, no hay un índice com
 Están documentadas junto al código que las aplica: buscá "decisión del usuario" en `src/`. Las que más pesan:
 
 - **Las facturas de artículos se imputan a la orden de compra**, no a un remito (2026-09-06). El remito entra por su lado como comprobante `remito`, y la factura lo consume cuando la OC lo tiene (2026-11-03).
+- **El remito se vincula a una FACTURA, no a una OC** (2026-11-16). Sus renglones salen del papel; la app propone la factura del proveedor con ese artículo sin recibir (`CPA46.FALTA_REM`): la que cubre más renglones y, entre iguales, la más vieja, solo de los últimos 180 días; el operador la cambia por renglón o para todo el remito. La OC se hereda de la factura. Sin factura, un cartel lo avisa y el operador confirma "Grabar sin comprobante de referencia" (`PHF_COMPROBANTE.REMITO_SIN_REFERENCIA`): entra a stock sin factura ni OC. Una factura que llega después consume también esos remitos de la app sin OC (solo `TERMINAL_INGRESO = 'PHF-WEB'`, nunca los de Tango). Limitación: una línea desglosada por talle es un solo renglón del remito.
 - **Los importes que valen son los de la factura**, no los de la OC (2026-09-15). El precio por renglón se graba neto, con el descuento general ya prorrateado.
 - **Si algo no cierra, se bloquea y se reprocesa**: no se inventa un precio, una fecha ni una condición.
 - **El asiento se graba contabilizado** (`CONTABILIZADO='S'`, usuario `PHF_WEB`, fecha de la factura) (2026-08-22). La leyenda que carga el operador reemplaza la del modelo.
@@ -100,6 +101,7 @@ Están documentadas junto al código que las aplica: buscá "decisión del usuar
 - **El remito de proveedor entra siempre al depósito 01** (2026-10-25). Los cargos del proveedor van al mismo depósito que los artículos de la factura (2026-09-22).
 - **La app no graba en ninguna tabla `CTA*`** (2026-11-03): si hace falta el espejo de Tango Central, lo tiene que llenar Tango.
 - **IMSA (`010337`) se busca en `CPA15` por los 8 primeros caracteres del código impreso** (2026-11-04), y el sinónimo que enseña el operador se guarda recortado igual. Otro proveedor con la misma necesidad se agrega en `LARGO_SINONIMO_POR_PROVEEDOR` (`src/lib/codigoProveedor.ts`).
+- **NEWSAN (`010003`) busca primero el código impreso entero y, de respaldo, los 12 primeros caracteres** contra los 12 primeros de sus sinónimos de `CPA15`, solo si llevan a un único artículo (2026-11-16): las cubiertas traen el color pegado (`CUBQU110BASEROJO` → 105440), los aires tienen sinónimo entero. Al enseñar un sinónimo se sigue guardando entero. Lo que sigue a los 12 es el color: en el remito se propone como `DESC2` de cada serie (`STA06`). Otro proveedor igual se agrega en `LARGO_RESPALDO_POR_PROVEEDOR` (`src/lib/codigoProveedor.ts`).
 - **Los números de serie de un remito**, uno por unidad, se graban en `STA07` y `STA06` al depósito del renglón (2026-11-04). Sin todas las series, el remito no se registra. En IMSA se leen del comprobante: chasis → `N_SERIE`, motor → `DESC1`, color del código → `DESC2`; el `COMENTARIO` es el **DNRPA**, lo carga el operador y es obligatorio (2026-11-05); el primero que se guarda se propone para el resto de las series del remito.
 - **La subida de archivos admite hasta 510 MB por lote** (`next.config.ts`, 2026-11-05): Next corta en 1 MB por defecto.
 - **El precio de última compra (`STA12`) se pisa al registrar aunque la factura sea más vieja** que la última compra que ya tiene, como hace Tango (2026-09-23).

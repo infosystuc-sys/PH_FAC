@@ -81,7 +81,13 @@ async function renglonOcParaRemitoYFactura(tx: sql.Transaction) {
 
 type Oc = NonNullable<Awaited<ReturnType<typeof renglonOcParaRemitoYFactura>>>
 
-async function registrarRemito(tx: sql.Transaction, oc: Oc, cantidad: number) {
+/**
+ * Un remito que entra ANTES que su factura. Desde el 2026-11-16 la app lo
+ * graba sin comprobante de referencia (sin OC). `conOc` simula, dentro de
+ * la transaccion, el remito que Tango recibe contra la orden desde su
+ * pantalla: el vinculo en STA20 y CPA_OC_REMITO y lo recibido en CPA36.
+ */
+async function registrarRemito(tx: sql.Transaction, oc: Oc, cantidad: number, conOc = true) {
   const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
   await guardarCampoEn(tx, id, 'tipoFactura', 'remito')
   await guardarCampoEn(tx, id, 'tipo', 'Remito R')
@@ -93,14 +99,28 @@ async function registrarRemito(tx: sql.Transaction, oc: Oc, cantidad: number) {
     .input('id', sql.Int, id)
     .input('cod', sql.NVarChar(60), oc.COD_ARTICU)
     .input('cant', sql.Decimal(19, 4), cantidad)
-    .input('oc', sql.VarChar(14), oc.N_ORDEN_CO)
-    .input('tal', sql.Int, oc.TALONARIO)
-    .input('nr', sql.Int, oc.N_RENGL_OC)
     .query(`
-      INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
-                               OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN)
-      VALUES (@id, 1, @cod, 'prueba', @cant, @oc, @tal, @nr, @cant, 1)`)
-  return registrarComprobanteEn(tx, id)
+      UPDATE PHF_COMPROBANTE SET REMITO_SIN_REFERENCIA = 1 WHERE ID = @id;
+      INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA, PDF_ORDEN, FAC_ELEGIDA)
+      VALUES (@id, 1, @cod, 'prueba', @cant, 1, 1)`)
+  const registro = await registrarComprobanteEn(tx, id)
+  if (conOc) {
+    const ncompInS = String(registro.ncompInC).padStart(8, '0')
+    await tx.request()
+      .input('n', sql.VarChar(8), ncompInS)
+      .input('cant', sql.Decimal(18, 4), cantidad)
+      .input('oc', sql.VarChar(14), oc.N_ORDEN_CO)
+      .input('tal', sql.SmallInt, oc.TALONARIO)
+      .input('nr', sql.Int, oc.N_RENGL_OC)
+      .query(`
+        UPDATE STA20 SET N_ORDEN_CO = @oc, N_RENGL_OC = @nr, TALONARIO_OC = @tal, CANT_OC = @cant
+        WHERE TCOMP_IN_S = 'RP' AND NCOMP_IN_S = @n;
+        INSERT INTO CPA_OC_REMITO (CANTIDAD, CANT_OC, N_ORDEN_CO, N_RENGL_OC, TALONARIO_OC,
+                                   TCOMP_IN_S, NCOMP_IN_S, N_RENGL_S, CANTIDAD_2, CANT_OC_2, CANT_DEV, CANT_DEV_2)
+        VALUES (@cant, @cant, @oc, @nr, @tal, 'RP', @n, 1, 0, 0, 0, 0);
+        UPDATE CPA36 SET CAN_RECIBI = ISNULL(CAN_RECIBI, 0) + @cant WHERE N_ORDEN_CO = @oc AND N_RENGL_OC = @nr;`)
+  }
+  return registro
 }
 
 async function registrarFactura(tx: sql.Transaction, oc: Oc, cantidad: number) {
@@ -247,6 +267,32 @@ describe('registrarComprobanteEn: la factura consume el remito de su orden', () 
       const cab = await tx.request().input('n', sql.Float, remito.ncompInC)
         .query(`SELECT ESTADO_MOV FROM STA14 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S = RIGHT('00000000' + CAST(CAST(@n AS bigint) AS varchar(8)), 8)`)
       expect(cab.recordset[0].ESTADO_MOV).toBe('F')
+    })
+  }, 180000)
+
+  it('consume también el remito que la app grabó sin comprobante de referencia (2026-11-16)', async () => {
+    await conRollback(async (tx) => {
+      const oc = await renglonOcParaRemitoYFactura(tx)
+      expect(oc).not.toBeNull()
+
+      const remito = await registrarRemito(tx, oc, 1, false)
+      const factura = await registrarFactura(tx, oc, 1)
+
+      const ncompInS = String(remito.ncompInC).padStart(8, '0')
+      const link = await tx.request()
+        .input('c', sql.VarChar(8), String(factura.ncompInC).padStart(8, ' '))
+        .query(`SELECT NCOMP_IN_S, CANTIDAD FROM CPA48 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@c`)
+      expect(link.recordset).toHaveLength(1)
+      expect(link.recordset[0].NCOMP_IN_S).toBe(ncompInS)
+      // Sin OC en el remito, no hay vinculo de tres puntas.
+      expect(await orfDe(tx, factura.ncompInC)).toHaveLength(0)
+
+      const cab = await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT ESTADO_MOV FROM STA14 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+      expect(cab.recordset[0].ESTADO_MOV).toBe('F')
+      const cpa46 = await tx.request().input('n', sql.Float, factura.ncompInC)
+        .query(`SELECT FALTA_REM FROM CPA46 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      expect(Number(cpa46.recordset[0].FALTA_REM)).toBe(0)
     })
   }, 180000)
 

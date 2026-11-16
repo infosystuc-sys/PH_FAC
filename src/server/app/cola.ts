@@ -47,6 +47,7 @@ import {
 import { reglaSeriesDe } from '@/lib/seriesProveedor'
 import { extraerSeries } from '../ia/series'
 import { guardarSeriesPdfEn } from './series'
+import { sincronizarRenglonesRemitoEn } from './remitoFactura'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -398,6 +399,11 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
     if (tipoFactura === 'remito') {
       await leerSeriesDelPdf(id, pdf, codProvee, r.extraccion.renglonesPdf).catch((e: unknown) =>
         console.error(`leerSeriesDelPdf[${id}]:`, e),
+      )
+      // Los renglones salen del papel y se les propone la factura a la que
+      // se vinculan (2026-11-16). Si falla, se rehace al abrir la revision.
+      await conTransaccion((tx) => sincronizarRenglonesRemitoEn(tx, id)).catch((e: unknown) =>
+        console.error(`sincronizarRenglonesRemitoEn[${id}]:`, e),
       )
     }
 

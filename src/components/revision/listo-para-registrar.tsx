@@ -60,8 +60,9 @@ export function ListoParaRegistrar({
         resultado.formatoComp,
         resultado.fecha,
         resultado.tipoFactura,
+        // En el remito, el ítem de la orden dice a qué factura va cada
+        // renglón (2026-11-16): ya no se imputa a una OC.
         resultado.ordenCompra,
-        resultado.cantidadesOc,
         resultado.renglonesNeto,
       ]
     : [

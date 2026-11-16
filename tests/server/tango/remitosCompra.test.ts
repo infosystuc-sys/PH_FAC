@@ -9,6 +9,11 @@ import { contadoresOc, nCompRemito, buscarRemitoEnSta14 } from '@/server/tango/r
 import { guardarSeriesEn, guardarSeriesPdfEn, revisarSeriesEn } from '@/server/app/series'
 import { reglaSeriesDe } from '@/lib/seriesProveedor'
 import { validarListoParaRegistrarEn } from '@/server/app/validaciones'
+import {
+  sincronizarRenglonesRemitoEn,
+  elegirFacturaRenglonEn,
+  marcarRemitoSinReferenciaEn,
+} from '@/server/app/remitoFactura'
 
 afterAll(async () => {
   await cerrarPool()
@@ -45,28 +50,57 @@ describe('nCompRemito', () => {
 })
 
 /**
- * Un renglon real de orden de compra con algo pendiente de recibir, de un
- * articulo que puede entrar por remito (lleva stock, sin serie ni partida y
- * que no es un base de escala). Se busca en runtime: los datos de la base
- * cambian.
+ * Un renglon real de factura de compra (FP) de un articulo que puede entrar
+ * por remito (lleva stock, sin serie ni partida y que no es un base de
+ * escala), que ningun remito recibio todavia (sin CPA48). Con o sin orden
+ * de compra (CPA_OC_FACTURA). Se le deja FALTA_REM = CANTIDAD dentro de la
+ * transaccion, que se revierte: asi el test no depende de que hoy haya una
+ * factura sin recibir de ese tipo.
  */
-async function renglonOcConPendiente(tx: sql.Transaction) {
-  const r = await tx.request().query(`
-    SELECT TOP 1 h.N_ORDEN_CO, h.COD_PROVEE, r.N_RENGL_OC, LTRIM(RTRIM(r.COD_ARTICU)) AS COD_ARTICU,
-           r.CAN_PENDIE, r.CAN_RECIBI, LTRIM(RTRIM(ISNULL(r.COD_DEPOSI, ''))) AS COD_DEPOSI, h.TALONARIO
-    FROM CPA36 r
-    JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
-    JOIN STA11 a ON a.COD_ARTICU = r.COD_ARTICU
-    WHERE r.CAN_PENDIE >= 1 AND h.ESTADO = 3
+async function renglonFacturaParaRecibir(tx: sql.Transaction, conOc: boolean) {
+  const r = await tx.request().input('conOc', sql.Bit, conOc).query(`
+    SELECT TOP 1 LTRIM(RTRIM(d.TCOMP_IN_C)) AS TCOMP_IN_C, d.NCOMP_IN_C, d.N_RENGL_C,
+           LTRIM(RTRIM(d.COD_ARTICU)) AS COD_ARTICU, d.CANTIDAD,
+           LTRIM(RTRIM(c.COD_PROVEE)) AS COD_PROVEE, LTRIM(RTRIM(c.N_COMP)) AS N_COMP,
+           o.N_ORDEN_CO, o.N_RENGL_OC, o.CANTIDAD AS CANT_OC_FAC
+    FROM CPA46 d
+    JOIN CPA04 c ON c.TCOMP_IN_C = d.TCOMP_IN_C AND c.NCOMP_IN_C = d.NCOMP_IN_C
+    JOIN STA11 a ON a.COD_ARTICU = d.COD_ARTICU
+    OUTER APPLY (SELECT TOP 1 f.N_ORDEN_CO, f.N_RENGL_OC, f.CANTIDAD FROM CPA_OC_FACTURA f
+                 WHERE f.TCOMP_IN_C = d.TCOMP_IN_C AND f.NCOMP_IN_C = d.NCOMP_IN_C AND f.N_RENGL_C = d.N_RENGL_C) o
+    WHERE d.TCOMP_IN_C = 'FP' AND d.CANTIDAD >= 2 AND d.CANTIDAD = FLOOR(d.CANTIDAD)
       AND a.STOCK = 1 AND ISNULL(a.USA_SERIE, 0) = 0 AND ISNULL(a.USA_PARTID, 0) = 0
       AND LTRIM(RTRIM(ISNULL(a.USA_ESC, 'N'))) <> 'B'
-    ORDER BY h.N_ORDEN_CO DESC`)
-  return r.recordset[0] ?? null
+      AND (CASE WHEN o.N_ORDEN_CO IS NULL THEN 0 ELSE 1 END) = @conOc
+      AND (o.N_ORDEN_CO IS NULL OR o.CANTIDAD >= d.CANTIDAD)
+      AND NOT EXISTS (SELECT 1 FROM CPA48 x WHERE x.TCOMP_IN_C = d.TCOMP_IN_C
+                      AND x.NCOMP_IN_C = RIGHT(SPACE(8) + CAST(CAST(d.NCOMP_IN_C AS BIGINT) AS VARCHAR(8)), 8)
+                      AND x.N_RENGL_C = d.N_RENGL_C)
+      AND NOT EXISTS (SELECT 1 FROM CPA_OC_REMITO_FACTURA t WHERE t.TCOMP_IN_C = d.TCOMP_IN_C
+                      AND t.NCOMP_IN_C = d.NCOMP_IN_C AND t.N_RENGL_C = d.N_RENGL_C)
+    ORDER BY d.NCOMP_IN_C DESC`)
+  const f = r.recordset[0]
+  if (!f) return null
+  await tx.request()
+    .input('t', sql.VarChar(2), f.TCOMP_IN_C).input('n', sql.Float, f.NCOMP_IN_C).input('r', sql.Int, f.N_RENGL_C)
+    .query('UPDATE CPA46 SET FALTA_REM = CANTIDAD WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n AND N_RENGL_C=@r')
+  return f as {
+    TCOMP_IN_C: string
+    NCOMP_IN_C: number
+    N_RENGL_C: number
+    COD_ARTICU: string
+    CANTIDAD: number
+    COD_PROVEE: string
+    N_COMP: string
+    N_ORDEN_CO: string | null
+    N_RENGL_OC: number | null
+  }
 }
 
+/** Un remito de prueba con UN renglon en el papel, armado como lo deja la cola. */
 async function remitoDePrueba(
   tx: sql.Transaction,
-  oc: { N_ORDEN_CO: string; COD_PROVEE: string; N_RENGL_OC: number; COD_ARTICU: string; TALONARIO: number },
+  p: { codProvee: string; codArticu: string },
   cantidad: number,
   nro: string,
 ) {
@@ -76,133 +110,189 @@ async function remitoDePrueba(
   await guardarCampoEn(tx, id, 'ptovta', '9998')
   await guardarCampoEn(tx, id, 'nro', nro)
   await guardarCampoEn(tx, id, 'fecha', '20/10/2026')
-  await guardarCampoEn(tx, id, 'codprovee', String(oc.COD_PROVEE).trim())
+  await guardarCampoEn(tx, id, 'codprovee', p.codProvee.trim())
   await guardarCampoEn(tx, id, 'leyendaAsiento', 'Prueba PHF')
   await tx.request()
     .input('id', sql.Int, id)
-    .input('cod', sql.NVarChar(60), oc.COD_ARTICU)
+    .input('cod', sql.NVarChar(60), p.codArticu)
     .input('cant', sql.Decimal(19, 4), cantidad)
-    .input('oc', sql.VarChar(14), oc.N_ORDEN_CO)
-    .input('tal', sql.Int, oc.TALONARIO)
-    .input('nr', sql.Int, oc.N_RENGL_OC)
-    .query(`
-      INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
-                               OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN)
-      VALUES (@id, 1, @cod, 'prueba', @cant, @oc, @tal, @nr, @cant, 1)`)
-  return id
+    .query(`INSERT INTO PHF_RENGLON_PDF (COMPROBANTE_ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD)
+            VALUES (@id, 1, @cod, 'prueba', @cant)`)
+  await sincronizarRenglonesRemitoEn(tx, id)
+  const d = await obtenerDetalleEn(tx, id)
+  expect(d.renglones).toHaveLength(1)
+  expect(d.renglones[0].codigo).toBe(p.codArticu)
+  return { id, renglonId: d.renglones[0].id }
 }
 
-describe('registrarComprobanteEn con un remito', () => {
-  it('graba STA14/STA20, sube el stock del 01 y descuenta lo pendiente de recibir de la orden', async () => {
+async function vincularA(
+  tx: sql.Transaction,
+  id: number,
+  renglonId: number,
+  f: { TCOMP_IN_C: string; NCOMP_IN_C: number; N_RENGL_C: number },
+) {
+  await elegirFacturaRenglonEn(tx, id, renglonId, {
+    tcompInC: f.TCOMP_IN_C,
+    ncompInC: Number(f.NCOMP_IN_C),
+    nRenglC: f.N_RENGL_C,
+  })
+}
+
+describe('registrarComprobanteEn con un remito contra una factura (2026-11-16)', () => {
+  it('factura con OC: CPA48, FALTA_REM, la OC heredada y el remito facturado', async () => {
     await conRollback(async (tx) => {
-      const oc = await renglonOcConPendiente(tx)
-      // La base tiene ordenes emitidas con pendiente de recibir: si esto
-      // fallara, el test estaria pasando sin probar nada.
-      expect(oc).not.toBeNull()
-
-      const stockAntes = await tx.request().input('a', sql.VarChar(15), oc.COD_ARTICU)
+      const f = await renglonFacturaParaRecibir(tx, true)
+      // La base tiene miles de facturas con OC: si esto fallara, el test
+      // estaria pasando sin probar nada.
+      expect(f).not.toBeNull()
+      const ocAntes = await tx.request()
+        .input('oc', sql.VarChar(14), f!.N_ORDEN_CO).input('r', sql.Int, f!.N_RENGL_OC)
+        .query('SELECT CAN_RECIBI FROM CPA36 WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r')
+      const stockAntes = await tx.request().input('a', sql.VarChar(15), f!.COD_ARTICU)
         .query(`SELECT ISNULL(SUM(CANT_STOCK), 0) AS s FROM STA19 WHERE COD_ARTICU=@a AND COD_DEPOSI='01'`)
-      const pendDepoAntes = await tx.request().input('a', sql.VarChar(15), oc.COD_ARTICU)
-        .input('d', sql.VarChar(2), oc.COD_DEPOSI || '01')
-        .query(`SELECT ISNULL(SUM(CANT_PEND), 0) AS p FROM STA19 WHERE COD_ARTICU=@a AND COD_DEPOSI=@d`)
-      const proximoAntes = await tx.request().query(`SELECT PROXIMO FROM CPA56 WHERE TIPO_COMP='R'`)
 
-      const id = await remitoDePrueba(tx, oc, 1, '87654321')
+      const { id, renglonId } = await remitoDePrueba(tx, { codProvee: f!.COD_PROVEE, codArticu: f!.COD_ARTICU }, 1, '87654321')
+
+      // Sin factura todavia: bloquea y el registro no avanza.
+      await elegirFacturaRenglonEn(tx, id, renglonId, null)
+      let listo = await validarListoParaRegistrarEn(tx, id)
+      expect(listo.ordenCompra.estado).toBe('error')
+      expect(listo.ordenCompra.mensaje).toMatch(/sin comprobante de referencia/)
+      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/sin factura de referencia/)
+
+      await vincularA(tx, id, renglonId, f!)
+      listo = await validarListoParaRegistrarEn(tx, id)
+      expect(listo.ordenCompra.estado).toBe('ok')
+      expect(listo.ordenCompra.mensaje).toContain(f!.N_COMP)
+
       const registro = await registrarComprobanteEn(tx, id)
-
-      expect(registro.tComp).toBe('REM')
       expect(registro.nComp).toBe('R0999887654321')
+      const ncompInS = String(registro.ncompInC).padStart(8, '0')
 
-      const h = await tx.request().input('n', sql.VarChar(14), registro.nComp).query(`
-        SELECT * FROM STA14 WHERE TCOMP_IN_S='RP' AND N_COMP=@n`)
-      expect(h.recordset).toHaveLength(1)
-      const cab = h.recordset[0]
-      expect(cab.T_COMP).toBe('REM')
-      expect(cab.ESTADO_MOV).toBe('P')
-      expect(cab.MOTIVO_REM).toBe('C')
-      expect(cab.COD_PRO_CL.trim()).toBe(String(oc.COD_PROVEE).trim())
-      expect(cab.OBSERVACIO).toBe('Prueba PHF')
-      expect(Number(cab.NCOMP_IN_S)).toBe(registro.ncompInC)
-
-      const r = await tx.request().input('n', sql.VarChar(8), cab.NCOMP_IN_S).query(`
-        SELECT * FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
-      expect(r.recordset).toHaveLength(1)
-      const ren = r.recordset[0]
-      expect(ren.COD_ARTICU.trim()).toBe(oc.COD_ARTICU)
-      expect(ren.COD_DEPOSI).toBe('01')
-      expect(ren.TIPO_MOV).toBe('E')
+      const cab = (await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT * FROM STA14 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)).recordset[0]
+      expect(cab.ESTADO_MOV).toBe('F')
+      const ren = (await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT * FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)).recordset[0]
       expect(Number(ren.CANTIDAD)).toBe(1)
-      expect(Number(ren.CANT_PEND)).toBe(1)
+      expect(Number(ren.CANT_PEND)).toBe(0)
+      expect(Number(ren.CANT_FACTU)).toBe(1)
       expect(Number(ren.CANT_OC)).toBe(1)
-      expect(ren.N_ORDEN_CO).toBe(oc.N_ORDEN_CO)
-      expect(ren.ID_STA14).toBe(cab.ID_STA14)
+      expect(ren.N_ORDEN_CO).toBe(f!.N_ORDEN_CO)
+      expect(ren.N_RENGL_OC).toBe(f!.N_RENGL_OC)
 
-      // El vinculo con la orden, una fila por renglon de STA20 (2026-10-29).
-      const vinculo = await tx.request().input('n', sql.VarChar(8), cab.NCOMP_IN_S).query(`
-        SELECT * FROM CPA_OC_REMITO WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
-      expect(vinculo.recordset).toHaveLength(1)
-      const v = vinculo.recordset[0]
-      expect(v.N_RENGL_S).toBe(ren.N_RENGL_S)
-      expect(v.N_ORDEN_CO).toBe(oc.N_ORDEN_CO)
-      expect(v.N_RENGL_OC).toBe(oc.N_RENGL_OC)
-      expect(v.TALONARIO_OC).toBe(ren.TALONARIO_OC)
-      expect(Number(v.CANTIDAD)).toBe(1)
-      expect(Number(v.CANT_OC)).toBe(1)
-      expect(Number(v.CANT_DEV)).toBe(0)
+      const v48 = await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT * FROM CPA48 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+      expect(v48.recordset).toHaveLength(1)
+      expect(v48.recordset[0].TCOMP_IN_C).toBe('FP')
+      expect(Number(v48.recordset[0].NCOMP_IN_C)).toBe(Number(f!.NCOMP_IN_C))
+      expect(v48.recordset[0].N_RENGL_C).toBe(f!.N_RENGL_C)
+      expect(Number(v48.recordset[0].CANTIDAD)).toBe(1)
 
-      const stockDespues = await tx.request().input('a', sql.VarChar(15), oc.COD_ARTICU)
+      const d46 = await tx.request()
+        .input('n', sql.Float, f!.NCOMP_IN_C).input('r', sql.Int, f!.N_RENGL_C)
+        .query(`SELECT FALTA_REM FROM CPA46 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n AND N_RENGL_C=@r`)
+      expect(Number(d46.recordset[0].FALTA_REM)).toBeCloseTo(Number(f!.CANTIDAD) - 1, 4)
+
+      const ocRem = await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT * FROM CPA_OC_REMITO WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+      expect(ocRem.recordset).toHaveLength(1)
+      expect(ocRem.recordset[0].N_ORDEN_CO).toBe(f!.N_ORDEN_CO)
+      const triple = await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT * FROM CPA_OC_REMITO_FACTURA WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+      expect(triple.recordset).toHaveLength(1)
+      expect(Number(triple.recordset[0].NCOMP_IN_C)).toBe(Number(f!.NCOMP_IN_C))
+      expect(Number(triple.recordset[0].CANTIDAD)).toBe(1)
+
+      const ocDespues = await tx.request()
+        .input('oc', sql.VarChar(14), f!.N_ORDEN_CO).input('r', sql.Int, f!.N_RENGL_OC)
+        .query('SELECT CAN_RECIBI FROM CPA36 WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r')
+      expect(Number(ocDespues.recordset[0].CAN_RECIBI)).toBeCloseTo(Number(ocAntes.recordset[0].CAN_RECIBI) + 1, 4)
+
+      const stockDespues = await tx.request().input('a', sql.VarChar(15), f!.COD_ARTICU)
         .query(`SELECT ISNULL(SUM(CANT_STOCK), 0) AS s FROM STA19 WHERE COD_ARTICU=@a AND COD_DEPOSI='01'`)
       expect(Number(stockDespues.recordset[0].s)).toBeCloseTo(Number(stockAntes.recordset[0].s) + 1, 4)
 
-      const pendDepoDespues = await tx.request().input('a', sql.VarChar(15), oc.COD_ARTICU)
-        .input('d', sql.VarChar(2), oc.COD_DEPOSI || '01')
-        .query(`SELECT ISNULL(SUM(CANT_PEND), 0) AS p FROM STA19 WHERE COD_ARTICU=@a AND COD_DEPOSI=@d`)
-      expect(Number(pendDepoDespues.recordset[0].p)).toBeCloseTo(
-        Math.max(0, Number(pendDepoAntes.recordset[0].p) - 1),
-        4,
-      )
-
-      const ocDespues = await tx.request()
-        .input('oc', sql.VarChar(14), oc.N_ORDEN_CO).input('r', sql.Int, oc.N_RENGL_OC)
-        .query(`SELECT CAN_RECIBI, CAN_PENDIE FROM CPA36 WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
-      expect(Number(ocDespues.recordset[0].CAN_RECIBI)).toBeCloseTo(Number(oc.CAN_RECIBI) + 1, 4)
-      expect(Number(ocDespues.recordset[0].CAN_PENDIE)).toBeCloseTo(Number(oc.CAN_PENDIE) - 1, 4)
-
-      const proximoDespues = await tx.request().query(`SELECT PROXIMO FROM CPA56 WHERE TIPO_COMP='R'`)
-      expect(Number(proximoDespues.recordset[0].PROXIMO)).toBe(registro.ncompInC + 1)
-      expect(registro.ncompInC).toBeGreaterThanOrEqual(Number(proximoAntes.recordset[0].PROXIMO))
-
-      const phf = await tx.request().input('id', sql.Int, id)
-        .query(`SELECT ESTADO, TANGO_T_COMP, TANGO_N_COMP FROM PHF_COMPROBANTE WHERE ID=@id`)
-      expect(phf.recordset[0].ESTADO).toBe('registrado')
-      expect(phf.recordset[0].TANGO_N_COMP).toBe(registro.nComp)
-
-      // Ya en Tango: el chequeo de duplicados lo encuentra.
-      expect(await buscarRemitoEnSta14(String(oc.COD_PROVEE), registro.nComp, tx)).not.toBeNull()
-
-      // Idempotente: registrarlo de nuevo devuelve lo mismo y no graba otro.
-      const otra = await registrarComprobanteEn(tx, id)
-      expect(otra).toEqual(registro)
+      // Idempotente.
+      expect(await registrarComprobanteEn(tx, id)).toEqual(registro)
     })
   }, 150000)
 
-  it('no deja recibir más de lo que la orden tiene pendiente', async () => {
+  it('factura sin OC: CPA48 y FALTA_REM, sin tocar ninguna orden', async () => {
     await conRollback(async (tx) => {
-      const oc = await renglonOcConPendiente(tx)
-      if (!oc) return
-      const id = await remitoDePrueba(tx, oc, Number(oc.CAN_PENDIE) + 1, '87654322')
-      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/pendiente\(s\) de recibir/)
+      const f = await renglonFacturaParaRecibir(tx, false)
+      if (!f) return
+      const { id, renglonId } = await remitoDePrueba(tx, { codProvee: f.COD_PROVEE, codArticu: f.COD_ARTICU }, 2, '87654324')
+      await vincularA(tx, id, renglonId, f)
+      const registro = await registrarComprobanteEn(tx, id)
+      const ncompInS = String(registro.ncompInC).padStart(8, '0')
+      const ren = (await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT * FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)).recordset[0]
+      expect(ren.N_ORDEN_CO.trim()).toBe('')
+      expect(Number(ren.CANT_PEND)).toBe(0)
+      const ocRem = await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT COUNT(*) AS c FROM CPA_OC_REMITO WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
+      expect(ocRem.recordset[0].c).toBe(0)
+      const d46 = await tx.request()
+        .input('n', sql.Float, f.NCOMP_IN_C).input('r', sql.Int, f.N_RENGL_C)
+        .query(`SELECT FALTA_REM FROM CPA46 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n AND N_RENGL_C=@r`)
+      expect(Number(d46.recordset[0].FALTA_REM)).toBeCloseTo(Number(f.CANTIDAD) - 2, 4)
+    })
+  }, 150000)
+
+  it('sin factura de referencia, confirmado: entra a stock sin vínculos y queda pendiente', async () => {
+    await conRollback(async (tx) => {
+      const f = await renglonFacturaParaRecibir(tx, true)
+      if (!f) return
+      const { id, renglonId } = await remitoDePrueba(tx, { codProvee: f.COD_PROVEE, codArticu: f.COD_ARTICU }, 1, '87654325')
+      await elegirFacturaRenglonEn(tx, id, renglonId, null)
+      await marcarRemitoSinReferenciaEn(tx, id, true)
+      const listo = await validarListoParaRegistrarEn(tx, id)
+      expect(listo.ordenCompra.estado).toBe('advertencia')
+      expect(listo.bloqueante).toBe(false)
+
+      const registro = await registrarComprobanteEn(tx, id)
+      const ncompInS = String(registro.ncompInC).padStart(8, '0')
+      const cab = (await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT ESTADO_MOV FROM STA14 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)).recordset[0]
+      expect(cab.ESTADO_MOV).toBe('P')
+      const ren = (await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT * FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)).recordset[0]
+      expect(Number(ren.CANT_PEND)).toBe(1)
+      expect(Number(ren.CANT_FACTU)).toBe(0)
+      expect(ren.N_ORDEN_CO.trim()).toBe('')
+      const v = await tx.request().input('n', sql.VarChar(8), ncompInS).query(`
+        SELECT (SELECT COUNT(*) FROM CPA48 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n)
+             + (SELECT COUNT(*) FROM CPA_OC_REMITO WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n) AS c`)
+      expect(v.recordset[0].c).toBe(0)
+    })
+  }, 150000)
+
+  it('no deja recibir más de lo que la factura tiene sin recibir', async () => {
+    await conRollback(async (tx) => {
+      const f = await renglonFacturaParaRecibir(tx, true)
+      if (!f) return
+      const { id, renglonId } = await remitoDePrueba(
+        tx, { codProvee: f.COD_PROVEE, codArticu: f.COD_ARTICU }, Number(f.CANTIDAD) + 1, '87654322',
+      )
+      await vincularA(tx, id, renglonId, f)
+      const listo = await validarListoParaRegistrarEn(tx, id)
+      expect(listo.ordenCompra.estado).toBe('error')
+      expect(listo.ordenCompra.mensaje).toMatch(/le faltan recibir/)
+      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/le faltan recibir/)
     })
   }, 150000)
 
   it('no deja registrar dos veces el mismo remito del proveedor', async () => {
     await conRollback(async (tx) => {
-      const oc = await renglonOcConPendiente(tx)
-      if (!oc || Number(oc.CAN_PENDIE) < 2) return
-      const primero = await remitoDePrueba(tx, oc, 1, '87654323')
-      await registrarComprobanteEn(tx, primero)
-      const segundo = await remitoDePrueba(tx, oc, 1, '87654323')
-      await expect(registrarComprobanteEn(tx, segundo)).rejects.toThrow(/ya está en Tango/)
+      const f = await renglonFacturaParaRecibir(tx, true)
+      if (!f) return
+      const primero = await remitoDePrueba(tx, { codProvee: f.COD_PROVEE, codArticu: f.COD_ARTICU }, 1, '87654323')
+      await vincularA(tx, primero.id, primero.renglonId, f)
+      await registrarComprobanteEn(tx, primero.id)
+      const segundo = await remitoDePrueba(tx, { codProvee: f.COD_PROVEE, codArticu: f.COD_ARTICU }, 1, '87654323')
+      await vincularA(tx, segundo.id, segundo.renglonId, f)
+      await expect(registrarComprobanteEn(tx, segundo.id)).rejects.toThrow(/ya está en Tango/)
     })
   }, 150000)
 })
@@ -250,17 +340,16 @@ async function remitoConSerie(tx: sql.Transaction, art: ArticuloConSerie, nro: s
   await guardarCampoEn(tx, id, 'nro', nro)
   await guardarCampoEn(tx, id, 'fecha', '20/10/2026')
   await guardarCampoEn(tx, id, 'codprovee', String(art.COD_PROVEE).trim())
+  // Lo que se prueba aca son las series: el remito va sin factura de
+  // referencia, confirmado (2026-11-16; antes iba contra la OC).
   const ins = await tx.request()
     .input('id', sql.Int, id)
     .input('cod', sql.NVarChar(60), art.COD_ARTICU)
-    .input('oc', sql.VarChar(14), art.N_ORDEN_CO)
-    .input('tal', sql.Int, art.TALONARIO)
-    .input('nr', sql.Int, art.N_RENGL_OC)
     .query(`
-      INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
-                               OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN)
+      UPDATE PHF_COMPROBANTE SET REMITO_SIN_REFERENCIA = 1 WHERE ID = @id;
+      INSERT INTO PHF_RENGLON (COMPROBANTE_ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA, PDF_ORDEN, FAC_ELEGIDA)
       OUTPUT INSERTED.ID
-      VALUES (@id, 1, @cod, 'prueba', 2, @oc, @tal, @nr, 2, 1)`)
+      VALUES (@id, 1, @cod, 'prueba', 2, 1, 1)`)
   return { id, renglonId: Number(ins.recordset[0].ID) }
 }
 

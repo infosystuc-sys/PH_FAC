@@ -469,6 +469,15 @@ export async function sincronizarCargosEn(
   codProvee: string | null,
 ): Promise<number> {
   const detalle = await obtenerDetalleEn(e, comprobanteId)
+  // Un remito no tiene cargos ni OC: sus renglones salen del papel y van
+  // contra una factura (2026-11-16). Borrar "los que no tienen OC", como se
+  // hace abajo, se llevaria todos sus renglones con sus series.
+  if (detalle.campos.find((c) => c.clave === 'tipoFactura')?.valorFinal === 'remito') {
+    // Import dinamico: remitoFactura.ts importa de este modulo.
+    const { sincronizarRenglonesRemitoEn } = await import('./remitoFactura')
+    await sincronizarRenglonesRemitoEn(e, comprobanteId)
+    return 0
+  }
   const cargos = lineasCargo(await lineasPdfResueltasEn(e, detalle, codProvee))
 
   // Los renglones de cargo se identifican por no tener orden: los de OC los

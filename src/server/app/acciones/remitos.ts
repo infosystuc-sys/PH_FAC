@@ -10,6 +10,14 @@ import { auditarEn, obtenerDetalleEn } from '../detalle'
 import { guardarSeriesEn, revisarSeriesEn, type RenglonConSerie } from '../series'
 import type { Serie } from '@/lib/series'
 import { renglonesDelRemitoInterno } from '@/server/tango/remitos'
+import {
+  sincronizarRenglonesRemitoEn,
+  ofertaFacturasRemitoEn,
+  elegirFacturaRenglonEn,
+  elegirFacturaRemitoEn,
+  marcarRemitoSinReferenciaEn,
+  type OfertaFacturasRemito,
+} from '../remitoFactura'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -155,7 +163,15 @@ export async function actualizarCantidadesRemito(comprobanteId: number): Promise
 export async function listarSeriesRemito(comprobanteId: number): Promise<RenglonConSerie[]> {
   const pool = await getPool()
   const detalle = await obtenerDetalleEn(pool, comprobanteId)
-  return revisarSeriesEn(pool, comprobanteId, detalle.renglones)
+  // Con el proveedor y los codigos impresos, para proponer el color de las
+  // cubiertas de NEWSAN como DESC2 (2026-11-16, ver codigoProveedor.ts).
+  const campo = detalle.campos.find((c) => c.clave === 'codprovee')
+  return revisarSeriesEn(pool, comprobanteId, detalle.renglones, {
+    codProvee: campo?.valorFinal ?? campo?.valorIA ?? null,
+    impresoPorPdf: new Map(
+      detalle.renglonesPdf.filter((p) => p.codigo).map((p) => [p.orden, p.codigo as string]),
+    ),
+  })
 }
 
 /** Reemplaza las series de un renglón del remito y lo anota en el historial. */
@@ -169,5 +185,42 @@ export async function guardarSeriesRenglon(
     const cargadas = series.filter((s) => (s.nSerie ?? '').trim() !== '').length
     await auditarEn(tx, comprobanteId, `Números de serie cargados en un renglón — ${cargadas} serie(s)`)
   })
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+}
+
+/**
+ * Arma los renglones del remito desde el papel, propone la factura de cada
+ * uno y devuelve lo que la revisión necesita para elegirla (2026-11-16: el
+ * remito se vincula a una factura, no a una OC). Escribe, pero es
+ * idempotente y no pisa lo que eligió el operador.
+ */
+export async function prepararRemito(comprobanteId: number): Promise<OfertaFacturasRemito> {
+  await conTransaccion((tx) => sincronizarRenglonesRemitoEn(tx, comprobanteId))
+  return ofertaFacturasRemitoEn(await getPool(), comprobanteId)
+}
+
+/** La factura de un renglón del remito, o ninguna con `null`. */
+export async function elegirFacturaRenglon(
+  comprobanteId: number,
+  renglonId: number,
+  ref: { tcompInC: string; ncompInC: number; nRenglC: number } | null,
+): Promise<void> {
+  await conTransaccion((tx) => elegirFacturaRenglonEn(tx, comprobanteId, renglonId, ref))
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+}
+
+/** Una factura para todo el remito. */
+export async function elegirFacturaRemito(
+  comprobanteId: number,
+  factura: { tcompInC: string; ncompInC: number },
+): Promise<{ cubiertos: number; total: number }> {
+  const r = await conTransaccion((tx) => elegirFacturaRemitoEn(tx, comprobanteId, factura))
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  return r
+}
+
+/** Confirma (o retira) grabar sin comprobante de referencia lo que no tiene factura. */
+export async function marcarRemitoSinReferencia(comprobanteId: number, valor: boolean): Promise<void> {
+  await conTransaccion((tx) => marcarRemitoSinReferenciaEn(tx, comprobanteId, valor))
   revalidatePath(`/comprobantes/${comprobanteId}`)
 }

@@ -8,6 +8,10 @@ import type { RegistroTango } from './comprobantes'
 import { seriesEfectivasEn } from '@/server/app/series'
 import { problemaSeries } from '@/lib/series'
 import { grabarSeriesRemitoEn } from './series'
+import { renglonFacturaParaRemitoEn, proveedorDeFacturaEn } from './facturasParaRemito'
+import { ncompInCEnCpa48 } from './remitosFactura'
+import { normalizarCodigo } from '@/lib/cotejoOc'
+import type { CandidatoFactura } from '@/lib/remitoFactura'
 
 /**
  * El alta de un REMITO DE PROVEEDOR en Tango: la entrada de mercadería que
@@ -53,9 +57,21 @@ import { grabarSeriesRemitoEn } from './series'
  *   `PENDIENTE_RECIBIR_FACTURADA` se recalculan con las reglas que cumplen
  *   7.737, 7.794 y 7.797 de las 7.840 filas reales (ver `contadoresOc`).
  *
- * Imputar a la orden es decisión del usuario (2026-10-25): el remito se
- * revisa igual que una factura de artículos, eligiendo la OC de cada
- * renglón, solo que contra lo pendiente de RECIBIR.
+ * Desde el 2026-11-16 (pedido del usuario) el remito se vincula a la
+ * FACTURA de compra ya registrada que recibe, no a una OC: hasta ese día se
+ * elegía la OC de cada renglón. Cada renglón con factura graba, copiado de
+ * los 5.685 renglones que Tango grabó después de su factura:
+ *
+ * - `STA20` con `CANT_PEND = 0` y `CANT_FACTU` = la cantidad;
+ * - `CPA48` (factura ↔ remito) con la cantidad, y `CPA46.FALTA_REM` baja;
+ * - si la factura se imputó a una OC (`CPA_OC_FACTURA`), el remito la
+ *   hereda: la OC en `STA20`, `CPA_OC_REMITO`, `CPA_OC_REMITO_FACTURA` y los
+ *   contadores de recepción de `CPA36` / `STA19.CANT_PEND`;
+ * - `STA14.ESTADO_MOV = 'F'` si no le queda ningún renglón pendiente.
+ *
+ * Un renglón sin factura entra a stock sin vincularse a nada (ni factura ni
+ * OC), y solo si el operador confirmó grabarlo sin comprobante de
+ * referencia. Ver src/server/app/remitoFactura.ts.
  */
 
 const TCOMP_IN_S = 'RP'
@@ -122,7 +138,8 @@ type RenglonARegistrar = {
   renglonId: number
   codArticu: string
   cantidad: number
-  oc: { nOrdenCo: string; nRenglOc: number } | null
+  /** El renglón de la factura que recibe (CPA46), o `null` sin referencia. */
+  factura: { tcompInC: string; ncompInC: number; nRenglC: number } | null
 }
 
 export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promise<RegistroTango> {
@@ -166,8 +183,12 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     throw new Error(`El remito ${nComp} de este proveedor ya está en Tango (interno ${duplicado.ncompInS}).`)
   }
 
-  // 3. Renglones: los imputados a una orden y los cargos del proveedor (sin
-  // orden, con artículo vinculado), igual que en la factura de artículos.
+  // 3. Renglones, cada uno con el renglon de la factura que recibe
+  // (2026-11-16). Los que no tienen factura solo entran si el operador
+  // confirmo grabarlos sin comprobante de referencia.
+  const sinRef = await tx.request().input('id', sql.Int, id)
+    .query('SELECT REMITO_SIN_REFERENCIA AS x FROM PHF_COMPROBANTE WHERE ID = @id')
+  const sinReferenciaConfirmado = Boolean(sinRef.recordset[0]?.x)
   const renglones: RenglonARegistrar[] = []
   for (const r of detalle.renglones) {
     const codArticu = (r.codigoFinal ?? r.codigo ?? '').trim()
@@ -182,11 +203,18 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
       renglonId: r.id,
       codArticu,
       cantidad,
-      oc: r.ocNOrdenCo && r.ocNRenglOc ? { nOrdenCo: r.ocNOrdenCo, nRenglOc: r.ocNRenglOc } : null,
+      factura: r.factura
+        ? { tcompInC: r.factura.tcompInC, ncompInC: r.factura.ncompInC, nRenglC: r.factura.nRenglC }
+        : null,
     })
   }
   if (renglones.length === 0) {
-    throw new Error('El remito no tiene renglones para registrar: imputale la orden de compra.')
+    throw new Error('El remito no tiene renglones para registrar: reprocesá el comprobante.')
+  }
+  if (!sinReferenciaConfirmado && renglones.some((r) => !r.factura)) {
+    throw new Error(
+      'Hay renglones sin factura de referencia: elegí la factura o confirmá grabarlos sin comprobante de referencia.',
+    )
   }
 
   // 4. Numero interno: el PROXIMO del talonario de remitos de Compras, sin
@@ -253,6 +281,7 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
   let totalSeries = 0
 
   const ocsAfectadas = new Set<string>()
+  const facturasTocadas = new Set<string>()
   let nRenglS = 0
   for (const r of renglones) {
     nRenglS += 1
@@ -283,8 +312,32 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
       throw new Error(`El artículo ${r.codArticu} es un artículo base de escala: elegí el color o el talle.`)
     }
 
-    // La orden, releida dentro de la transaccion: entre la revision y este
-    // momento otro remito pudo haber recibido parte de lo pendiente.
+    // La factura que recibe, releida con bloqueo dentro de la transaccion:
+    // entre la revision y este momento otro remito pudo haberla recibido.
+    let factura: CandidatoFactura | null = null
+    if (r.factura) {
+      factura = await renglonFacturaParaRemitoEn(tx, r.factura)
+      if (!factura) {
+        throw new Error(`El renglón ${r.factura.nRenglC} de la factura ya no existe en Tango.`)
+      }
+      const provFac = await proveedorDeFacturaEn(tx, r.factura)
+      if (provFac !== codProvee) {
+        throw new Error(`La factura ${factura.nComp} es de otro proveedor.`)
+      }
+      if (normalizarCodigo(factura.codArticu) !== normalizarCodigo(r.codArticu)) {
+        throw new Error(`El renglón de la factura ${factura.nComp} es del artículo ${factura.codArticu}, no de ${r.codArticu}.`)
+      }
+      if (r.cantidad - factura.faltaRem > 0.00005) {
+        throw new Error(
+          `El artículo ${r.codArticu} recibe ${r.cantidad} y a la factura ${factura.nComp} le faltan recibir ${factura.faltaRem}.`,
+        )
+      }
+    }
+
+    // La orden: la de la factura, si la factura se imputo a una (decision
+    // del usuario, 2026-11-16). Sin factura, el remito no toca ninguna OC.
+    // Releida dentro de la transaccion por los contadores.
+    const ocRef = factura?.oc ? { nOrdenCo: factura.oc.nOrdenCo, nRenglOc: factura.oc.nRenglOc } : null
     let oc: {
       nOrdenCo: string
       nRenglOc: number
@@ -297,9 +350,9 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
       facturada: number
       estado: number
     } | null = null
-    if (r.oc) {
+    if (ocRef) {
       const fila = await tx.request()
-        .input('oc', sql.VarChar(14), r.oc.nOrdenCo).input('r', sql.Int, r.oc.nRenglOc)
+        .input('oc', sql.VarChar(14), ocRef.nOrdenCo).input('r', sql.Int, ocRef.nRenglOc)
         .query(`
           SELECT LTRIM(RTRIM(r.COD_ARTICU)) AS COD_ARTICU, LTRIM(RTRIM(ISNULL(r.COD_DEPOSI,''))) AS COD_DEPOSI,
                  ISNULL(r.CAN_PEDIDA,0) AS CAN_PEDIDA, ISNULL(r.CAN_RECIBI,0) AS CAN_RECIBI,
@@ -310,17 +363,14 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
           WHERE r.N_ORDEN_CO=@oc AND r.N_RENGL_OC=@r`)
       const f = fila.recordset[0]
       if (!f) {
-        throw new Error(`El renglón ${r.oc.nRenglOc} de la orden de compra ${r.oc.nOrdenCo.trim()} ya no existe.`)
+        throw new Error(`El renglón ${ocRef.nRenglOc} de la orden de compra ${ocRef.nOrdenCo.trim()} ya no existe.`)
       }
-      if (r.cantidad - Number(f.CAN_PENDIE) > 0.00005) {
-        throw new Error(
-          `El artículo ${r.codArticu} recibe ${r.cantidad} y la orden ${r.oc.nOrdenCo.trim()} ` +
-            `tiene ${Number(f.CAN_PENDIE)} pendiente(s) de recibir.`,
-        )
-      }
+      // Lo que se recibe ya lo controla FALTA_REM de la factura: la orden
+      // no frena el remito (la factura ya se registro contra ella). Los
+      // contadores no bajan de 0 (ver contadoresOc).
       oc = {
-        nOrdenCo: r.oc.nOrdenCo,
-        nRenglOc: r.oc.nRenglOc,
+        nOrdenCo: ocRef.nOrdenCo,
+        nRenglOc: ocRef.nRenglOc,
         talonario: Number(f.TALONARIO) || 0,
         deposito: String(f.COD_DEPOSI) || DEPOSITO,
         pendiente: Number(f.CAN_PENDIE),
@@ -332,13 +382,17 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
       }
     }
 
-    // 6. STA20.
+    // 6. STA20. Contra una factura, el renglon nace facturado: CANT_PEND en 0
+    // y CANT_FACTU = la cantidad, como en 5.683 y 5.525 de los 5.685
+    // renglones que Tango grabo despues de su factura (2025 en adelante).
     await tx.request()
       .input('ncompInS', sql.VarChar(8), ncompInS)
       .input('nRenglS', sql.Int, nRenglS)
       .input('art', sql.VarChar(15), r.codArticu)
       .input('dep', sql.VarChar(2), DEPOSITO)
       .input('cant', sql.Decimal(18, 4), r.cantidad)
+      .input('pend', sql.Decimal(18, 4), factura ? 0 : r.cantidad)
+      .input('factu', sql.Decimal(18, 4), factura ? r.cantidad : 0)
       .input('cantOc', sql.Decimal(18, 4), oc ? r.cantidad : 0)
       .input('fecha', sql.DateTime, fecha)
       .input('oc', sql.VarChar(14), oc?.nOrdenCo ?? '')
@@ -357,7 +411,7 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
           ID_MEDIDA_STOCK, ID_MEDIDA_VENTAS, ID_STA11, ID_STA14
         ) VALUES (
           'RP', @ncompInS, @nRenglS, @art, @dep, 'E', @fecha,
-          @cant, @cant, 0, 0, @cantOc, 1, 1,
+          @cant, @pend, @factu, 0, @cantOc, 1, 1,
           @oc, @nRenglOc, @talonarioOc, 0, 0, 0,
           0, 'P',
           @medidaStock, @medidaVentas, @idSta11, @idSta14
@@ -385,6 +439,36 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
           INSERT INTO STA19 (COD_ARTICU, COD_DEPOSI, CANT_STOCK, CANT_COMP, CANT_PEND, ID_STA11, ID_STA22)
           VALUES (@art, @dep, @cant, 0, 0, @idSta11, @idSta22);`)
 
+    if (factura) {
+      // 7a. El vinculo factura <-> remito en CPA48, una fila por renglon con
+      // la cantidad del remito (2.730 de 2.749 y 2.936 de 2.936 en los reales),
+      // y lo que la factura tiene sin recibir baja: FALTA_REM sigue siendo
+      // CANTIDAD - lo cubierto en CPA48. El WHERE vuelve a exigir el saldo.
+      await tx.request()
+        .input('tcompInC', sql.VarChar(2), factura.tcompInC)
+        .input('ncompInC', sql.VarChar(8), ncompInCEnCpa48(factura.ncompInC))
+        .input('nRenglC', sql.Int, factura.nRenglC)
+        .input('ncompInS', sql.VarChar(8), ncompInS)
+        .input('nRenglS', sql.Int, nRenglS)
+        .input('cantidad', sql.Decimal(18, 4), r.cantidad)
+        .query(`
+          INSERT INTO CPA48
+            (TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, TCOMP_IN_S, NCOMP_IN_S, N_RENGL_S, CANTIDAD, CANTIDAD_2, FILLER)
+          VALUES (@tcompInC, @ncompInC, @nRenglC, 'RP', @ncompInS, @nRenglS, @cantidad, 0, '')`)
+      const baja = await tx.request()
+        .input('t', sql.VarChar(2), factura.tcompInC)
+        .input('n', sql.Float, factura.ncompInC)
+        .input('r', sql.Int, factura.nRenglC)
+        .input('cantidad', sql.Decimal(18, 4), r.cantidad)
+        .query(`
+          UPDATE CPA46 SET FALTA_REM = FALTA_REM - @cantidad
+          WHERE TCOMP_IN_C = @t AND NCOMP_IN_C = @n AND N_RENGL_C = @r AND FALTA_REM >= @cantidad`)
+      if (baja.rowsAffected[0] !== 1) {
+        throw new Error(`A la factura ${factura.nComp} ya no le faltan recibir ${r.cantidad} de ${r.codArticu}.`)
+      }
+      facturasTocadas.add(factura.nComp)
+    }
+
     if (oc) {
       // 7b. El vinculo renglon de remito <-> renglon de OC en CPA_OC_REMITO
       // (2026-10-29, pedido del usuario). Una fila por renglon de STA20 que
@@ -409,6 +493,30 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
             @cant, @cantOc, @oc, @nRenglOc, @talonarioOc,
             'RP', @ncompInS, @nRenglS, 0, 0, 0, 0
           )`)
+
+      // 7c. El vinculo de tres puntas OC <-> factura <-> remito: los 2.749
+      // renglones reales grabados despues de una factura con OC lo tienen.
+      // Hasta lo que la factura imputo a la orden y no se asigno todavia a
+      // otro remito (mismo criterio que consumirRemitosEn).
+      const cantidadTriple = Math.min(r.cantidad, factura?.oc?.cantidad ?? 0)
+      if (factura && cantidadTriple > 0) {
+        await tx.request()
+          .input('cantidad', sql.Decimal(18, 4), cantidadTriple)
+          .input('talonario', sql.SmallInt, oc.talonario)
+          .input('oc', sql.VarChar(14), oc.nOrdenCo)
+          .input('nRenglOc', sql.Int, oc.nRenglOc)
+          .input('tcompInC', sql.VarChar(2), factura.tcompInC)
+          .input('ncompInC', sql.Float, factura.ncompInC)
+          .input('nRenglC', sql.Int, factura.nRenglC)
+          .input('ncompInS', sql.VarChar(8), ncompInS)
+          .input('nRenglS', sql.Int, nRenglS)
+          .query(`
+            INSERT INTO CPA_OC_REMITO_FACTURA
+              (CANTIDAD, CANTIDAD_2, TALONARIO_OC, N_ORDEN_CO, N_RENGL_OC,
+               TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, TCOMP_IN_S, NCOMP_IN_S, N_RENGL_S)
+            VALUES (@cantidad, 0, @talonario, @oc, @nRenglOc,
+                    @tcompInC, @ncompInC, @nRenglC, 'RP', @ncompInS, @nRenglS)`)
+      }
 
       // 8. Los contadores de la orden y lo pendiente de recibir del deposito
       // de la orden.
@@ -453,6 +561,13 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     }
   }
 
+  // 9b. Un remito sin ningun renglon pendiente de facturar nace facturado
+  // ('F'), como 5.655 de los 5.685 que Tango grabo despues de su factura.
+  await tx.request().input('ncompInS', sql.VarChar(8), ncompInS).query(`
+    UPDATE STA14 SET ESTADO_MOV = 'F'
+    WHERE TCOMP_IN_S = 'RP' AND NCOMP_IN_S = @ncompInS AND ESTADO_MOV = 'P'
+      AND NOT EXISTS (SELECT 1 FROM STA20 s WHERE s.TCOMP_IN_S = 'RP' AND s.NCOMP_IN_S = @ncompInS AND s.CANT_PEND > 0)`)
+
   // 10. El talonario avanza, igual que lo hace Tango.
   await tx.request()
     .input('talonario', sql.SmallInt, talonario)
@@ -469,13 +584,15 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
       SET ESTADO='registrado', TANGO_NCOMP_IN_C=@numero, TANGO_T_COMP=@tComp, TANGO_N_COMP=@nComp,
           FECHA_REGISTRO=SYSDATETIME(), FECHA_MODIF=SYSDATETIME()
       WHERE ID=@id`)
-  const conOc = renglones.filter((r) => r.oc).length
+  const conFactura = renglones.filter((r) => r.factura).length
   await auditarEn(
     tx,
     id,
     `Registrado en Tango: remito ${nComp} (interno ${TCOMP_IN_S} ${ncompInS}) — ` +
       `${renglones.length} renglón(es) al depósito ${DEPOSITO}` +
-      (conOc > 0 ? `, ${conOc} contra orden de compra` : '') +
+      (conFactura > 0 ? `, ${conFactura} contra la factura ${[...facturasTocadas].join(', ')}` : '') +
+      (conFactura < renglones.length ? `, ${renglones.length - conFactura} sin comprobante de referencia` : '') +
+      (ocsAfectadas.size > 0 ? `, orden de compra ${[...ocsAfectadas].map((o) => o.trim()).join(', ')}` : '') +
       (totalSeries > 0 ? `, ${totalSeries} número(s) de serie` : ''),
   )
 

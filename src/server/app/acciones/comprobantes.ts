@@ -32,6 +32,7 @@ import { recalcularAVincularEn, actualizarPendientesOcEn } from '../ordenCompra'
 import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asiento'
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
 import { actualizarCantidadesRemitoEn } from './remitos'
+import { sincronizarRenglonesRemitoEn } from '../remitoFactura'
 
 export type { AsientoPreview, LineaAsiento } from '@/server/tango/asiento'
 export type { CuotasPreview, CuotaPreview } from '@/server/tango/cuotas'
@@ -443,6 +444,12 @@ export async function revalidarContraTangoEn(e: Ejecutor, id: number): Promise<R
   if (pendientes > 0) cambios.push(`pendiente de OC actualizado en ${pendientes} renglón(es)`)
   const remitos = await actualizarCantidadesRemitoEn(e, id)
   if (remitos > 0) cambios.push(`cantidad de remito actualizada en ${remitos} renglón(es)`)
+  // Un remito: sus renglones y la factura propuesta, contra lo que Tango
+  // tiene sin recibir hoy (2026-11-16).
+  if (tipo === 'remito') {
+    const { propuestos } = await sincronizarRenglonesRemitoEn(e, id)
+    if (propuestos > 0) cambios.push(`factura propuesta en ${propuestos} renglón(es)`)
+  }
 
   // Solo las observaciones por un dato que faltaba en Tango y que ahora
   // está. Las demás las puso el operador por algo que ve en el papel, y no

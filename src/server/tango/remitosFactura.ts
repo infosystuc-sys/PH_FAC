@@ -52,22 +52,41 @@ export async function saldosDeRemitoEn(
     .input('oc', sql.VarChar(14), p.nOrdenCo)
     .input('r', sql.Int, p.nRenglOc)
     .input('art', sql.VarChar(20), p.codArticu.trim())
+    // Primero los recibidos contra este renglon de la orden; despues, los
+    // que la app grabo sin comprobante de referencia (2026-11-16): sin OC,
+    // del mismo proveedor y articulo. Solo los de la app (TERMINAL_INGRESO
+    // 'PHF-WEB'): los remitos sin OC que Tango dejo pendientes desde sus
+    // pantallas no se tocan (decision del usuario, 2026-11-03).
     .query(`
-      SELECT s.NCOMP_IN_S AS ncompInS, s.N_RENGL_S AS nRenglS, s.CANT_PEND AS pendiente
-      FROM CPA_OC_REMITO o
-      JOIN STA20 s ON s.TCOMP_IN_S = o.TCOMP_IN_S AND s.NCOMP_IN_S = o.NCOMP_IN_S
-                  AND s.N_RENGL_S = o.N_RENGL_S
-      JOIN STA14 h ON h.TCOMP_IN_S = s.TCOMP_IN_S AND h.NCOMP_IN_S = s.NCOMP_IN_S
-      WHERE o.TCOMP_IN_S = 'RP' AND o.N_ORDEN_CO = @oc AND o.N_RENGL_OC = @r
-        AND h.ESTADO_MOV = 'P' AND s.CANT_PEND > 0
-        AND LTRIM(RTRIM(h.COD_PRO_CL)) = @prov
-        AND LTRIM(RTRIM(s.COD_ARTICU)) = @art
-      ORDER BY h.FECHA_MOV, s.NCOMP_IN_S, s.N_RENGL_S`)
+      SELECT ncompInS, nRenglS, pendiente, conOc FROM (
+        SELECT s.NCOMP_IN_S AS ncompInS, s.N_RENGL_S AS nRenglS, s.CANT_PEND AS pendiente,
+               CAST(1 AS BIT) AS conOc, 0 AS grupo, h.FECHA_MOV AS fecha
+        FROM CPA_OC_REMITO o
+        JOIN STA20 s ON s.TCOMP_IN_S = o.TCOMP_IN_S AND s.NCOMP_IN_S = o.NCOMP_IN_S
+                    AND s.N_RENGL_S = o.N_RENGL_S
+        JOIN STA14 h ON h.TCOMP_IN_S = s.TCOMP_IN_S AND h.NCOMP_IN_S = s.NCOMP_IN_S
+        WHERE o.TCOMP_IN_S = 'RP' AND o.N_ORDEN_CO = @oc AND o.N_RENGL_OC = @r
+          AND h.ESTADO_MOV = 'P' AND s.CANT_PEND > 0
+          AND LTRIM(RTRIM(h.COD_PRO_CL)) = @prov
+          AND LTRIM(RTRIM(s.COD_ARTICU)) = @art
+        UNION ALL
+        SELECT s.NCOMP_IN_S, s.N_RENGL_S, s.CANT_PEND, CAST(0 AS BIT), 1, h.FECHA_MOV
+        FROM STA20 s
+        JOIN STA14 h ON h.TCOMP_IN_S = s.TCOMP_IN_S AND h.NCOMP_IN_S = s.NCOMP_IN_S
+        WHERE s.TCOMP_IN_S = 'RP' AND h.ESTADO_MOV = 'P' AND s.CANT_PEND > 0
+          AND h.TERMINAL_INGRESO = 'PHF-WEB'
+          AND LTRIM(RTRIM(h.COD_PRO_CL)) = @prov
+          AND LTRIM(RTRIM(s.COD_ARTICU)) = @art
+          AND NOT EXISTS (SELECT 1 FROM CPA_OC_REMITO o
+                          WHERE o.TCOMP_IN_S = s.TCOMP_IN_S AND o.NCOMP_IN_S = s.NCOMP_IN_S AND o.N_RENGL_S = s.N_RENGL_S)
+      ) x
+      ORDER BY grupo, fecha, ncompInS, nRenglS`)
 
-  return r.recordset.map((f: { ncompInS: string; nRenglS: number; pendiente: number }) => ({
+  return r.recordset.map((f: { ncompInS: string; nRenglS: number; pendiente: number; conOc: boolean }) => ({
     ncompInS: String(f.ncompInS),
     nRenglS: Number(f.nRenglS),
     pendiente: Number(f.pendiente),
+    conOc: Boolean(f.conOc),
   }))
 }
 
@@ -127,7 +146,8 @@ export async function consumirRemitosEn(
           (TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, TCOMP_IN_S, NCOMP_IN_S, N_RENGL_S, CANTIDAD, CANTIDAD_2, FILLER)
         VALUES (@tcompInC, @ncompInC, @nRenglC, 'RP', @ncompInS, @nRenglS, @cantidad, 0, '')`)
 
-    const cantidadOc = Math.min(parte.cantidad, imputadoSinAsignar)
+    // Un remito sin OC no entra al vinculo de tres puntas: no tiene orden.
+    const cantidadOc = parte.conOc === false ? 0 : Math.min(parte.cantidad, imputadoSinAsignar)
     imputadoSinAsignar -= cantidadOc
     if (cantidadOc > 0) {
       await e

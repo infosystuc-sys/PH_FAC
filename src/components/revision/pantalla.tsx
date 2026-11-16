@@ -10,6 +10,7 @@ import { ListoParaRegistrar } from './listo-para-registrar'
 import { Renglones } from './renglones'
 import { RenglonesOc } from './renglones-oc'
 import { RenglonesFactura } from './renglones-factura'
+import { RenglonesRemito } from './renglones-remito'
 import { SeriesRemito } from './series-remito'
 import { Cargos } from './cargos'
 import { Historial } from './historial'
@@ -306,10 +307,20 @@ export function Pantalla({
             que quedaron en el circuito viejo de remito siguen con su
             tarjeta, y las de otro tipo con renglones de OC ya imputados,
             con la de factura contra orden. */}
-        {vaContraOc(iniciales.tipoFactura?.valor) &&
+        {/* Remito: cada renglon va contra la factura que recibe, no contra
+            una OC (2026-11-16, pedido del usuario). */}
+        {iniciales.tipoFactura?.valor === 'remito' ? (
+          <RenglonesRemito
+            comprobanteId={comprobanteId}
+            codProvee={codProvee}
+            renglones={renglones}
+            seriesPdf={seriesPdf}
+            soloLectura={soloLectura}
+            version={auditoria.length}
+          />
+        ) : vaContraOc(iniciales.tipoFactura?.valor) &&
         !renglones.some((r) => r.remitoNcompInS !== null) ? (
           <RenglonesFactura
-            esRemito={iniciales.tipoFactura?.valor === 'remito'}
             comprobanteId={comprobanteId}
             codProvee={codProvee}
             renglones={renglones}

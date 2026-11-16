@@ -1,0 +1,240 @@
+/* Los renglones de un remito y la factura de cada uno (2026-11-16). Misma
+   tarjeta y misma tipografía que la tabla de la factura de artículos. */
+.tarjeta {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0 18px 4px;
+}
+
+.encabezado {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 0 10px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.titulo,
+.etiqueta,
+.header {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-subtle);
+}
+
+.titulo {
+  margin: 0;
+}
+
+.resumen {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.aviso {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  font-size: 12px;
+  color: var(--warning);
+}
+
+.avisoError {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.vacio {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* La factura para todo el remito. */
+.general {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 0;
+}
+
+.select {
+  height: var(--field-h);
+  max-width: 100%;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.selectVacio {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+/* El cartel: renglones sin factura de referencia. Ámbar hasta que el
+   operador confirma; después, informativo. */
+.cartel,
+.cartelConfirmado {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.cartelConfirmado {
+  border-color: var(--info);
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.cartelTexto {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.confirmar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tabla {
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+/* Ocho columnas: lo del papel (#, código, descripción, cantidad), el
+   artículo de Tango, la factura, lo que le falta recibir y la OC heredada. */
+.fila {
+  display: grid;
+  grid-template-columns: 24px 120px minmax(220px, 1fr) 56px minmax(220px, 1fr) 300px 84px 120px;
+  column-gap: 10px;
+  align-items: start;
+  min-width: 1240px;
+}
+
+.header {
+  padding: 6px 0 8px;
+}
+
+.renglon {
+  padding: 8px 0;
+  border-top: 1px solid var(--divider);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.der {
+  text-align: right;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.tenue {
+  color: var(--text-muted);
+}
+
+.codigo {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.descripcion {
+  overflow-wrap: anywhere;
+}
+
+.articulo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.excede {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.alerta {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.vincular {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vincularControles {
+  display: flex;
+  gap: 6px;
+}
+
+.inputCodigo {
+  width: 120px;
+  height: var(--field-h);
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.boton {
+  height: var(--field-h);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.boton:hover:not(:disabled) {
+  background: var(--surface-alt);
+}
+
+.boton:disabled {
+  cursor: default;
+  color: var(--text-subtle);
+}
+
+.explicacion {
+  margin: 0;
+  padding: 10px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Solo lectura: el remito ya registrado. */
+.filaLectura {
+  display: grid;
+  grid-template-columns: 140px 1fr 70px 260px;
+  column-gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--divider);
+  font-size: 12.5px;
+}

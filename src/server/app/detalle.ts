@@ -51,6 +51,25 @@ export type RenglonGuardado = RenglonExtraido & {
   ocPendiente: string | null
   /** El renglón del PDF del que salió (PHF_RENGLON_PDF.ORDEN). Ver descuentoGlobal.ts. */
   pdfOrden: number | null
+  /**
+   * Remito (2026-11-16): el renglón de la factura de compra ya registrada en
+   * Tango que este renglón recibe (clave de CPA46), o `null` si va sin
+   * factura de referencia. Ver src/server/app/remitoFactura.ts.
+   */
+  factura: RenglonFacturaRef | null
+  /** El operador eligió la factura (o ninguna): la propuesta automática no lo pisa. */
+  facturaElegida: boolean
+}
+
+/** Un renglón de una factura de compra de Tango (CPA46), visto desde un remito. */
+export type RenglonFacturaRef = {
+  tcompInC: string
+  ncompInC: number
+  nRenglC: number
+  /** El número impreso de la factura (CPA04.N_COMP), para mostrar. */
+  nComp: string | null
+  /** Lo que el renglón tenía sin remito al elegirlo (CPA46.FALTA_REM). Foto. */
+  faltaRem: string | null
 }
 
 export type EntradaAuditoria = { fecha: Date; texto: string; usuario: string }
@@ -236,7 +255,8 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       SELECT ID, ORDEN, CODIGO_IA, DESCRIPCION_IA, CANTIDAD_IA,
              PRECIO_UNITARIO_IA, IMPORTE_IA, REMITO_NCOMP_IN_S, REMITO_N_RENGL_S,
              REMITO_NUMERO, CANTIDAD_REMITO, CODIGO_FINAL, PORC_BONIF, COD_PROVEEDOR,
-             OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN
+             OC_N_ORDEN_CO, OC_TALONARIO, OC_N_RENGL_OC, OC_PENDIENTE, PDF_ORDEN,
+             FAC_TCOMP_IN_C, FAC_NCOMP_IN_C, FAC_N_RENGL_C, FAC_N_COMP, FAC_FALTA_REM, FAC_ELEGIDA
       FROM PHF_RENGLON WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
       SELECT FECHA, TEXTO, USUARIO
@@ -282,6 +302,17 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       ocNRenglOc: x.OC_N_RENGL_OC === null ? null : Number(x.OC_N_RENGL_OC),
       ocPendiente: x.OC_PENDIENTE === null ? null : String(x.OC_PENDIENTE),
       pdfOrden: x.PDF_ORDEN === null ? null : Number(x.PDF_ORDEN),
+      factura:
+        x.FAC_NCOMP_IN_C === null || x.FAC_N_RENGL_C === null
+          ? null
+          : {
+              tcompInC: String(x.FAC_TCOMP_IN_C ?? 'FP').trim(),
+              ncompInC: Number(x.FAC_NCOMP_IN_C),
+              nRenglC: Number(x.FAC_N_RENGL_C),
+              nComp: x.FAC_N_COMP === null ? null : String(x.FAC_N_COMP),
+              faltaRem: x.FAC_FALTA_REM === null ? null : String(x.FAC_FALTA_REM),
+            },
+      facturaElegida: Boolean(x.FAC_ELEGIDA),
     })),
     renglonesPdf: rp.map((x) => ({
       id: Number(x.ID),

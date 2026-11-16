@@ -43,6 +43,8 @@ import { reglaDeProveedorEn } from './lecturaProveedor'
 import { analizaCampo, tipoFacturaODefault, vaContraOc } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 import { revisarSeriesEn } from './series'
+import { validarFacturasRemito } from '@/lib/remitoFactura'
+import { remitoSinReferenciaEn } from './remitoFactura'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -318,7 +320,21 @@ export async function validarListoParaRegistrarEn(
       alNuestro,
     )
   }
-  const ordenCompra = validarCotejoOc(valores.tipoFactura, conOc.length > 0, cotejoOc)
+  // Un remito ya no va contra la OC sino contra la factura que recibe
+  // (2026-11-16): el item de la orden muestra a que factura va cada renglon.
+  const ordenCompra =
+    valores.tipoFactura === 'remito'
+      ? validarFacturasRemito(
+          detalle.renglones.map((r) => ({
+            codArticu: (r.codigoFinal ?? r.codigo ?? '').trim(),
+            cantidad: parsearImporte(r.cantidad),
+            factura: r.factura
+              ? { nComp: r.factura.nComp, faltaRem: r.factura.faltaRem === null ? null : Number(r.factura.faltaRem) }
+              : null,
+          })),
+          await remitoSinReferenciaEn(e, id),
+        )
+      : validarCotejoOc(valores.tipoFactura, conOc.length > 0, cotejoOc)
 
   // Contra las cantidades del RENGLON, que son las que se van a registrar --
   // el cotejo de arriba mira las que leyo la IA del PDF, y dejan de ser lo
@@ -427,7 +443,7 @@ export async function validarListoParaRegistrarEn(
   const renglonesRemito: ResultadoValidacion | null = !esRemito
     ? null
     : detalle.renglones.length === 0
-      ? { estado: 'error', mensaje: 'El remito no tiene renglones para registrar: imputale la orden de compra.' }
+      ? { estado: 'error', mensaje: 'El remito no tiene renglones para registrar: reprocesá el comprobante.' }
       : sinArticulo.length > 0
         ? { estado: 'error', mensaje: `Hay ${sinArticulo.length} renglón(es) sin artículo de Tango.` }
         : seriesMal.length > 0

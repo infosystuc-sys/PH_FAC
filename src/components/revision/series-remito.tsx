@@ -10,11 +10,17 @@ import styles from './series-remito.module.css'
 
 const VACIA: Serie = { nSerie: '', desc1: '', desc2: '', comentario: '' }
 
-/** Una fila por unidad: lo guardado y, si falta, filas vacías hasta la cantidad. */
+/**
+ * Una fila por unidad: lo guardado y, si falta, filas vacías hasta la
+ * cantidad. Si el servidor propone un color (NEWSAN, 2026-11-16: lo que
+ * sigue a los 12 caracteres del código impreso), va como DESC2 en las
+ * unidades que no lo tienen.
+ */
 function filasDe(r: RenglonConSerie): Serie[] {
   const unidades = Number.isInteger(r.cantidad) && r.cantidad > 0 ? r.cantidad : r.series.length
-  const filas = r.series.map((s) => ({ ...s }))
-  while (filas.length < unidades) filas.push({ ...VACIA })
+  const color = r.desc2Propuesto ?? ''
+  const filas = r.series.map((s) => ({ ...s, desc2: s.desc2 || color }))
+  while (filas.length < unidades) filas.push({ ...VACIA, desc2: color })
   return filas
 }
 

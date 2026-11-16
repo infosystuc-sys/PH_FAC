@@ -3,7 +3,7 @@ import { getPool } from '../db/pool'
 import { tieneColumna } from './esquema'
 import type { CriterioOc } from '@/lib/tipoFactura'
 import { normalizarCodigo } from '@/lib/cotejoOc'
-import { codigoParaSinonimo } from '@/lib/codigoProveedor'
+import { codigoParaSinonimo, prefijoDeRespaldo } from '@/lib/codigoProveedor'
 
 export type ArticuloTango = {
   codArticu: string
@@ -58,6 +58,8 @@ export async function buscarArticulos(
     // Contra CPA15, con la regla de largo del proveedor si tiene (IMSA):
     // pegar el codigo impreso entero tiene que encontrar su sinonimo.
     .input('sinonimo', sql.VarChar(60), codigoParaSinonimo(codProvee, t))
+    // Y el respaldo de NEWSAN (2026-11-16): los 12 primeros de los dos lados.
+    .input('prefijo', sql.VarChar(60), prefijoDeRespaldo(codProvee, t)?.toUpperCase() ?? null)
     .input('like', sql.VarChar(62), `${t}%`)
     .input('contiene', sql.NVarChar(64), `%${t}%`)
     .input('lim', sql.Int, MAX_RESULTADOS)
@@ -91,7 +93,9 @@ export async function buscarArticulos(
         ON sin.COD_ARTICU = a.COD_ARTICU
        AND @prov IS NOT NULL
        AND LTRIM(RTRIM(sin.COD_PROVEE)) = @prov
-       AND LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @sinonimo
+       AND (LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @sinonimo
+            OR (@prefijo IS NOT NULL
+                AND UPPER(LEFT(LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))), LEN(@prefijo))) = @prefijo))
       WHERE sin.COD_ARTICU IS NOT NULL
          OR LTRIM(RTRIM(ISNULL(a.COD_BARRA,''))) = @exacto
          OR LTRIM(RTRIM(a.COD_ARTICU))           = @exacto
@@ -203,13 +207,34 @@ export async function articulosPorSinonimo(
   codProvee: string,
   sinonimos: string[],
 ): Promise<Map<string, string>> {
+  const m = new Map<string, string>()
+  for (const [entero, e] of await emparejarSinonimos(codProvee, sinonimos)) m.set(entero, e.art)
+  return m
+}
+
+/**
+ * Lo mismo que `articulosPorSinonimo`, diciendo además si el artículo salió
+ * del respaldo por los primeros caracteres (NEWSAN, 2026-11-16: ver
+ * `LARGO_RESPALDO_POR_PROVEEDOR` en `codigoProveedor.ts`). En ese caso lo
+ * que sigue en el código impreso es el color.
+ *
+ * El respaldo solo se usa si el código entero no aparece, y solo si los
+ * primeros caracteres llevan a UN único artículo del proveedor: dos modelos
+ * que compartan el principio quedan sin emparejar, para el operador.
+ */
+export async function emparejarSinonimos(
+  codProvee: string,
+  sinonimos: string[],
+): Promise<Map<string, { art: string; porPrefijo: boolean }>> {
   const prov = codProvee.trim()
-  // codigo entero normalizado -> la parte que se busca, normalizada
-  const buscados = new Map<string, string>()
+  // codigo entero normalizado -> la parte que se busca y el respaldo, normalizados
+  const buscados = new Map<string, { parte: string; prefijo: string | null }>()
   for (const s of sinonimos) {
     const entero = normalizarCodigo(s)
     const parte = normalizarCodigo(codigoParaSinonimo(prov, s))
-    if (entero !== '' && parte !== '') buscados.set(entero, parte)
+    const crudo = prefijoDeRespaldo(prov, s)
+    const prefijo = crudo === null ? null : normalizarCodigo(crudo) || null
+    if (entero !== '' && parte !== '') buscados.set(entero, { parte, prefijo })
   }
   if (!prov || buscados.size === 0) return new Map()
 
@@ -225,12 +250,31 @@ export async function articulosPorSinonimo(
     `)
 
   const artPorSinonimo = new Map<string, string>()
-  for (const f of r.recordset) artPorSinonimo.set(normalizarCodigo(String(f.sinonimo)), String(f.art))
+  // Los primeros N caracteres de cada sinonimo guardado -> los articulos que
+  // los usan. Recortado igual que el impreso, antes de normalizar; uno que
+  // no pasa de N cuenta entero.
+  const artsPorPrefijo = new Map<string, Set<string>>()
+  for (const f of r.recordset) {
+    const sinonimo = String(f.sinonimo)
+    const art = String(f.art)
+    artPorSinonimo.set(normalizarCodigo(sinonimo), art)
+    const clave = normalizarCodigo(prefijoDeRespaldo(prov, sinonimo) ?? sinonimo)
+    if (clave === '') continue
+    const arts = artsPorPrefijo.get(clave) ?? new Set<string>()
+    arts.add(art)
+    artsPorPrefijo.set(clave, arts)
+  }
 
-  const m = new Map<string, string>()
-  for (const [entero, parte] of buscados) {
+  const m = new Map<string, { art: string; porPrefijo: boolean }>()
+  for (const [entero, { parte, prefijo }] of buscados) {
     const art = artPorSinonimo.get(parte)
-    if (art !== undefined) m.set(entero, art)
+    if (art !== undefined) {
+      m.set(entero, { art, porPrefijo: false })
+      continue
+    }
+    if (prefijo === null) continue
+    const arts = artsPorPrefijo.get(prefijo)
+    if (arts && arts.size === 1) m.set(entero, { art: [...arts][0], porPrefijo: true })
   }
   return m
 }

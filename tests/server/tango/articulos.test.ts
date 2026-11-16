@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { buscarArticulos, sinonimosDelProveedor, articulosPorSinonimo } from '@/server/tango/articulos'
+import { buscarArticulos, sinonimosDelProveedor, articulosPorSinonimo, emparejarSinonimos } from '@/server/tango/articulos'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { conRollback } from '@/server/db/tx'
@@ -231,5 +231,60 @@ describe('regla de largo de IMSA', () => {
     const r = await buscarArticulos(`${x.sinonimo}AZUL2026`, '010337')
     expect(r[0]?.codArticu).toBe(String(x.art))
     expect(r[0]?.porQue).toBe('código del proveedor')
+  })
+})
+
+/**
+ * NEWSAN (`010003`, 2026-11-16): primero el código entero; de respaldo, los
+ * 12 primeros contra los 12 primeros de los sinónimos cargados, solo si
+ * llevan a un único artículo. Con un sinónimo real, descubierto.
+ */
+describe('respaldo de 12 caracteres de NEWSAN', () => {
+  /** Un sinónimo de Newsan de 12 o más cuyos 12 primeros son de un solo artículo. */
+  async function sinonimoNewsan() {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(c.COD_ARTICU)) AS art, LTRIM(RTRIM(c.COD_SINONI)) AS sinonimo
+      FROM CPA15 c
+      WHERE LTRIM(RTRIM(c.COD_PROVEE)) = '010003'
+        AND LEN(LTRIM(RTRIM(ISNULL(c.COD_SINONI,'')))) >= 12
+        AND NOT EXISTS (
+          SELECT 1 FROM CPA15 o
+          WHERE LTRIM(RTRIM(o.COD_PROVEE)) = '010003' AND o.COD_ARTICU <> c.COD_ARTICU
+            AND LEFT(LTRIM(RTRIM(ISNULL(o.COD_SINONI,''))), 12) = LEFT(LTRIM(RTRIM(c.COD_SINONI)), 12))
+      ORDER BY c.COD_ARTICU`)
+    return r.recordset[0] ?? null
+  }
+
+  it('el codigo entero sigue encontrandose, sin respaldo', async () => {
+    const x = await sinonimoNewsan()
+    if (!x) return
+    const m = await emparejarSinonimos('010003', [String(x.sinonimo)])
+    expect(m.get(normalizarCodigo(String(x.sinonimo)))).toEqual({ art: String(x.art), porPrefijo: false })
+  })
+
+  it('otro color del mismo modelo se encuentra por los 12 primeros', async () => {
+    const x = await sinonimoNewsan()
+    if (!x) return
+    const impreso = `${String(x.sinonimo).slice(0, 12)}VERDEAGUA`
+    const m = await emparejarSinonimos('010003', [impreso])
+    expect(m.get(normalizarCodigo(impreso))).toEqual({ art: String(x.art), porPrefijo: true })
+    const a = await articulosPorSinonimo('010003', [impreso])
+    expect(a.get(normalizarCodigo(impreso))).toBe(String(x.art))
+  })
+
+  it('el buscador encuentra el articulo pegando el codigo de otro color', async () => {
+    const x = await sinonimoNewsan()
+    if (!x) return
+    const r = await buscarArticulos(`${String(x.sinonimo).slice(0, 12)}VERDEAGUA`, '010003')
+    expect(r.map((a) => a.codArticu)).toContain(String(x.art))
+    expect(r[0]?.porQue).toBe('código del proveedor')
+  })
+
+  it('otro proveedor no tiene respaldo', async () => {
+    const x = await sinonimoNewsan()
+    if (!x) return
+    const m = await emparejarSinonimos('010337', [`${String(x.sinonimo).slice(0, 12)}VERDEAGUA`])
+    expect(m.size).toBe(0)
   })
 })

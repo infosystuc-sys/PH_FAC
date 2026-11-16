@@ -3,6 +3,9 @@ import { normalizarSerie, problemaSeries, LARGO_SERIE, type Serie } from '@/lib/
 import type { ReglaSeries } from '@/lib/seriesProveedor'
 import { parsearImporte } from '@/lib/formato'
 import { articulosConSerie, seriesYaEnStock } from '@/server/tango/series'
+import { emparejarSinonimos } from '@/server/tango/articulos'
+import { prefijoDeRespaldo, restoDelCodigo } from '@/lib/codigoProveedor'
+import { normalizarCodigo } from '@/lib/cotejoOc'
 
 /**
  * Las series que carga el operador para los renglones de un remito cuyo
@@ -184,6 +187,43 @@ export type RenglonConSerie = {
   origen: OrigenSeries
   /** Lo que falta o está mal, o `null` si se puede registrar. */
   problema: string | null
+  /**
+   * El color que se propone como DESC2 en las unidades que no lo tienen:
+   * lo que sigue a los 12 caracteres del código impreso, si el artículo se
+   * encontró por el respaldo de NEWSAN (2026-11-16). `null` si no aplica.
+   */
+  desc2Propuesto: string | null
+}
+
+/** Para proponer el color: el proveedor y el código impreso de cada renglón del PDF. */
+export type ContextoColor = {
+  codProvee: string | null
+  impresoPorPdf: Map<number, string>
+}
+
+/**
+ * El color de cada renglón (por ID) cuyo artículo salió del respaldo por
+ * los primeros caracteres del código impreso (ver `restoDelCodigo`).
+ */
+async function coloresPropuestos(
+  renglones: RenglonParaSeries[],
+  ctx: ContextoColor | undefined,
+): Promise<Map<number, string>> {
+  const colores = new Map<number, string>()
+  const prov = (ctx?.codProvee ?? '').trim()
+  if (!ctx || !prov) return colores
+  const impreso = (r: RenglonParaSeries) => (r.pdfOrden !== null ? ctx.impresoPorPdf.get(r.pdfOrden) ?? '' : '').trim()
+  const candidatos = renglones.filter((r) => impreso(r) !== '' && prefijoDeRespaldo(prov, impreso(r)) !== null)
+  if (candidatos.length === 0) return colores
+  const emparejados = await emparejarSinonimos(prov, candidatos.map(impreso))
+  for (const r of candidatos) {
+    const e = emparejados.get(normalizarCodigo(impreso(r)))
+    const art = (r.codigoFinal ?? r.codigo ?? '').trim()
+    if (!e || !e.porPrefijo || e.art !== art) continue
+    const color = restoDelCodigo(prov, impreso(r)).slice(0, LARGO_SERIE.desc2)
+    if (color) colores.set(r.id, color)
+  }
+  return colores
 }
 
 /**
@@ -197,12 +237,17 @@ export async function revisarSeriesEn(
   e: Ejecutor,
   comprobanteId: number,
   renglones: RenglonParaSeries[],
+  contextoColor?: ContextoColor,
 ): Promise<RenglonConSerie[]> {
   const codigoDe = (r: RenglonParaSeries) => (r.codigoFinal ?? r.codigo ?? '').trim()
   // Secuencial: `e` puede ser una transaccion (ver validaciones.ts).
   const conSerie = await articulosConSerie(renglones.map(codigoDe), e)
   if (conSerie.size === 0) return []
   const efectivas = await seriesEfectivasEn(e, comprobanteId, renglones)
+  const colores = await coloresPropuestos(
+    renglones.filter((r) => conSerie.has(codigoDe(r))),
+    contextoColor,
+  )
 
   const resultado: RenglonConSerie[] = []
   const vistas = new Map<string, number>()
@@ -230,7 +275,10 @@ export async function revisarSeriesEn(
           `(depósito ${enStock[0].deposito}).`
       }
     }
-    resultado.push({ renglonId: r.id, codArticu, descripcion: r.descripcion, cantidad, series, origen, problema })
+    resultado.push({
+      renglonId: r.id, codArticu, descripcion: r.descripcion, cantidad, series, origen, problema,
+      desc2Propuesto: colores.get(r.id) ?? null,
+    })
   }
   return resultado
 }

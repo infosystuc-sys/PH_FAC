@@ -75,6 +75,7 @@ const DEFINICIONES: Definicion[] = [
         IA_TOKENS_SALIDA    INT            NULL,
         IA_TOKENS_CACHE_LECTURA   INT      NULL,
         IA_TOKENS_CACHE_ESCRITURA INT      NULL,
+        REMITO_SIN_REFERENCIA BIT          NOT NULL CONSTRAINT DF_PHF_COMP_REMSINREF DEFAULT 0,
         FECHA_ALTA          DATETIME2      NOT NULL CONSTRAINT DF_PHF_COMP_ALTA DEFAULT SYSDATETIME(),
         USUARIO_ALTA        NVARCHAR(60)   NOT NULL,
         FECHA_MODIF         DATETIME2      NULL,
@@ -146,6 +147,13 @@ const DEFINICIONES: Definicion[] = [
       { nombre: 'IA_TOKENS_SALIDA', ddl: 'IA_TOKENS_SALIDA INT NULL' },
       { nombre: 'IA_TOKENS_CACHE_LECTURA', ddl: 'IA_TOKENS_CACHE_LECTURA INT NULL' },
       { nombre: 'IA_TOKENS_CACHE_ESCRITURA', ddl: 'IA_TOKENS_CACHE_ESCRITURA INT NULL' },
+      // Remito: el operador confirmó grabar sin factura de referencia los
+      // renglones que no tienen ninguna (2026-11-16, pedido del usuario).
+      // Ver src/server/app/remitoFactura.ts.
+      {
+        nombre: 'REMITO_SIN_REFERENCIA',
+        ddl: 'REMITO_SIN_REFERENCIA BIT NOT NULL CONSTRAINT DF_PHF_COMP_REMSINREF DEFAULT 0',
+      },
     ],
   },
   {
@@ -266,6 +274,12 @@ const DEFINICIONES: Definicion[] = [
         OC_N_RENGL_OC       INT            NULL,
         OC_PENDIENTE        DECIMAL(19,4)  NULL,
         PDF_ORDEN           INT            NULL,
+        FAC_TCOMP_IN_C      VARCHAR(2)     NULL,
+        FAC_NCOMP_IN_C      FLOAT          NULL,
+        FAC_N_RENGL_C       INT            NULL,
+        FAC_N_COMP          VARCHAR(20)    NULL,
+        FAC_FALTA_REM       DECIMAL(19,4)  NULL,
+        FAC_ELEGIDA         BIT            NOT NULL CONSTRAINT DF_PHF_RENGLON_FACELEGIDA DEFAULT 0,
         CONSTRAINT PK_PHF_RENGLON PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_RENGLON UNIQUE (COMPROBANTE_ID, ORDEN),
         CONSTRAINT FK_PHF_RENGLON_COMP FOREIGN KEY (COMPROBANTE_ID)
@@ -326,6 +340,21 @@ const DEFINICIONES: Definicion[] = [
       // impreso (ver descuentoGlobal.ts): sin este vinculo no hay forma de
       // saber que subtotal le corresponde a que renglon de la OC.
       { nombre: 'PDF_ORDEN', ddl: 'PDF_ORDEN INT NULL' },
+      // Remito: el renglón de la FACTURA de compra ya registrada en Tango
+      // que este renglón recibe (2026-11-16, pedido del usuario: el remito
+      // se vincula a una factura, no a una OC). TCOMP_IN_C + NCOMP_IN_C +
+      // N_RENGL_C son la clave de CPA46; N_COMP y FALTA_REM son una foto
+      // para mostrar, como OC_PENDIENTE. FAC_ELEGIDA: el operador decidió
+      // (una factura o ninguna) y la propuesta automática ya no lo pisa.
+      { nombre: 'FAC_TCOMP_IN_C', ddl: 'FAC_TCOMP_IN_C VARCHAR(2) NULL' },
+      { nombre: 'FAC_NCOMP_IN_C', ddl: 'FAC_NCOMP_IN_C FLOAT NULL' },
+      { nombre: 'FAC_N_RENGL_C', ddl: 'FAC_N_RENGL_C INT NULL' },
+      { nombre: 'FAC_N_COMP', ddl: 'FAC_N_COMP VARCHAR(20) NULL' },
+      { nombre: 'FAC_FALTA_REM', ddl: 'FAC_FALTA_REM DECIMAL(19,4) NULL' },
+      {
+        nombre: 'FAC_ELEGIDA',
+        ddl: 'FAC_ELEGIDA BIT NOT NULL CONSTRAINT DF_PHF_RENGLON_FACELEGIDA DEFAULT 0',
+      },
     ],
   },
   {
