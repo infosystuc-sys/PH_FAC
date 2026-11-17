@@ -194,6 +194,12 @@ export function parsearRenglones(crudo: unknown): RenglonExtraido[] {
 export async function extraerDePdf(
   pdf: Buffer,
   tipo: TipoFactura,
+  /**
+   * Una regla de lectura del proveedor (ver src/lib/liquidacionProveedor.ts,
+   * 2026-11-16). Va en un bloque aparte, DESPUÉS del prompt cacheado, para
+   * que el prompt del tipo se siga reusando entre comprobantes.
+   */
+  instruccionProveedor?: string,
 ): Promise<ResultadoExtraccion> {
   const arranque = Date.now()
   let usage: UsoTokens | undefined
@@ -213,6 +219,7 @@ export async function extraerDePdf(
           text: PROMPTS_EXTRACCION[tipo],
           cache_control: { type: 'ephemeral' },
         },
+        ...(instruccionProveedor ? [{ type: 'text' as const, text: instruccionProveedor }] : []),
       ],
       messages: [
         {

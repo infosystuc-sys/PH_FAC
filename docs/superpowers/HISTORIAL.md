@@ -2,6 +2,17 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Regla de subtotal de CASTILLO / CrediCash (2026-11-16)
+
+Pedido del usuario, con la liquidación CrediCash 959223 (ID 35149): "no tengan en cuenta el importe de ventas y el neto a pagar; el subtotal son todos los conceptos del recuadro menos los impuestos". Se había importado como factura de conceptos: la IA dejó el neto vacío y tomó el neto a pagar (576.029,00) como total. Con las cifras del PDF, la regla da 403,00 + 28.690,66 + 267.779,49 = 296.873,15, que es exactamente lo que implica el IVA 21% impreso (62.343,36).
+
+- `src/lib/liquidacionProveedor.ts`: `REGLAS_LIQUIDACION`, por CUIT de la procesadora, con el proveedor de Tango y la instrucción para la IA (incluye las trampas del papel: el "ARANCEL 3.00" del encabezado es un porcentaje, el "Impuesto al débito" es un impuesto).
+- `extraerDePdf` acepta una instrucción del proveedor, en un bloque aparte del prompt cacheado.
+- `procesarUno` (`cola.ts`): si el CUIT leído tiene regla, relee como tarjeta con la instrucción (segundo llamado, solo para ese proveedor), pasa `TIPO_FACTURA` a tarjeta y asigna el proveedor. Queda en el historial.
+- Se compara por los 10 primeros dígitos del CUIT: en dos lecturas del mismo PDF la IA leyó el verificador como 2 y como 3.
+- Probado con un llamado real sobre el PDF (sin grabar): 7 cargos, neto 296.873,15. Tests en `tests/lib/liquidacionProveedor.test.ts`. Suite 1029/1030 (el de siempre).
+- El comprobante 35149 se leyó antes de la regla: hay que reprocesarlo.
+
 ## Un solo cartel cuando ninguna OC tiene pendiente (2026-11-16)
 
 Pedido del usuario, con una factura de NEWSAN de tres renglones del 105440: cada renglón repetía "Cargá o ampliá la OC en Tango y volvé a abrir el comprobante". Ahora los renglones que son un artículo de Tango sin pendiente en ninguna OC del proveedor se juntan en un cartel arriba de la tabla (`renglones-factura.tsx`), con los artículos y el botón "Volver a buscar en Tango". El botón corre "Revalidar contra Tango" (sin IA, conserva las correcciones) y vuelve a pedir las órdenes. `ProblemaRenglon` ya no muestra ese caso por renglón (`ocultarSinPendiente`); la opción "Es un cargo: registrar sin OC" para esos renglones dejó de verse ahí.

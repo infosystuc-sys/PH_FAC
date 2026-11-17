@@ -48,6 +48,7 @@ import { reglaSeriesDe } from '@/lib/seriesProveedor'
 import { extraerSeries } from '../ia/series'
 import { guardarSeriesPdfEn } from './series'
 import { sincronizarRenglonesRemitoEn } from './remitoFactura'
+import { reglaLiquidacionPorCuit } from '@/lib/liquidacionProveedor'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -263,17 +264,37 @@ async function leerSeriesDelPdf(
 }
 
 /** Extrae un comprobante y deja el resultado en la base. No lanza. */
-export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise<void> {
+export async function procesarUno({ id, ruta, tipoFactura: tipoImportado }: Pendiente): Promise<void> {
   try {
     const pdf = await leerPdf(ruta)
-    const r = await extraerDePdf(pdf, tipoFactura)
+    const primera = await extraerDePdf(pdf, tipoImportado)
     // Suelto, antes y fuera de toda transacción: si lo que sigue falla y se
     // revierte, los tokens ya se pagaron y tienen que quedar contados.
-    await sumarUsoIaEn(await getPool(), id, r.usage)
+    await sumarUsoIaEn(await getPool(), id, primera.usage)
 
-    if (!r.ok) {
-      await conTransaccion((tx) => marcarFalloEn(tx, id, r.error))
+    if (!primera.ok) {
+      await conTransaccion((tx) => marcarFalloEn(tx, id, primera.error))
       return
+    }
+
+    // Un proveedor con regla propia de liquidacion, reconocido por el CUIT
+    // impreso (2026-11-16, CASTILLO / CrediCash): se vuelve a leer como
+    // liquidacion de tarjeta, aunque se haya importado como otro tipo, con
+    // la instruccion del proveedor. Si esa segunda lectura falla, sigue lo
+    // de la primera y queda anotado.
+    let r = primera
+    let tipoFactura = tipoImportado
+    const reglaLiq = reglaLiquidacionPorCuit(primera.extraccion.campos.cuit?.valor ?? null)
+    let falloReglaLiq: string | null = null
+    if (reglaLiq) {
+      const segunda = await extraerDePdf(pdf, 'tarjeta', reglaLiq.instruccion)
+      await sumarUsoIaEn(await getPool(), id, segunda.usage)
+      if (segunda.ok) {
+        r = segunda
+        tipoFactura = 'tarjeta'
+      } else {
+        falloReglaLiq = segunda.error
+      }
     }
 
     const valores = Object.fromEntries(
@@ -303,7 +324,30 @@ export async function procesarUno({ id, ruta, tipoFactura }: Pendiente): Promise
         })
       }
       await desnormalizarBandejaEn(tx, id, r.extraccion)
-      const cod = await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
+      let cod = await resolverProveedorEn(tx, id, r.extraccion.campos.cuit?.valor ?? null)
+
+      // La regla de liquidacion del proveedor (ver arriba): el tipo pasa a
+      // tarjeta y el proveedor es el de la regla, aunque el CUIT no lleve
+      // solo a el en Tango.
+      if (reglaLiq) {
+        if (tipoFactura !== tipoImportado) {
+          await tx.request().input('id', sql.Int, id).input('t', sql.VarChar(20), tipoFactura)
+            .query('UPDATE PHF_COMPROBANTE SET TIPO_FACTURA = @t WHERE ID = @id')
+        }
+        if (cod !== reglaLiq.codProvee) {
+          await guardarCampoEn(tx, id, 'codprovee', reglaLiq.codProvee, { corregidoPorUsuario: false })
+          cod = reglaLiq.codProvee
+        }
+        await auditarEn(
+          tx,
+          id,
+          falloReglaLiq
+            ? `Regla de liquidación de ${reglaLiq.nombre}: no se pudo releer (${falloReglaLiq.slice(0, 150)})`
+            : `Regla de liquidación de ${reglaLiq.nombre}: leído como liquidación de tarjeta` +
+                (tipoImportado !== 'tarjeta' ? ` (se había importado como ${tipoImportado})` : '') +
+                ', subtotal = conceptos del recuadro sin impuestos',
+        )
+      }
       await resolverCondicionCompraEn(tx, id, cod, r.extraccion.campos.condpago?.valor ?? null)
 
       // Antes del bloque de tarjeta: `ajustarNetoConIvaEn` deriva el neto de
