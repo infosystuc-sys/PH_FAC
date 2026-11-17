@@ -82,7 +82,7 @@ Los componentes importan cada server action de su archivo, no hay un índice com
 10. **`PHF_COMPROBANTE.NUMERO` tiene dos convenciones:** los de `pnpm seed` lo guardan con el punto de venta (`"0003-00018742"`), los reales por separado. La bandeja y la barra de acciones muestran `NUMERO` solo, por eso.
 11. **`buscarProveedorPorCuit` (singular)** ya no tiene callers de producción, solo tests. Candidato a borrar.
 12. **Selector manual de remito** en la revisión: hoy el remito que consume una factura se elige solo (el más viejo). Solo si aparecen casos que lo pidan.
-13. **Regla de series del segundo proveedor de motos.** IMSA ya lee chasis, motor y color del comprobante (2026-11-05); el usuario va a pasar cómo trae los datos el otro proveedor. Se agrega en `REGLAS_SERIES_POR_PROVEEDOR` (`src/lib/seriesProveedor.ts`).
+13. ~~Regla de series del segundo proveedor de motos~~ — NEWSAN, hecho el 2026-11-16. Otro proveedor se agrega en `REGLAS_SERIES_POR_PROVEEDOR` (`src/lib/seriesProveedor.ts`).
 
 ---
 
@@ -102,7 +102,7 @@ Están documentadas junto al código que las aplica: buscá "decisión del usuar
 - **La app no graba en ninguna tabla `CTA*`** (2026-11-03): si hace falta el espejo de Tango Central, lo tiene que llenar Tango.
 - **IMSA (`010337`) se busca en `CPA15` por los 8 primeros caracteres del código impreso** (2026-11-04), y el sinónimo que enseña el operador se guarda recortado igual. Otro proveedor con la misma necesidad se agrega en `LARGO_SINONIMO_POR_PROVEEDOR` (`src/lib/codigoProveedor.ts`).
 - **NEWSAN (`010003`) busca primero el código impreso entero y, de respaldo, los 12 primeros caracteres** contra los 12 primeros de sus sinónimos de `CPA15`, solo si llevan a un único artículo (2026-11-16): las cubiertas traen el color pegado (`CUBQU110BASEROJO` → 105440), los aires tienen sinónimo entero. Al enseñar un sinónimo se sigue guardando entero. Lo que sigue a los 12 es el color: en el remito se propone como `DESC2` de cada serie (`STA06`). Otro proveedor igual se agrega en `LARGO_RESPALDO_POR_PROVEEDOR` (`src/lib/codigoProveedor.ts`).
-- **Los números de serie de un remito**, uno por unidad, se graban en `STA07` y `STA06` al depósito del renglón (2026-11-04). Sin todas las series, el remito no se registra. En IMSA se leen del comprobante: chasis → `N_SERIE`, motor → `DESC1`, color del código → `DESC2`; el `COMENTARIO` es el **DNRPA**, lo carga el operador y es obligatorio (2026-11-05); el primero que se guarda se propone para el resto de las series del remito.
+- **Los números de serie de un remito**, uno por unidad, se graban en `STA07` y `STA06` al depósito del renglón (2026-11-04). Sin todas las series, el remito no se registra. En IMSA se leen del comprobante: chasis → `N_SERIE`, motor → `DESC1`, color del código → `DESC2`; el `COMENTARIO` es el **DNRPA**, lo carga el operador y es obligatorio (2026-11-05); el primero que se guarda se propone para el resto de las series del remito. En NEWSAN (2026-11-16): "Nro VIN" → `N_SERIE`, "Nro Motor" → `DESC1`, el color (lo que sigue a los 12 primeros caracteres del código) → `DESC2`, y el **DNRPA viene impreso** ("Nro DNRPA" → `COMENTARIO`); la columna "Nro Serie" del papel no se usa.
 - **La subida de archivos admite hasta 510 MB por lote** (`next.config.ts`, 2026-11-05): Next corta en 1 MB por defecto.
 - **El precio de última compra (`STA12`) se pisa al registrar aunque la factura sea más vieja** que la última compra que ya tiene, como hace Tango (2026-09-23).
 

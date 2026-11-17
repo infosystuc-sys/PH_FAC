@@ -24,15 +24,20 @@ function getCliente(): Anthropic {
 /** Un renglón ya leído del comprobante, para que el modelo sepa qué buscar. */
 export type RenglonParaSeries = { orden: number; codigo: string | null; cantidad: string | null }
 
-/** Una unidad leída: el número de serie y la descripción adicional 1. */
-export type UnidadLeida = { orden: number; serie: string; adicional1: string }
+/**
+ * Una unidad leída: el número de serie, la descripción adicional 1 y, si el
+ * proveedor lo imprime (NEWSAN), el comentario (el DNRPA).
+ */
+export type UnidadLeida = { orden: number; serie: string; adicional1: string; comentario?: string }
 
 export type ResultadoSeries =
   | { ok: true; unidades: UnidadLeida[]; usage?: UsoTokens }
   | { ok: false; error: string; usage?: UsoTokens }
 
 /** Cadena vacía en vez de null, como los otros schemas (ver lib/campos.ts). */
-function schemaSeries(): Record<string, unknown> {
+function schemaSeries(conComentario: boolean): Record<string, unknown> {
+  const unidad: Record<string, unknown> = { serie: { type: 'string' }, adicional1: { type: 'string' } }
+  if (conComentario) unidad.comentario = { type: 'string' }
   return {
     type: 'object',
     properties: {
@@ -46,8 +51,8 @@ function schemaSeries(): Record<string, unknown> {
               type: 'array',
               items: {
                 type: 'object',
-                properties: { serie: { type: 'string' }, adicional1: { type: 'string' } },
-                required: ['serie', 'adicional1'],
+                properties: unidad,
+                required: Object.keys(unidad),
                 additionalProperties: false,
               },
             },
@@ -66,22 +71,30 @@ export function armarPromptSeries(renglones: RenglonParaSeries[], regla: ReglaSe
   const lista = renglones
     .map((r) => `${r.orden}. código ${r.codigo ?? '(sin código)'}, cantidad ${r.cantidad ?? '?'}`)
     .join('\n')
+  const nombres = [regla.columnaSerie, regla.columnaAdicional1, ...(regla.columnaComentario ? [regla.columnaComentario] : [])]
+  const columnas = nombres.map((n) => `"${n}"`).join(', ').replace(/, ([^,]*)$/, ' y $1')
+  const ignorar = (regla.columnasIgnorar ?? []).length
+    ? `
+NO uses la columna ${regla.columnasIgnorar!.map((n) => `"${n}"`).join(' ni ')}: es otro dato y no va en ningún campo.
+`
+    : ''
   return `Sos un asistente de cuentas a pagar. Te paso un comprobante de compra
 de unidades que llevan número de serie (por ejemplo motos) y la lista de
 sus renglones, ya leídos:
 
 ${lista}
 
-Cada renglón trae, a la derecha o debajo, UNA LÍNEA POR UNIDAD con dos
-columnas: "${regla.columnaSerie}" y "${regla.columnaAdicional1}". Un renglón
-de cantidad 4 tiene cuatro líneas de unidades, aunque el código, la
-descripción y los importes figuren solo en la primera.
+Cada renglón trae, a la derecha o debajo, UNA LÍNEA POR UNIDAD con las
+columnas ${columnas}. Un renglón de cantidad 4 tiene cuatro líneas de
+unidades, aunque el código, la descripción y los importes figuren solo en
+la primera.
 
 Para cada renglón de la lista devolvé su número en "orden" y en "unidades"
 una entrada por cada unidad, en el orden impreso:
 - "serie": lo de la columna "${regla.columnaSerie}".
 - "adicional1": lo de la columna "${regla.columnaAdicional1}".
-
+${regla.columnaComentario ? `- "comentario": lo de la columna "${regla.columnaComentario}".
+` : ''}${ignorar}
 Reglas:
 1. Copiá cada valor EXACTAMENTE como está impreso, con sus espacios
    internos ("162FMJ T3150343"). No corrijas ni completes nada.
@@ -112,7 +125,8 @@ export function parsearSeries(crudo: string): UnidadLeida[] {
       const x = u as Record<string, unknown>
       const serie = texto(x.serie)
       if (!serie) continue
-      salida.push({ orden, serie, adicional1: texto(x.adicional1) })
+      const comentario = texto(x.comentario)
+      salida.push({ orden, serie, adicional1: texto(x.adicional1), ...(comentario ? { comentario } : {}) })
     }
   }
   return salida
@@ -131,7 +145,7 @@ export async function extraerSeries(
       model: MODELO,
       max_tokens: 16000,
       thinking: { type: 'adaptive' },
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: schemaSeries() } },
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: schemaSeries(!!regla.columnaComentario) } },
       system: [{ type: 'text', text: armarPromptSeries(renglones, regla) }],
       messages: [
         {

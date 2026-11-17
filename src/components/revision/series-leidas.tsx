@@ -18,6 +18,8 @@ export function SeriesLeidas({ series, cantidad }: { series: SeriePdfGuardada[];
   const [abierto, setAbierto] = useState(false)
   if (series.length === 0) return null
 
+  // El DNRPA solo se lee del papel en los proveedores que lo imprimen (NEWSAN).
+  const conDnrpa = series.some((s) => s.comentario)
   const noCierra = cantidad !== null && Math.abs(cantidad - series.length) > 0.00005
 
   return (
@@ -33,18 +35,20 @@ export function SeriesLeidas({ series, cantidad }: { series: SeriePdfGuardada[];
       </button>
       {abierto && (
         <div className={styles.lista}>
-          <div className={`${styles.fila} ${styles.header}`}>
+          <div className={`${styles.fila} ${styles.header} ${conDnrpa ? styles.conDnrpa : ''}`}>
             <span>#</span>
             <span title="Va a N_SERIE">Chasis</span>
             <span title="Va a DESC1">Motor</span>
             <span title="Va a DESC2">Color</span>
+            {conDnrpa && <span title="Va a COMENTARIO">DNRPA</span>}
           </div>
           {series.map((s) => (
-            <div key={s.orden} className={styles.fila}>
+            <div key={s.orden} className={`${styles.fila} ${conDnrpa ? styles.conDnrpa : ''}`}>
               <span className={styles.tenue}>{s.orden}</span>
               <span>{s.nSerie}</span>
               <span>{s.desc1 ?? '—'}</span>
               <span>{s.desc2 || '—'}</span>
+              {conDnrpa && <span>{s.comentario || '—'}</span>}
             </div>
           ))}
         </div>

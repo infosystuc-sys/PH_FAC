@@ -1,3 +1,5 @@
+import { restoDelCodigo } from './codigoProveedor'
+
 /**
  * De dónde salen, en el comprobante de cada proveedor, los datos de los
  * números de serie que Tango guarda en `STA06`/`STA07` (2026-11-05, pedido
@@ -19,6 +21,17 @@ export type ReglaSeries = {
   columnaAdicional1: string
   /** DESC2 sale del código del artículo impreso, no de una columna. */
   adicional2DelCodigo: (codigoImpreso: string) => string
+  /**
+   * Cómo se titula la columna que va a COMENTARIO (el DNRPA), si el
+   * proveedor lo imprime. Sin ella lo carga el operador (IMSA).
+   */
+  columnaComentario?: string
+  /**
+   * Columnas del papel que NO hay que leer y que el modelo podría confundir
+   * con las de arriba. NEWSAN imprime "Nro Serie" al lado de "Nro VIN", y
+   * lo que va a N_SERIE es el VIN.
+   */
+  columnasIgnorar?: string[]
 }
 
 /**
@@ -32,6 +45,15 @@ export function colorDelCodigoImsa(codigo: string): string {
 }
 
 /**
+ * NEWSAN imprime el código con el color pegado (`CUBQU110BASEAZUL`): los 12
+ * primeros caracteres son el modelo y lo que sigue, el color. Es la misma
+ * regla con la que se busca el artículo (ver `restoDelCodigo`).
+ */
+export function colorDelCodigoNewsan(codigo: string): string {
+  return restoDelCodigo('010003', codigo)
+}
+
+/**
  * IMPORTADORA MEDITERRANEA SA (IMSA, `010337`), decisión del usuario,
  * 2026-11-05. Cada renglón trae debajo una línea por unidad con las
  * columnas "Motor" y "Chasis".
@@ -41,6 +63,17 @@ export const REGLAS_SERIES_POR_PROVEEDOR: Readonly<Record<string, ReglaSeries>> 
     columnaSerie: 'Chasis',
     columnaAdicional1: 'Motor',
     adicional2DelCodigo: colorDelCodigoImsa,
+  },
+  // NEWSAN (`010003`), decisión del usuario, 2026-11-16. Una línea por
+  // unidad, con las columnas "Nro Serie", "Nro VIN", "Nro Motor" y "Nro
+  // DNRPA": N_SERIE = VIN, DESC1 = motor, DESC2 = el color del código y
+  // COMENTARIO = el DNRPA impreso. El "Nro Serie" no se usa.
+  '010003': {
+    columnaSerie: 'Nro VIN',
+    columnaAdicional1: 'Nro Motor',
+    adicional2DelCodigo: colorDelCodigoNewsan,
+    columnaComentario: 'Nro DNRPA',
+    columnasIgnorar: ['Nro Serie'],
   },
 }
 

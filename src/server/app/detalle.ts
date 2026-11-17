@@ -109,6 +109,8 @@ export type SeriePdfGuardada = {
   nSerie: string
   desc1: string | null
   desc2: string | null
+  /** El DNRPA, si el proveedor lo imprime (NEWSAN). */
+  comentario: string | null
 }
 
 export type Detalle = {
@@ -268,7 +270,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       SELECT ID, ORDEN, CODIGO, DESCRIPCION, CANTIDAD, PRECIO_IMPRESO, SUBTOTAL_IMPRESO
       FROM PHF_RENGLON_PDF WHERE COMPROBANTE_ID = @id ORDER BY ORDEN;
 
-      SELECT PDF_ORDEN, ORDEN, N_SERIE, DESC1, DESC2
+      SELECT PDF_ORDEN, ORDEN, N_SERIE, DESC1, DESC2, COMENTARIO
       FROM PHF_SERIE_PDF WHERE COMPROBANTE_ID = @id ORDER BY PDF_ORDEN, ORDEN;
     `)
 
@@ -329,6 +331,7 @@ export async function obtenerDetalleEn(e: Ejecutor, comprobanteId: number): Prom
       nSerie: String(x.N_SERIE),
       desc1: x.DESC1 === null ? null : String(x.DESC1),
       desc2: x.DESC2 === null ? null : String(x.DESC2),
+      comentario: x.COMENTARIO === null ? null : String(x.COMENTARIO),
     })),
     cargos: cg.map((x) => ({
       id: Number(x.ID),

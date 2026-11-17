@@ -105,7 +105,7 @@ export type OrigenSeries = 'cargadas' | 'leidas' | 'ninguna'
 export async function guardarSeriesPdfEn(
   e: Ejecutor,
   comprobanteId: number,
-  unidades: { orden: number; serie: string; adicional1: string }[],
+  unidades: { orden: number; serie: string; adicional1: string; comentario?: string }[],
   codigoPorOrden: Map<number, string | null>,
   regla: ReglaSeries,
 ): Promise<number> {
@@ -118,6 +118,8 @@ export async function guardarSeriesPdfEn(
     const s = normalizarSerie({
       nSerie: u.serie,
       desc1: u.adicional1,
+      // El DNRPA, si el proveedor lo imprime (NEWSAN, 2026-11-16).
+      comentario: u.comentario ?? '',
       desc2: regla.adicional2DelCodigo(codigoPorOrden.get(u.orden) ?? ''),
     })
     if (!s.nSerie) continue
@@ -130,9 +132,10 @@ export async function guardarSeriesPdfEn(
       .input('serie', sql.NVarChar(30), s.nSerie.slice(0, LARGO_SERIE.nSerie))
       .input('desc1', sql.NVarChar(25), s.desc1.slice(0, LARGO_SERIE.desc1))
       .input('desc2', sql.NVarChar(25), s.desc2.slice(0, LARGO_SERIE.desc2))
+      .input('comentario', sql.NVarChar(25), s.comentario ? s.comentario.slice(0, LARGO_SERIE.comentario) : null)
       .query(`
-        INSERT INTO PHF_SERIE_PDF (COMPROBANTE_ID, PDF_ORDEN, ORDEN, N_SERIE, DESC1, DESC2)
-        VALUES (@id, @pdf, @orden, @serie, @desc1, @desc2)`)
+        INSERT INTO PHF_SERIE_PDF (COMPROBANTE_ID, PDF_ORDEN, ORDEN, N_SERIE, DESC1, DESC2, COMENTARIO)
+        VALUES (@id, @pdf, @orden, @serie, @desc1, @desc2, @comentario)`)
     total += 1
   }
   return total
@@ -151,12 +154,14 @@ export async function seriesEfectivasEn(
 ): Promise<Map<number, { series: Serie[]; origen: OrigenSeries }>> {
   const guardadas = await seriesDelComprobanteEn(e, comprobanteId)
   const leidas = await e.request().input('id', sql.Int, comprobanteId).query(`
-    SELECT PDF_ORDEN, N_SERIE, DESC1, DESC2 FROM PHF_SERIE_PDF
+    SELECT PDF_ORDEN, N_SERIE, DESC1, DESC2, COMENTARIO FROM PHF_SERIE_PDF
     WHERE COMPROBANTE_ID = @id ORDER BY PDF_ORDEN, ORDEN`)
   const porPdf = new Map<number, Serie[]>()
   for (const x of leidas.recordset) {
     const lista = porPdf.get(Number(x.PDF_ORDEN)) ?? []
-    lista.push(normalizarSerie({ nSerie: x.N_SERIE ?? '', desc1: x.DESC1 ?? '', desc2: x.DESC2 ?? '' }))
+    lista.push(normalizarSerie({
+      nSerie: x.N_SERIE ?? '', desc1: x.DESC1 ?? '', desc2: x.DESC2 ?? '', comentario: x.COMENTARIO ?? '',
+    }))
     porPdf.set(Number(x.PDF_ORDEN), lista)
   }
 

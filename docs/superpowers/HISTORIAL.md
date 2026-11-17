@@ -2,6 +2,16 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Series de NEWSAN leídas del remito (2026-11-16)
+
+Pedido del usuario, con la foto de un remito de NEWSAN (motos SIAM QU 110): cada unidad trae "Nro Serie", "Nro VIN", "Nro Motor" y "Nro DNRPA". Regla: `N_SERIE` = Nro VIN, `DESC1` = Nro Motor, `DESC2` = el color del código, `COMENTARIO` = Nro DNRPA. El usuario pidió "los 5 últimos dígitos" del código para el color; consultado, eligió lo que sigue a los 12 primeros (AZUL, ROJO, no EAZUL, EROJO), la misma regla con la que se busca el artículo.
+
+- `ReglaSeries` (`src/lib/seriesProveedor.ts`) suma `columnaComentario` (el DNRPA, si el proveedor lo imprime) y `columnasIgnorar` (el prompt le dice al modelo que no use "Nro Serie", que se confunde con el VIN). IMSA no cambia: su prompt y su schema son los mismos.
+- `extraerSeries` (`src/server/ia/series.ts`) pide `comentario` solo si la regla tiene columna para eso.
+- `PHF_SERIE_PDF.COMENTARIO` (columna nueva): lo leído pasa a las series efectivas, así que con el DNRPA impreso el remito no pide cargarlo a mano. La tabla de series leídas lo muestra.
+- Tests en `tests/lib/seriesProveedor.test.ts` y `tests/server/tango/remitosCompra.test.ts` (registra un remito con las series leídas: VIN, motor, AZUL, DNRPA en `STA07`). Suite 1025/1026 (el de siempre).
+- El remito de NEWSAN 02059748 (ID 35183) se leyó antes de esta regla: para que lea las series hay que reprocesarlo.
+
 ## El remito se vincula a la factura, no a la OC (2026-11-16)
 
 Pedido del usuario: "el remito se vincula a una factura, no a una orden de compra; si no tiene ninguna factura, mostrar un cartel y permitir grabarlo sin comprobante de referencia". Decisiones del usuario: la app propone la factura y el operador puede elegir; el remito hereda la OC de la factura (sin factura no toca ninguna); se mantiene que la factura que llega después consuma el remito.

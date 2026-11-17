@@ -375,12 +375,18 @@ const DEFINICIONES: Definicion[] = [
         N_SERIE         NVARCHAR(30)   NOT NULL,
         DESC1           NVARCHAR(25)   NULL,
         DESC2           NVARCHAR(25)   NULL,
+        COMENTARIO      NVARCHAR(25)   NULL,
         CONSTRAINT PK_PHF_SERIE_PDF PRIMARY KEY (ID),
         CONSTRAINT UQ_PHF_SERIE_PDF UNIQUE (COMPROBANTE_ID, PDF_ORDEN, ORDEN),
         CONSTRAINT FK_PHF_SERIE_PDF_COMP FOREIGN KEY (COMPROBANTE_ID)
           REFERENCES PHF_COMPROBANTE (ID) ON DELETE CASCADE
       );
     `,
+    columnas: [
+      // El DNRPA, cuando el proveedor lo imprime (NEWSAN, 2026-11-16). En
+      // IMSA no viene en el papel y lo carga el operador.
+      { nombre: 'COMENTARIO', ddl: 'COMENTARIO NVARCHAR(25) NULL' },
+    ],
   },
   {
     // Los numeros de serie de un renglon de remito cuyo articulo los usa

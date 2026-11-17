@@ -483,4 +483,34 @@ describe('registrarComprobanteEn con un remito de artículos con número de seri
       expect(revision[0].series.map((s) => s.comentario)).toEqual(['DNRPA-1', 'DNRPA-2'])
     })
   }, 150000)
+
+  it('NEWSAN: el DNRPA viene del papel y el remito se registra sin cargarlo a mano (2026-11-16)', async () => {
+    await conRollback(async (tx) => {
+      const art = await articuloConSerie(tx)
+      if (!art) return
+      const { id } = await remitoConSerie(tx, art, '87654336')
+      await guardarSeriesPdfEn(
+        tx,
+        id,
+        [
+          { orden: 1, serie: 'phf-test-vin1', adicional1: '1P52FMH T0000001', comentario: 'M-0000000001/2026' },
+          { orden: 1, serie: 'PHF-TEST-VIN2', adicional1: '1P52FMH T0000002', comentario: 'M-0000000002/2026' },
+        ],
+        new Map([[1, 'CUBQU110BASEAZUL']]),
+        reglaSeriesDe('010003')!,
+      )
+      const revision = await revisarSeriesEn(tx, id, (await obtenerDetalleEn(tx, id)).renglones)
+      expect(revision[0].origen).toBe('leidas')
+      expect(revision[0].problema).toBeNull()
+
+      const registro = await registrarComprobanteEn(tx, id)
+      const h = await tx.request()
+        .input('n', sql.VarChar(8), String(registro.ncompInC).padStart(8, '0'))
+        .query(`SELECT * FROM STA07 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n ORDER BY N_SERIE`)
+      expect(h.recordset.map((x) => [x.N_SERIE, x.DESC1, x.DESC2, x.COMENTARIO])).toEqual([
+        ['PHF-TEST-VIN1', '1P52FMH T0000001', 'AZUL', 'M-0000000001/2026'],
+        ['PHF-TEST-VIN2', '1P52FMH T0000002', 'AZUL', 'M-0000000002/2026'],
+      ])
+    })
+  }, 150000)
 })

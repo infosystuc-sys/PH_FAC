@@ -42,6 +42,11 @@
   font-size: 12px;
 }
 
+/* Con el DNRPA leído del papel (NEWSAN): una columna más. */
+.conDnrpa {
+  grid-template-columns: 24px 190px 170px 80px 170px;
+}
+
 .header {
   font-size: 10.5px;
   letter-spacing: 0.6px;

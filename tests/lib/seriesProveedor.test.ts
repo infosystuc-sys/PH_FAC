@@ -60,3 +60,47 @@ describe('armarPromptSeries', () => {
     expect(p).toContain('1. código MNTD-150NE-LLE2, cantidad 1,00')
   })
 })
+
+describe('NEWSAN (010003)', () => {
+  it('lee VIN, motor y DNRPA, e ignora el "Nro Serie"', () => {
+    const r = reglaSeriesDe('010003')!
+    expect(r.columnaSerie).toBe('Nro VIN')
+    expect(r.columnaAdicional1).toBe('Nro Motor')
+    expect(r.columnaComentario).toBe('Nro DNRPA')
+    const p = armarPromptSeries([{ orden: 1, codigo: 'CUBQU110BASEAZUL', cantidad: '1' }], r)
+    expect(p).toContain('"comentario": lo de la columna "Nro DNRPA"')
+    expect(p).toContain('NO uses la columna "Nro Serie"')
+  })
+
+  it('el color es lo que sigue a los 12 primeros caracteres del código', () => {
+    const r = reglaSeriesDe('010003')!
+    expect(r.adicional2DelCodigo('CUBQU110BASEAZUL')).toBe('AZUL')
+    expect(r.adicional2DelCodigo('CUBQU110BASEROJO')).toBe('ROJO')
+  })
+
+  it('IMSA sigue sin DNRPA en el prompt', () => {
+    const p = armarPromptSeries([{ orden: 1, codigo: 'MNTD-150NE-LLE2', cantidad: '1' }], reglaSeriesDe('010337')!)
+    expect(p).not.toContain('"comentario"')
+    expect(p).not.toContain('NO uses')
+  })
+})
+
+describe('parsearSeries con el DNRPA', () => {
+  it('trae el comentario cuando viene, y lo omite vacío', () => {
+    const crudo = JSON.stringify({
+      renglones: [
+        {
+          orden: 1,
+          unidades: [
+            { serie: '8BFXCH2GSVC001834', adicional1: '1P52FMH T1249660', comentario: 'M-0000887730/2026' },
+            { serie: '8BFXCH2GSVC001820', adicional1: '1P52FMH T1249683', comentario: '' },
+          ],
+        },
+      ],
+    })
+    expect(parsearSeries(crudo)).toEqual([
+      { orden: 1, serie: '8BFXCH2GSVC001834', adicional1: '1P52FMH T1249660', comentario: 'M-0000887730/2026' },
+      { orden: 1, serie: '8BFXCH2GSVC001820', adicional1: '1P52FMH T1249683' },
+    ])
+  })
+})
