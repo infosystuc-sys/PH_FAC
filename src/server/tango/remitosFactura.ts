@@ -26,9 +26,12 @@ import {
  *   cantidad es la del `CPA48` salvo que supere lo imputado a la OC (14
  *   filas reales, remito y factura con más de lo pedido): ahí va lo
  *   imputado. Ver docs/superpowers/plans/2026-11-03-cpa-oc-remito-factura.md.
- * - `STA20.CANT_PEND` baja con esa cantidad. `CANT_FACTU` NO se toca --
- *   decisión del usuario, 2026-11-03: en 153 de los 275 renglones recientes
- *   Tango lo deja en 0 y el pendiente es lo que cuenta.
+ * - `STA20.CANT_PEND` baja con esa cantidad y `CANT_FACTU` sube con ella.
+ *   Hasta el 2026-11-17 `CANT_FACTU` no se tocaba (decisión del 03/11);
+ *   ese día el usuario eligió una sola regla para los dos caminos, la del
+ *   remito que llega después de la factura (`remitosCompra.ts`, el patrón
+ *   de Tango en 5.525 de 5.685 casos): el remito facturado queda con
+ *   `CANT_FACTU` = lo facturado, venga antes o después de la factura.
  * - `STA14.ESTADO_MOV` pasa a 'F' cuando el remito se queda sin ningún
  *   renglón pendiente.
  * - `CPA46.FALTA_REM` de la factura es lo que ningún remito cubrió.
@@ -179,7 +182,8 @@ export async function consumirRemitosEn(
       .input('nRenglS', sql.Int, parte.nRenglS)
       .input('cantidad', sql.Decimal(18, 4), parte.cantidad)
       .query(`
-        UPDATE STA20 SET CANT_PEND = CANT_PEND - @cantidad
+        UPDATE STA20 SET CANT_PEND = CANT_PEND - @cantidad,
+                         CANT_FACTU = ISNULL(CANT_FACTU, 0) + @cantidad
         WHERE TCOMP_IN_S = 'RP' AND NCOMP_IN_S = @ncompInS AND N_RENGL_S = @nRenglS
           AND CANT_PEND >= @cantidad`)
     if (upd.rowsAffected[0] !== 1) {

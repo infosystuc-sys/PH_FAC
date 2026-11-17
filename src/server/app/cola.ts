@@ -338,6 +338,16 @@ export async function procesarUno({ id, ruta, tipoFactura: tipoImportado }: Pend
     )
 
     const { codProvee, yaExisteEnTango } = await conTransaccion(async (tx) => {
+      // El proveedor que ya tenia (en un reproceso, el que eligio el
+      // operador): si el CUIT no lo resuelve, con este se mira igual si el
+      // comprobante ya esta en Tango (2026-11-17).
+      const antes = await tx.request().input('id', sql.Int, id)
+        .query('SELECT COD_PROVEE, RAZON_SOCIAL FROM PHF_COMPROBANTE WHERE ID = @id')
+      const codPrevio = String(antes.recordset[0]?.COD_PROVEE ?? '').trim()
+      const proveedorPrevio = codPrevio
+        ? { codProvee: codPrevio, razonSocial: String(antes.recordset[0]?.RAZON_SOCIAL ?? '').trim() }
+        : null
+
       const prom = await guardarExtraccionEn(tx, id, r.extraccion)
       // Despues de guardarExtraccionEn y no antes: esa funcion borra todos
       // los PHF_CAMPO del comprobante para reescribirlos, asi que el campo
@@ -465,7 +475,7 @@ export async function procesarUno({ id, ruta, tipoFactura: tipoImportado }: Pend
       // Si ya existe en Tango no hay nada mas que evaluar: ni concepto, ni
       // remitos, ni la segunda pasada de renglones de abajo -- por eso el
       // corte temprano, no solo el cambio de estado.
-      const existe = await marcarExistenteEnTangoEn(tx, id, cod, { ...valores, tipoFactura })
+      const existe = await marcarExistenteEnTangoEn(tx, id, cod, { ...valores, tipoFactura }, proveedorPrevio)
       if (!existe) await observarSinConceptoEn(tx, id, tipoFactura, cod)
       return { codProvee: cod, yaExisteEnTango: existe }
     })

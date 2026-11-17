@@ -56,13 +56,30 @@ export const LARGO_RESPALDO_POR_PROVEEDOR: Readonly<Record<string, number>> = {
 }
 
 /**
+ * El respaldo de TODOS los demás proveedores (2026-11-17, decisión del
+ * usuario): los 15 caracteres de `CPA15.COD_SINONI`. Un código impreso más
+ * largo se guarda recortado a 15 al enseñarlo, así que sin esto la
+ * siguiente factura lo buscaba entero y no lo encontraba. No aplica a los
+ * proveedores con regla propia (`LARGO_SINONIMO_POR_PROVEEDOR`, IMSA), que
+ * ya buscan solo su principio, ni a NEWSAN, que tiene la suya de 12. Solo
+ * empareja si los 15 llevan a UN artículo, igual que el de NEWSAN.
+ */
+export const LARGO_RESPALDO_GENERAL = 15
+
+function largoDeRespaldo(codProvee: string | null | undefined): number | null {
+  const prov = (codProvee ?? '').trim()
+  if (!prov || LARGO_SINONIMO_POR_PROVEEDOR[prov]) return null
+  return LARGO_RESPALDO_POR_PROVEEDOR[prov] ?? LARGO_RESPALDO_GENERAL
+}
+
+/**
  * Los primeros N caracteres con los que se busca de respaldo, o `null` si
- * el proveedor no tiene regla o el código no es más largo que N (en ese
+ * el proveedor no tiene respaldo o el código no es más largo que N (en ese
  * caso el principio es el código entero, que ya se buscó).
  */
 export function prefijoDeRespaldo(codProvee: string | null | undefined, codigo: string): string | null {
   const c = codigo.trim()
-  const largo = LARGO_RESPALDO_POR_PROVEEDOR[(codProvee ?? '').trim()]
+  const largo = largoDeRespaldo(codProvee)
   if (!largo || c.length <= largo) return null
   return c.slice(0, largo).trim()
 }

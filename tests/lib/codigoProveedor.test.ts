@@ -35,8 +35,21 @@ describe('respaldo de NEWSAN (010003)', () => {
     expect(restoDelCodigo('010003', 'CUBQU110BASE')).toBe('')
   })
 
-  it('los demas proveedores no tienen respaldo', () => {
+  it('IMSA, con regla propia, no tiene respaldo; ningun otro proveedor tiene color', () => {
     expect(prefijoDeRespaldo('010337', 'MNTD-150AZUL2026')).toBeNull()
     expect(restoDelCodigo(null, 'CUBQU110BASEROJO')).toBe('')
+    expect(restoDelCodigo('010685', 'ABCDEFGHIJKLMNOPQ')).toBe('')
+  })
+})
+
+describe('respaldo general de 15 (los 15 de CPA15.COD_SINONI)', () => {
+  it('los demas proveedores comparan los 15 primeros si el codigo es mas largo', () => {
+    expect(prefijoDeRespaldo('010685', 'ABCDEFGHIJKLMNOPQ')).toBe('ABCDEFGHIJKLMNO')
+    expect(prefijoDeRespaldo('010685', 'ABCDEFGHIJKLMNO')).toBeNull()
+    expect(prefijoDeRespaldo('010685', '1261095140')).toBeNull()
+  })
+
+  it('sin proveedor no hay respaldo', () => {
+    expect(prefijoDeRespaldo(null, 'ABCDEFGHIJKLMNOPQ')).toBeNull()
   })
 })

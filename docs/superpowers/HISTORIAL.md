@@ -2,6 +2,16 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Decisiones sobre la evaluación de la app (2026-11-17)
+
+La evaluación (`docs/informes/evaluacion.pdf`) encontró cinco inconsistencias de prioridad alta. Lo que decidió el usuario:
+
+- **A1, `STA20.CANT_FACTU`:** una sola regla, la del remito que llega después de la factura. `consumirRemitosEn` (`remitosFactura.ts`) ahora sube `CANT_FACTU` con lo que la factura consume, además de bajar `CANT_PEND`. Los remitos consumidos entre el 03/11 y hoy quedaron con `CANT_FACTU` sin tocar; no se corrigieron hacia atrás.
+- **A2, reprocesar un existente:** se puede, pero la lectura con IA lo tiene que volver a mandar a existente. `marcarExistenteEnTangoEn` recibe el proveedor que el comprobante tenía antes de la lectura (`cola.ts` lo lee al empezar) y, si el CUIT no lleva a ningún proveedor, lo prueba también con ese.
+- **A3, sinónimo de 15:** todos los proveedores salvo NEWSAN (12) e IMSA (regla propia de 8) tienen un respaldo de 15 caracteres, el largo de `CPA15.COD_SINONI` (`LARGO_RESPALDO_GENERAL` en `codigoProveedor.ts`). Un código impreso más largo, que al enseñarse se guarda recortado, ahora se vuelve a encontrar si los 15 llevan a un único artículo. El color se sigue proponiendo solo en NEWSAN.
+- **A4 (asiento contabilizado) y A5 (contraseña):** quedan como están.
+- Tests en `tests/lib/codigoProveedor.test.ts`, `tests/server/tango/articulos.test.ts`, `tests/server/tango/remitosFactura.test.ts` y `tests/server/app/cola.test.ts`.
+
 ## Lo que ya está en Tango va directo a existente y a la carpeta error (2026-11-17)
 
 Pedido del usuario: un comprobante que ya está en Tango no tiene que quedar "Pendiente de revisión"; pasa a "Comprobante existente" y el archivo va a la carpeta `error/`.

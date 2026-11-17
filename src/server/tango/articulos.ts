@@ -58,7 +58,8 @@ export async function buscarArticulos(
     // Contra CPA15, con la regla de largo del proveedor si tiene (IMSA):
     // pegar el codigo impreso entero tiene que encontrar su sinonimo.
     .input('sinonimo', sql.VarChar(60), codigoParaSinonimo(codProvee, t))
-    // Y el respaldo de NEWSAN (2026-11-16): los 12 primeros de los dos lados.
+    // Y el respaldo: los 12 primeros de los dos lados en NEWSAN (2026-11-16),
+    // los 15 de CPA15.COD_SINONI en el resto (2026-11-17).
     .input('prefijo', sql.VarChar(60), prefijoDeRespaldo(codProvee, t)?.toUpperCase() ?? null)
     .input('like', sql.VarChar(62), `${t}%`)
     .input('contiene', sql.NVarChar(64), `%${t}%`)

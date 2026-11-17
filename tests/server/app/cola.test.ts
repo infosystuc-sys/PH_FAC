@@ -1357,4 +1357,28 @@ describe('marcarExistenteEnTangoEn con un CUIT de varios proveedores (2026-11-17
       expect(r.recordset[0].ESTADO).toBe('existente')
     })
   })
+
+  it('en un reproceso sin CUIT, prueba con el proveedor que el operador ya habia elegido', async () => {
+    const pool = await getPool()
+    const real = await pool.request().query(`
+      SELECT TOP 1 COD_PROVEE, N_COMP FROM CPA04 WHERE T_COMP = 'FAC' ORDER BY NCOMP_IN_C DESC
+    `)
+    const codProvee = String(real.recordset[0].COD_PROVEE).trim()
+    const nComp = String(real.recordset[0].N_COMP).trim()
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const valores = { tipo: `FAC ${nComp.slice(0, 1)}`, ptovta: nComp.slice(1, 6), nro: nComp.slice(6) }
+      expect(await marcarExistenteEnTangoEn(tx, id, null, valores)).toBe(false)
+      expect(
+        await marcarExistenteEnTangoEn(tx, id, null, valores, { codProvee, razonSocial: 'ELEGIDO A MANO' }),
+      ).toBe(true)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'codprovee')?.valorFinal).toBe(codProvee)
+      expect(d.auditoria.some((a) => a.texto.startsWith('Proveedor elegido antes del reproceso'))).toBe(true)
+      const r = await tx.request().input('id', sql.Int, id).query('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(r.recordset[0].ESTADO).toBe('existente')
+    })
+  })
 })

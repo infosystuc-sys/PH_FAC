@@ -203,11 +203,12 @@ describe('registrarComprobanteEn: la factura consume el remito de su orden', () 
       expect(orf[0].NCOMP_IN_S).toBe(ncompInS)
       expect(Number(orf[0].N_RENGL_S)).toBe(1)
 
-      // CANT_PEND baja; CANT_FACTU no se toca (decision del usuario).
+      // CANT_PEND baja y CANT_FACTU sube: la misma regla que el remito que
+      // llega despues de la factura (decision del usuario, 2026-11-17).
       const ren = await tx.request().input('n', sql.VarChar(8), ncompInS)
         .query(`SELECT CANT_PEND, CANT_FACTU FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
       expect(Number(ren.recordset[0].CANT_PEND)).toBe(0)
-      expect(Number(ren.recordset[0].CANT_FACTU)).toBe(0)
+      expect(Number(ren.recordset[0].CANT_FACTU)).toBe(1)
       const despues = await tx.request().input('n', sql.VarChar(8), ncompInS)
         .query(`SELECT ESTADO_MOV FROM STA14 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)
       expect(despues.recordset[0].ESTADO_MOV).toBe('F')

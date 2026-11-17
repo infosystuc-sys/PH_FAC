@@ -281,10 +281,32 @@ describe('respaldo de 12 caracteres de NEWSAN', () => {
     expect(r[0]?.porQue).toBe('código del proveedor')
   })
 
-  it('otro proveedor no tiene respaldo', async () => {
+  it('IMSA, con regla propia, no tiene respaldo', async () => {
     const x = await sinonimoNewsan()
     if (!x) return
     const m = await emparejarSinonimos('010337', [`${String(x.sinonimo).slice(0, 12)}VERDEAGUA`])
     expect(m.size).toBe(0)
+  })
+
+  it('los demas proveedores encuentran por los 15 primeros un sinonimo guardado recortado (2026-11-17)', async () => {
+    const pool = await getPool()
+    // Un sinonimo de 15 (el largo de COD_SINONI) de un proveedor sin regla,
+    // que lleve a un solo articulo.
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(c.COD_PROVEE)) AS prov, LTRIM(RTRIM(c.COD_ARTICU)) AS art,
+             LTRIM(RTRIM(c.COD_SINONI)) AS sinonimo
+      FROM CPA15 c
+      WHERE LTRIM(RTRIM(c.COD_PROVEE)) NOT IN ('010003', '010337')
+        AND LEN(LTRIM(RTRIM(ISNULL(c.COD_SINONI,'')))) = 15
+        AND NOT EXISTS (
+          SELECT 1 FROM CPA15 o
+          WHERE o.COD_PROVEE = c.COD_PROVEE AND o.COD_ARTICU <> c.COD_ARTICU
+            AND LTRIM(RTRIM(ISNULL(o.COD_SINONI,''))) = LTRIM(RTRIM(c.COD_SINONI)))
+      ORDER BY c.COD_ARTICU`)
+    const x = r.recordset[0]
+    if (!x) return
+    const impreso = `${String(x.sinonimo)}XYZ`
+    const m = await emparejarSinonimos(String(x.prov), [impreso])
+    expect(m.get(normalizarCodigo(impreso))).toEqual({ art: String(x.art), porPrefijo: true })
   })
 })

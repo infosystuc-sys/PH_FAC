@@ -568,29 +568,47 @@ export async function marcarExistenteEnTangoEn(
   id: number,
   codProvee: string | null,
   valores: Record<string, string | null | undefined>,
+  /**
+   * El proveedor que el comprobante ya tenía antes de esta lectura (lo
+   * eligió el operador a mano). En un reproceso, si el CUIT no lleva a un
+   * proveedor, se prueba también con ese: lo que ya está en Tango tiene que
+   * pasar a existente al leer con IA (2026-11-17, pedido del usuario).
+   */
+  proveedorPrevio?: { codProvee: string; razonSocial: string } | null,
 ): Promise<boolean> {
   if (codProvee) return marcarExistenteConProveedorEn(e, id, codProvee, valores)
+
+  // El proveedor se escribe ANTES de pasar a existente: guardarCampoEn no
+  // escribe en un comprobante cerrado.
+  const asignar = (p: { codProvee: string; razonSocial: string }, motivo: string) => async () => {
+    await guardarCampoEn(e, id, 'codprovee', p.codProvee, { corregidoPorUsuario: false })
+    await e
+      .request()
+      .input('id', sql.Int, id)
+      .input('cod', sql.VarChar(20), p.codProvee)
+      .input('razon', sql.NVarChar(200), p.razonSocial)
+      .query('UPDATE PHF_COMPROBANTE SET COD_PROVEE = @cod, RAZON_SOCIAL = @razon WHERE ID = @id')
+    await auditarEn(e, id, `${motivo}: ${p.codProvee} — ${p.razonSocial}`)
+  }
 
   // Sin proveedor resuelto porque el CUIT es de varios proveedores de Tango
   // (NEWSAN: 010003 y 010445), se prueba con cada uno (2026-11-17, pedido
   // del usuario: lo que ya esta en Tango no va a revision). Si el
   // comprobante esta cargado con uno de ellos, ese es el proveedor.
   const cuit = (valores.cuit ?? '').trim()
-  if (!cuit) return false
-  for (const p of await buscarProveedoresPorCuit(cuit)) {
-    // El proveedor se escribe ANTES de pasar a existente: guardarCampoEn no
-    // escribe en un comprobante cerrado.
-    const asignar = async () => {
-      await guardarCampoEn(e, id, 'codprovee', p.codProvee, { corregidoPorUsuario: false })
-      await e
-        .request()
-        .input('id', sql.Int, id)
-        .input('cod', sql.VarChar(20), p.codProvee)
-        .input('razon', sql.NVarChar(200), p.razonSocial)
-        .query('UPDATE PHF_COMPROBANTE SET COD_PROVEE = @cod, RAZON_SOCIAL = @razon WHERE ID = @id')
-      await auditarEn(e, id, `Proveedor resuelto por el comprobante ya cargado en Tango: ${p.codProvee} — ${p.razonSocial}`)
+  const probados = new Set<string>()
+  if (cuit) {
+    for (const p of await buscarProveedoresPorCuit(cuit)) {
+      probados.add(p.codProvee.trim())
+      const a = asignar(p, 'Proveedor resuelto por el comprobante ya cargado en Tango')
+      if (await marcarExistenteConProveedorEn(e, id, p.codProvee, valores, a)) return true
     }
-    if (await marcarExistenteConProveedorEn(e, id, p.codProvee, valores, asignar)) return true
+  }
+
+  const previo = proveedorPrevio?.codProvee.trim()
+  if (previo && !probados.has(previo)) {
+    const a = asignar(proveedorPrevio!, 'Proveedor elegido antes del reproceso, ya cargado en Tango con él')
+    if (await marcarExistenteConProveedorEn(e, id, previo, valores, a)) return true
   }
   return false
 }
