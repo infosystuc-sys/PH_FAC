@@ -12,7 +12,7 @@ import { buscarRemitoEnSta14, nCompRemito } from '../tango/remitosCompra'
 import { buscarProveedoresPorCuit } from '../tango/proveedores'
 import { buscarConceptoProveedor } from '../tango/conceptos'
 import { normalizarCuit, parsearImporte, parsearImporteONulo, formatFecha } from '@/lib/formato'
-import { analizaCampo, type TipoFactura } from '@/lib/tipoFactura'
+import { analizaCampo, esFacturaDeArticulos, type TipoFactura } from '@/lib/tipoFactura'
 import { planificarPercepcionIva } from '@/lib/percepcionIva'
 import { MAX_SLOTS_IVA } from '@/lib/alicuotas'
 import { MAX_SLOTS_VARIOS } from '@/lib/percepciones'
@@ -287,7 +287,7 @@ export async function corregirNetoTrasDescuentoEn(
   codProvee: string | null,
   tipoFactura: string,
 ): Promise<void> {
-  if (tipoFactura !== 'articulos') return
+  if (!esFacturaDeArticulos(tipoFactura)) return
   const detalle = await obtenerDetalleEn(e, id)
   if (detalle.renglonesPdf.length === 0) return
   const valores: Record<string, string | null | undefined> = {}

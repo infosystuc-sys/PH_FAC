@@ -94,6 +94,8 @@ export function ListoParaRegistrar({
     resultado.renglonesNeto,
     // Y esos precios contra los de la orden. Solo advierte: la factura manda.
     resultado.preciosOc,
+    // La factura-remito: la entrada a stock y sus series (2026-11-17).
+    ...(resultado.stock ? [resultado.stock] : []),
       ]
 
   const visibles = ocultarOk ? items.filter((r) => r.estado !== 'ok') : items

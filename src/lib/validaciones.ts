@@ -4,7 +4,7 @@ import type { LineaPercepcion, LineaVarios } from './percepciones'
 import { describirCotejo, type ResultadoCotejoOc } from './cotejoOc'
 import { describirDescuento, type ResultadoDescuento } from './descuentoGlobal'
 import { LARGO_LEYENDA_COMPROBANTE } from './campos'
-import { vaContraOc } from './tipoFactura'
+import { esFacturaDeArticulos, vaContraOc } from './tipoFactura'
 
 export { LARGO_LEYENDA_COMPROBANTE }
 
@@ -364,7 +364,7 @@ export function validarRenglonesContraNeto(
   if (tipoFactura === 'remito') {
     return { estado: 'ok', mensaje: 'No aplica: un remito no tiene importes.' }
   }
-  if (tipoFactura !== 'articulos') {
+  if (!esFacturaDeArticulos(tipoFactura)) {
     return { estado: 'ok', mensaje: 'No aplica: solo las facturas de artículos tienen renglones.' }
   }
   if (!resultado) {
@@ -411,7 +411,7 @@ export function validarPreciosContraOc(
   tipoFactura: string | null | undefined,
   renglones: PrecioContraOc[],
 ): ResultadoValidacion {
-  if (tipoFactura !== 'articulos') return { estado: 'ok', mensaje: 'No aplica.' }
+  if (!esFacturaDeArticulos(tipoFactura)) return { estado: 'ok', mensaje: 'No aplica.' }
   if (renglones.length === 0) return { estado: 'ok', mensaje: 'No hay renglones imputados.' }
 
   const fmt = (n: number) => `$ ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

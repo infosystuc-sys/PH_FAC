@@ -362,7 +362,7 @@ export function CeldaConcepto({
 }) {
   // Los articulos y los remitos no llevan concepto: es informativo, no un
   // faltante.
-  if (tipoFactura === 'articulos' || tipoFactura === 'remito') {
+  if (tipoFactura === 'articulos' || tipoFactura === 'facturaRemito' || tipoFactura === 'remito') {
     return (
       <div className={styles.campo} style={estilo}>
         <span className={styles.label}>Concepto en Tango</span>

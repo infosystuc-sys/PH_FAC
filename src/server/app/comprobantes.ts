@@ -224,7 +224,7 @@ export async function contarPorTipoEn(
     WHERE ${WHERE_ESTADO} AND ${WHERE_BUSQUEDA}
     GROUP BY TIPO_FACTURA
   `)
-  const c: ConteosTipo = { todos: 0, conceptos: 0, articulos: 0, tarjeta: 0, remito: 0 }
+  const c: ConteosTipo = { todos: 0, conceptos: 0, articulos: 0, tarjeta: 0, remito: 0, facturaRemito: 0 }
   for (const row of r.recordset) {
     const t = String(row.TIPO_FACTURA ?? '')
     if (t in c && t !== 'todos') c[t as TipoFactura] += Number(row.n)

@@ -40,7 +40,7 @@ import { articulosPorSinonimo } from '@/server/tango/articulos'
 import { lineasPdfResueltasEn } from './ordenCompra'
 import { lineasContraOc, abrirPorTalle } from '@/lib/matchOc'
 import { reglaDeProveedorEn } from './lecturaProveedor'
-import { analizaCampo, tipoFacturaODefault, vaContraOc } from '@/lib/tipoFactura'
+import { analizaCampo, esFacturaDeArticulos, tipoFacturaODefault, vaContraOc } from '@/lib/tipoFactura'
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 import { revisarSeriesEn } from './series'
 import { validarFacturasRemito } from '@/lib/remitoFactura'
@@ -133,11 +133,20 @@ export async function validarComprobanteEn(
       const enTango = esRemito
         ? await buscarRemitoEnSta14(codProveeParaDuplicado, candidato)
         : await buscarFacturaEnCpa04(codProveeParaDuplicado, candidato)
+      // La factura-remito graba tambien el remito con el mismo numero
+      // (2026-11-17): si ese remito ya esta en Stock, el registro fallaria.
+      const remitoGemelo =
+        !enTango && valores.tipoFactura === 'facturaRemito'
+          ? await buscarRemitoEnSta14(codProveeParaDuplicado, armarNComp('R', ptovta, nro))
+          : null
       if (enTango) {
         hayDuplicado = true
         referenciaDuplicado = esRemito
           ? `remito ${enTango.nComp} ya registrado en Tango`
           : `factura ${enTango.nComp} ya registrada en Tango`
+      } else if (remitoGemelo) {
+        hayDuplicado = true
+        referenciaDuplicado = `remito ${remitoGemelo.nComp} con el mismo número ya registrado en Tango`
       } else {
         const enApp = await e
           .request()
@@ -205,6 +214,11 @@ export type ResultadoListoParaRegistrar = {
    * resolviendo el descuento global del pie. Bloquea. Ver descuentoGlobal.ts.
    */
   renglonesNeto: ResultadoValidacion
+  /**
+   * Solo en la factura-remito: la entrada a stock que se graba junto con la
+   * factura, con las series de los artículos que las usan. `null` en el resto.
+   */
+  stock: ResultadoValidacion | null
   /** Precio de la factura contra el de la OC. Advierte: la factura manda. */
   preciosOc: ResultadoValidacion
   /**
@@ -399,7 +413,7 @@ export async function validarListoParaRegistrarEn(
   // graba es el neto derivado del subtotal impreso, no el de la OC
   // (decision del usuario, 2026-09-15). Bloquea si no cierra.
   const descuento =
-    valores.tipoFactura === 'articulos' && detalle.renglonesPdf.length > 0
+    esFacturaDeArticulos(valores.tipoFactura) && detalle.renglonesPdf.length > 0
       ? resolverDescuentoDeDetalle(
           detalle.renglonesPdf,
           valores.descuentogeneral,
@@ -437,7 +451,10 @@ export async function validarListoParaRegistrarEn(
   const sinArticulo = detalle.renglones.filter((r) => !(r.codigoFinal ?? r.codigo ?? '').trim())
   // Y los articulos con numero de serie piden una por unidad (2026-11-04):
   // sin eso Tango no los deja entrar al stock.
-  const conSerie = esRemito ? await revisarSeriesEn(e, id, detalle.renglones) : []
+  // La factura-remito tambien entra a stock (2026-11-17): sus articulos
+  // con serie piden las mismas series que un remito.
+  const esFacturaRemito = valores.tipoFactura === 'facturaRemito'
+  const conSerie = esRemito || esFacturaRemito ? await revisarSeriesEn(e, id, detalle.renglones) : []
   const seriesMal = conSerie.filter((r) => r.problema)
   const totalSeries = conSerie.reduce((t, r) => t + r.cantidad, 0)
   const renglonesRemito: ResultadoValidacion | null = !esRemito
@@ -460,6 +477,22 @@ export async function validarListoParaRegistrarEn(
                 (totalSeries > 0 ? ` Con ${totalSeries} número(s) de serie.` : ''),
             }
 
+  const stock: ResultadoValidacion | null = !esFacturaRemito
+    ? null
+    : seriesMal.length > 0
+      ? {
+          estado: 'error',
+          mensaje:
+            seriesMal[0].problema! +
+            (seriesMal.length > 1 ? ` Y ${seriesMal.length - 1} renglón(es) más con series pendientes.` : ''),
+        }
+      : {
+          estado: 'ok',
+          mensaje:
+            'Al registrar, la mercadería entra al depósito 01 con un remito del mismo número.' +
+            (totalSeries > 0 ? ` Con ${totalSeries} número(s) de serie.` : ''),
+        }
+
   const bloqueante = [
     condCompra,
     percepcionIibb,
@@ -474,6 +507,7 @@ export async function validarListoParaRegistrarEn(
     cantidadesOc,
     renglonesNeto,
     ...(renglonesRemito ? [renglonesRemito] : []),
+    ...(stock ? [stock] : []),
   ].some((v) => v.estado === 'error')
 
   return {
@@ -491,6 +525,7 @@ export async function validarListoParaRegistrarEn(
     ordenCompra,
     cantidadesOc,
     renglonesNeto: renglonesRemito ?? renglonesNeto,
+    stock,
     preciosOc,
     codigosRepetidos,
     leyenda,

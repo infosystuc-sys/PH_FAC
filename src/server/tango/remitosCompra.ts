@@ -6,7 +6,7 @@ import { parsearImporte } from '@/lib/formato'
 import { usuarioActual } from '@/lib/usuario'
 import type { RegistroTango } from './comprobantes'
 import { seriesEfectivasEn } from '@/server/app/series'
-import { problemaSeries } from '@/lib/series'
+import { problemaSeries, type Serie } from '@/lib/series'
 import { grabarSeriesRemitoEn } from './series'
 import { renglonFacturaParaRemitoEn, proveedorDeFacturaEn } from './facturasParaRemito'
 import { ncompInCEnCpa48 } from './remitosFactura'
@@ -134,7 +134,7 @@ function horaActual(): string {
   return `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`
 }
 
-type RenglonARegistrar = {
+export type RenglonARegistrar = {
   renglonId: number
   codArticu: string
   cantidad: number
@@ -178,11 +178,6 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
   const fecha = parsearFechaArg((valores.fecha ?? '').trim())
   if (!fecha) throw new Error(`No se pudo interpretar la fecha "${valores.fecha ?? ''}" del remito.`)
 
-  const duplicado = await buscarRemitoEnSta14(codProvee, nComp, tx)
-  if (duplicado) {
-    throw new Error(`El remito ${nComp} de este proveedor ya está en Tango (interno ${duplicado.ncompInS}).`)
-  }
-
   // 3. Renglones, cada uno con el renglon de la factura que recibe
   // (2026-11-16). Los que no tienen factura solo entran si el operador
   // confirmo grabarlos sin comprobante de referencia.
@@ -217,6 +212,77 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     )
   }
 
+  const observacion = (valores.leyendaAsiento ?? '').trim().slice(0, 30)
+  // Las series de los articulos que las usan: las que guardo el operador o,
+  // si no las toco, las que la IA leyo del comprobante (2026-11-05).
+  const seriesGuardadas = await seriesEfectivasEn(tx, id, detalle.renglones)
+
+  const g = await grabarRemitoEn(tx, { codProvee, nComp, fecha, observacion, renglones, series: seriesGuardadas })
+
+  // 11. PHF_COMPROBANTE + auditoria. El numero interno va a la misma columna
+  // que el de la factura: es el identificador de Tango de este comprobante.
+  await tx.request()
+    .input('id', sql.Int, id).input('numero', sql.Float, g.numero)
+    .input('tComp', sql.VarChar(10), T_COMP).input('nComp', sql.VarChar(20), nComp)
+    .query(`
+      UPDATE PHF_COMPROBANTE
+      SET ESTADO='registrado', TANGO_NCOMP_IN_C=@numero, TANGO_T_COMP=@tComp, TANGO_N_COMP=@nComp,
+          FECHA_REGISTRO=SYSDATETIME(), FECHA_MODIF=SYSDATETIME()
+      WHERE ID=@id`)
+  await auditarEn(tx, id, `Registrado en Tango: ${describirRemitoGrabado(nComp, g, renglones)}`)
+
+  return { ncompInC: g.numero, tComp: T_COMP, nComp }
+}
+
+/** Lo que dejó grabado un remito, para el historial. */
+export function describirRemitoGrabado(nComp: string, g: RemitoGrabado, renglones: RenglonARegistrar[]): string {
+  const conFactura = renglones.filter((r) => r.factura).length
+  return (
+    `remito ${nComp} (interno ${TCOMP_IN_S} ${g.ncompInS}) — ` +
+    `${renglones.length} renglón(es) al depósito ${DEPOSITO}` +
+    (conFactura > 0 ? `, ${conFactura} contra la factura ${g.facturas.join(', ')}` : '') +
+    (conFactura < renglones.length ? `, ${renglones.length - conFactura} sin comprobante de referencia` : '') +
+    (g.ordenes.length > 0 ? `, orden de compra ${g.ordenes.map((o) => o.trim()).join(', ')}` : '') +
+    (g.totalSeries > 0 ? `, ${g.totalSeries} número(s) de serie` : '')
+  )
+}
+
+export type RemitoAGrabar = {
+  codProvee: string
+  /** "R" + punto de venta + número, ya validado (14 caracteres). */
+  nComp: string
+  fecha: Date
+  observacion: string
+  renglones: RenglonARegistrar[]
+  /** Las series de cada renglón (por ID de PHF_RENGLON), ver `seriesEfectivasEn`. */
+  series: Map<number, { series: Serie[] }>
+}
+
+export type RemitoGrabado = {
+  numero: number
+  ncompInS: string
+  facturas: string[]
+  ordenes: string[]
+  totalSeries: number
+}
+
+/**
+ * El movimiento de Stock de un remito de proveedor, sin tocar
+ * `PHF_COMPROBANTE`: lo usan el remito suelto (`registrarRemitoEn`) y la
+ * factura-remito (2026-11-17, `registrarComprobanteEn`), que graba primero
+ * la factura y después este remito, con el mismo número, recibiendo los
+ * renglones de esa misma factura. Corre dentro de la transacción del que
+ * llama, que ya tomó el applock.
+ */
+export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar): Promise<RemitoGrabado> {
+  const { codProvee, nComp, fecha, observacion, renglones } = datos
+  const seriesGuardadas = datos.series
+
+  const duplicado = await buscarRemitoEnSta14(codProvee, nComp, tx)
+  if (duplicado) {
+    throw new Error(`El remito ${nComp} de este proveedor ya está en Tango (interno ${duplicado.ncompInS}).`)
+  }
+
   // 4. Numero interno: el PROXIMO del talonario de remitos de Compras, sin
   // quedar por debajo de lo que ya existe (si alguien grabo un remito sin
   // avanzar el talonario, el siguiente no puede repetir su numero).
@@ -239,7 +305,6 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
   const hoy = new Date()
   hoy.setHours(0, 0, 0, 0)
   const usuario = usuarioActual()
-  const observacion = (valores.leyendaAsiento ?? '').trim().slice(0, 30)
 
   // 5. STA14.
   const cabecera = await tx.request()
@@ -275,9 +340,6 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     .query(`SELECT ID_STA22 FROM STA22 WHERE COD_SUCURS = @dep`)
   const idSta22: number | null = deposito.recordset[0]?.ID_STA22 ?? null
 
-  // Las series de los articulos que las usan: las que guardo el operador o,
-  // si no las toco, las que la IA leyo del comprobante (2026-11-05).
-  const seriesGuardadas = await seriesEfectivasEn(tx, id, detalle.renglones)
   let totalSeries = 0
 
   const ocsAfectadas = new Set<string>()
@@ -574,27 +636,11 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
     .input('proximo', sql.VarChar(8), String(numero + 1).padStart(8, '0'))
     .query(`UPDATE CPA56 SET PROXIMO = @proximo WHERE TALONARIO = @talonario AND TIPO_COMP = 'R'`)
 
-  // 11. PHF_COMPROBANTE + auditoria. El numero interno va a la misma columna
-  // que el de la factura: es el identificador de Tango de este comprobante.
-  await tx.request()
-    .input('id', sql.Int, id).input('numero', sql.Float, numero)
-    .input('tComp', sql.VarChar(10), T_COMP).input('nComp', sql.VarChar(20), nComp)
-    .query(`
-      UPDATE PHF_COMPROBANTE
-      SET ESTADO='registrado', TANGO_NCOMP_IN_C=@numero, TANGO_T_COMP=@tComp, TANGO_N_COMP=@nComp,
-          FECHA_REGISTRO=SYSDATETIME(), FECHA_MODIF=SYSDATETIME()
-      WHERE ID=@id`)
-  const conFactura = renglones.filter((r) => r.factura).length
-  await auditarEn(
-    tx,
-    id,
-    `Registrado en Tango: remito ${nComp} (interno ${TCOMP_IN_S} ${ncompInS}) — ` +
-      `${renglones.length} renglón(es) al depósito ${DEPOSITO}` +
-      (conFactura > 0 ? `, ${conFactura} contra la factura ${[...facturasTocadas].join(', ')}` : '') +
-      (conFactura < renglones.length ? `, ${renglones.length - conFactura} sin comprobante de referencia` : '') +
-      (ocsAfectadas.size > 0 ? `, orden de compra ${[...ocsAfectadas].map((o) => o.trim()).join(', ')}` : '') +
-      (totalSeries > 0 ? `, ${totalSeries} número(s) de serie` : ''),
-  )
-
-  return { ncompInC: numero, tComp: T_COMP, nComp }
+  return {
+    numero,
+    ncompInS,
+    facturas: [...facturasTocadas],
+    ordenes: [...ocsAfectadas],
+    totalSeries,
+  }
 }

@@ -24,7 +24,14 @@ import { resolverDescuentoDeDetalle, netosPorOrden, describirDescuento } from '@
 import { repartirNetoEntreHermanos } from '@/lib/talles'
 import { cierreContable } from './parametros'
 import { actualizarPrecioUltimaCompraEn } from './preciosCompra'
-import { registrarRemitoEn } from './remitosCompra'
+import {
+  registrarRemitoEn,
+  grabarRemitoEn,
+  nCompRemito,
+  describirRemitoGrabado,
+  type RenglonARegistrar,
+} from './remitosCompra'
+import { seriesEfectivasEn } from '@/server/app/series'
 import { planificarRemitosEn, consumirRemitosEn, contadoresAlFacturar } from './remitosFactura'
 
 export type ComprobanteCpa04 = {
@@ -559,6 +566,12 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // descuentan son los de CPA36 en vez de los de STA20.
   const renglonesConOc = detalle.renglones.filter((r) => r.ocNOrdenCo && r.ocNRenglOc)
   const ocsAfectadas = new Set<string>()
+  // La factura-remito (2026-11-17, pedido del usuario): despues de la
+  // factura se graba el remito con el mismo numero, recibiendo estos mismos
+  // renglones. Por eso no consume remitos previos: la mercaderia de esta
+  // factura entra con su propio remito.
+  const esFacturaRemito = valores.tipoFactura === 'facturaRemito'
+  const paraRemito: RenglonARegistrar[] = []
   // Lo que esta factura consumio de remitos, para dejarlo en el historial.
   const remitosConsumidos: string[] = []
   // El deposito al que entra la mercaderia de ESTA factura. Lo usan tambien
@@ -682,13 +695,18 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     // Si la mercaderia de este renglon ya entro por remito, la factura lo
     // consume (2026-11-03). Se decide antes de grabar CPA46 porque lo que
     // ningun remito cubre va en FALTA_REM.
-    const remitos = await planificarRemitosEn(tx, {
-      codProvee,
-      nOrdenCo,
-      nRenglOc,
-      codArticu,
-      cantidad,
-    })
+    const remitos = esFacturaRemito
+      ? { partes: [], faltaRem: cantidad }
+      : await planificarRemitosEn(tx, {
+          codProvee,
+          nOrdenCo,
+          nRenglOc,
+          codArticu,
+          cantidad,
+        })
+    if (esFacturaRemito) {
+      paraRemito.push({ renglonId: renglon.id, codArticu, cantidad, factura: { tcompInC, ncompInC, nRenglC } })
+    }
 
     await tx.request()
       .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
@@ -922,6 +940,39 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // dentro de lo que Tango tiene cerrado ese periodo no es el de emision.
   await escribirAsientoEn(tx, id, ncompInC, fechaContable)
 
+  // 8b. La factura-remito: el remito, con el mismo punto de venta y numero
+  // ("R" en vez de la letra), recibiendo los renglones que la factura
+  // acaba de imputar a la OC. Es el mismo registro que el de un remito
+  // suelto contra una factura (remitosCompra.ts): STA14/STA20, STA19, CPA48,
+  // FALTA_REM en 0, la OC heredada (CPA_OC_REMITO, CPA_OC_REMITO_FACTURA,
+  // CPA36) y las series. Los articulos que no llevan stock (un servicio
+  // imputado a la orden) quedan solo en la factura. Los cargos sin OC
+  // tampoco entran: no son mercaderia.
+  let remitoGrabado: string | null = null
+  if (esFacturaRemito) {
+    const conStock: RenglonARegistrar[] = []
+    for (const r of paraRemito) {
+      const a = await tx.request().input('art', sql.VarChar(15), r.codArticu)
+        .query('SELECT STOCK FROM STA11 WHERE COD_ARTICU = @art')
+      if (a.recordset[0]?.STOCK) conStock.push(r)
+    }
+    if (conStock.length > 0) {
+      const nCompR = nCompRemito(ptovta, nro)
+      if (nCompR.length !== 14) {
+        throw new Error(`El número ${ptovta}-${nro} no entra en el formato de remito de Tango.`)
+      }
+      const g = await grabarRemitoEn(tx, {
+        codProvee,
+        nComp: nCompR,
+        fecha: fechaEmision,
+        observacion: (valores.leyendaAsiento ?? '').trim().slice(0, 30),
+        renglones: conStock,
+        series: await seriesEfectivasEn(tx, id, detalle.renglones),
+      })
+      remitoGrabado = describirRemitoGrabado(nCompR, g, conStock)
+    }
+  }
+
   // 9. Actualizar PHF_COMPROBANTE + auditoria.
   await tx.request()
     .input('id', sql.Int, id).input('ncompInC', sql.Float, ncompInC)
@@ -932,6 +983,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
           FECHA_REGISTRO=SYSDATETIME(), FECHA_MODIF=SYSDATETIME()
       WHERE ID=@id`)
   await auditarEn(tx, id, `Registrado en Tango: ${tComp} ${nComprobante} — asiento contabilizado, pendiente de transferir a Contabilidad`)
+  if (remitoGrabado) await auditarEn(tx, id, `Registrado en Tango con la factura: ${remitoGrabado}`)
+  else if (esFacturaRemito) {
+    await auditarEn(tx, id, 'Factura-remito sin artículos que lleven stock: no se grabó remito')
+  }
 
   return { ncompInC, tComp, nComp: nComprobante }
 }

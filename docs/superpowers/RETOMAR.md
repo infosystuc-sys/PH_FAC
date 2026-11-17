@@ -31,7 +31,7 @@
 
 **Entrada.** PDF/JPG/PNG por carga manual (hasta 50 de a una vez) o por escaneo periódico de carpetas. Un worker en proceso (`src/server/app/cola.ts`) los toma, Claude extrae los campos y los renglones, y la app resuelve sola lo que puede: proveedor por CUIT, condición de compra aprendida, alícuotas e IIBB aprendidas, punto de venta de tarjeta, duplicados por hash del PDF.
 
-**Cuatro tipos de comprobante** (`src/lib/tipoFactura.ts`):
+**Cinco tipos de comprobante** (`src/lib/tipoFactura.ts`):
 
 | Tipo | Se registra como | Notas |
 |---|---|---|
@@ -39,6 +39,7 @@
 | `articulos` | Factura con renglones (`CPA46`) imputados a una **orden de compra** | Si la OC tiene un remito recibido, la factura lo consume (`CPA48` + `CPA_OC_REMITO_FACTURA`) |
 | `tarjeta` | Liquidación, letra `A` fija, punto de venta aprendido por proveedor | El total se calcula, no se lee |
 | `remito` | Movimiento de stock `RP` (`STA14`/`STA20`), entra al depósito 01, **contra la factura ya registrada** que recibe (desde 2026-11-16; antes contra la OC) | Mueve stock y lo pendiente de recibir. Los artículos con número de serie graban `STA06`/`STA07` (desde 2026-11-04): las series las carga el operador o, en IMSA, las lee la IA del comprobante (2026-11-05) |
+| `facturaRemito` | **Factura-remito de artículos** (2026-11-17): se lee y se revisa como `articulos`, contra la OC. Al registrar, en la misma transacción, graba la factura y después el remito `RP` con el **mismo punto de venta y número** ("R" en vez de la letra), recibiendo esa misma factura | La factura no consume remitos previos. El remito es el del circuito de remito contra factura: `CPA48`, `FALTA_REM` en 0, OC heredada, `CANT_FACTU` = cantidad, series si el artículo las usa. Solo entran los artículos con `STA11.STOCK`; los cargos sin OC quedan solo en la factura |
 
 **Estados** (`src/lib/estados.ts`): `procesando`, `leido`, `observacion`, `confirmado`, `registrado`, `existente` (ya estaba en Tango antes de importarlo), `error`. `registrado` y `existente` son terminales y de solo lectura.
 

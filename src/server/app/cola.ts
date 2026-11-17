@@ -15,6 +15,7 @@ import {
   TIPOS_FACTURA,
   TIPO_FACTURA_DEFAULT,
   vaContraOc,
+  entraAStock,
   type TipoFactura,
 } from '@/lib/tipoFactura'
 import { guardarExtraccionEn, guardarCampoEn, auditarEn } from './detalle'
@@ -249,7 +250,7 @@ export async function leerSeriesSiFaltan(id: number): Promise<void> {
              (SELECT COUNT(*) FROM PHF_SERIE_PDF s WHERE s.COMPROBANTE_ID = c.ID) AS leidas
       FROM PHF_COMPROBANTE c WHERE c.ID = @id`)
     const f = r.recordset[0]
-    if (!f || f.tipo !== 'remito' || Number(f.leidas) > 0) return
+    if (!f || !entraAStock(f.tipo) || Number(f.leidas) > 0) return
     if (f.ESTADO === 'registrado' || f.ESTADO === 'existente' || f.ESTADO === 'procesando') return
     const codProvee = String(f.codProvee ?? '').trim() || null
     if (!reglaSeriesDe(codProvee)) return
@@ -492,6 +493,13 @@ export async function procesarUno({ id, ruta, tipoFactura: tipoImportado }: Pend
     // (2026-11-05: IMSA). Otro llamado a la API, fuera de la transaccion por
     // lo mismo que la segunda pasada de abajo. Si falla, el remito se revisa
     // igual y las series se cargan a mano.
+    // La factura-remito tambien entra a stock: sus series se leen igual
+    // (2026-11-17).
+    if (tipoFactura === 'facturaRemito') {
+      await leerSeriesDelPdf(id, pdf, codProvee, r.extraccion.renglonesPdf).catch((e: unknown) =>
+        console.error(`leerSeriesDelPdf[${id}]:`, e),
+      )
+    }
     if (tipoFactura === 'remito') {
       await leerSeriesDelPdf(id, pdf, codProvee, r.extraccion.renglonesPdf).catch((e: unknown) =>
         console.error(`leerSeriesDelPdf[${id}]:`, e),

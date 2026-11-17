@@ -10,7 +10,7 @@
  * las del selector del formulario de revisión y las claves válidas de
  * `PHF_COMPROBANTE.TIPO_FACTURA`.
  */
-export type TipoFactura = 'conceptos' | 'articulos' | 'tarjeta' | 'remito'
+export type TipoFactura = 'conceptos' | 'articulos' | 'tarjeta' | 'remito' | 'facturaRemito'
 
 export type DefTipoFactura = {
   clave: TipoFactura
@@ -52,7 +52,33 @@ export const TIPOS_FACTURA: DefTipoFactura[] = [
       'Entrada de mercadería sin importes. Se registra en Stock contra la orden de compra ' +
       'y suma al depósito 01.',
   },
+  {
+    // 2026-11-17, pedido del usuario: el papel que es factura y remito a la
+    // vez. Se lee y se revisa como una factura de artículos (contra la OC) y
+    // al registrar graba la factura y despues el remito, con el mismo numero,
+    // recibiendo esa misma factura. Ver registrarComprobanteEn.
+    clave: 'facturaRemito',
+    label: 'Factura-remito de artículos',
+    plural: 'Factura-remito',
+    ayuda:
+      'Factura de mercadería que es también el remito. Se imputa a la orden de compra como una ' +
+      'factura de artículos y al registrar entra además a stock (depósito 01) con el mismo número.',
+  },
 ]
+
+/**
+ * Si el tipo es una FACTURA de artículos: la de siempre o la factura-remito.
+ * Las dos se leen, se revisan, se imputan a la OC y se graban en Compras
+ * igual; la factura-remito además entra a stock al registrar.
+ */
+export function esFacturaDeArticulos(tipo: string | null | undefined): boolean {
+  return tipo === 'articulos' || tipo === 'facturaRemito'
+}
+
+/** Si el tipo lleva números de serie en la revisión (entra a stock). */
+export function entraAStock(tipo: string | null | undefined): boolean {
+  return tipo === 'remito' || tipo === 'facturaRemito'
+}
 
 export const TIPO_FACTURA_DEFAULT: TipoFactura = 'conceptos'
 
@@ -216,6 +242,7 @@ export const CAMPOS_NO_ANALIZADOS: Record<TipoFactura, readonly string[]> = {
     ...SLOTS_LIBERADOS_TARJETA,
     ...DESCUENTO_GENERAL,
   ],
+  facturaRemito: [...NO_ANALIZADOS_COMUNES, ...REMITOS, 'leyendaAsiento', 'porciva5', 'impiva5'],
   // La orden de compra SÍ se lee en el remito: los proveedores suelen
   // imprimirla, y es la que se le ofrece primero al operador.
   remito: NO_APLICAN_EN_REMITO,
@@ -236,6 +263,7 @@ export const ANALIZA_CARGOS: Record<TipoFactura, boolean> = {
   articulos: false,
   tarjeta: true,
   remito: false,
+  facturaRemito: false,
 }
 
 /**
@@ -253,6 +281,7 @@ export const ANALIZA_RENGLONES_PDF: Record<TipoFactura, boolean> = {
   tarjeta: false,
   // Un remito es SOLO renglones: qué mercadería entró y cuánta.
   remito: true,
+  facturaRemito: true,
 }
 
 /** Las claves de remito que la IA lee, en orden. */
@@ -280,6 +309,7 @@ export const ANALIZA_RENGLONES: Record<TipoFactura, boolean> = {
   articulos: false,
   tarjeta: false,
   remito: false,
+  facturaRemito: false,
 }
 
 /** Si la IA analiza `clave` en comprobantes de este tipo. */
@@ -324,6 +354,7 @@ const SPAN_POR_TIPO: Record<TipoFactura, Readonly<Record<string, number>>> = {
   // número, fecha y orden de compra: dos filas de 6.
   // En "Imputación" queda solo el tipo, que pasa a ocupar la fila entera.
   remito: { tipo: 2, ptovta: 2, nro: 2, fecha: 3, ordencompra: 3, tipoFactura: 6 },
+  facturaRemito: { ...COMPROBANTE_A_MEDIA_FILA, condpago: 6, neto: 2, exento: 2 },
 }
 
 /** El ancho de `clave` en la grilla de este tipo, o `span` si no cambia. */
@@ -363,5 +394,5 @@ export function criterioOcDe(tipo: string | null | undefined): CriterioOc {
 
 /** Si el tipo se registra por renglones contra una orden de compra. */
 export function vaContraOc(tipo: string | null | undefined): boolean {
-  return tipo === 'articulos' || tipo === 'remito'
+  return esFacturaDeArticulos(tipo) || tipo === 'remito'
 }

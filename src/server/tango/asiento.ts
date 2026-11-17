@@ -9,6 +9,7 @@ import { listarAlicuotasIva, listarCodigosImpuesto } from './impuestos'
 import { conceptoDelComprobante } from './conceptos'
 import { cargarAprendidosEn } from '@/server/app/aprendizajeImpuestos'
 import { terminalActual } from '@/lib/usuario'
+import { esFacturaDeArticulos } from '@/lib/tipoFactura'
 
 /**
  * Simula el asiento contable que Tango generaria al registrar un
@@ -278,7 +279,7 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
   if (tipoFactura === 'conceptos' || tipoFactura === 'tarjeta') {
     const concepto = await conceptoDelComprobante(tipoFactura, codProvee, valores.concepto)
     cuentaSubtotal = concepto ? await cuentaDelConcepto(concepto.codConcepto) : null
-  } else if (tipoFactura === 'articulos') {
+  } else if (esFacturaDeArticulos(tipoFactura)) {
     gruposArticulo = await agruparRenglonesPorCuenta(detalle.renglones, sb)
     if (gruposArticulo.length > 0) {
       cuentaSubtotal = gruposArticulo.reduce((a, b) => (b.importe > a.importe ? b : a)).cuenta

@@ -2,6 +2,15 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Nuevo tipo: factura-remito de artículos (2026-11-17)
+
+Pedido del usuario: un ítem "Factura-Remito de Artículos" que se interpreta como factura y se vincula a una OC, y que al registrar graba como la factura de artículos y después como el remito, con el mismo número para los dos.
+
+- `facturaRemito` en `TIPOS_FACTURA` (`src/lib/tipoFactura.ts`), con `esFacturaDeArticulos` (lectura, neto tras descuento, renglones contra el neto, precios contra la OC, asiento) y `entraAStock` (series en la revisión y lectura de series con regla de proveedor). Se lee con el prompt de artículos más un aviso de que es también el remito (`prompt.ts`). Tiene su carpeta en la raíz de escaneo (`facturaRemito/`) y su pestaña en la bandeja.
+- Registro (`registrarComprobanteEn`): la factura igual que una de artículos, salvo que no consume remitos previos (`FALTA_REM` = cantidad). Después del asiento, `grabarRemitoEn` (`remitosCompra.ts`, el núcleo que se separó de `registrarRemitoEn`) graba el remito `R` + punto de venta + número contra los renglones recién grabados: `STA14`/`STA20`/`STA19`, `CPA48`, `FALTA_REM` a 0, la OC heredada (`CPA_OC_REMITO`, `CPA_OC_REMITO_FACTURA`, `CPA36`), `CPA56` y las series. Todo en la misma transacción: si el remito falla, tampoco queda la factura. Los artículos sin `STA11.STOCK` y los cargos sin OC quedan solo en la factura.
+- Validaciones: el chequeo de duplicados mira también el remito gemelo en `STA14`, y "Listo para registrar" suma un ítem de entrada a stock que bloquea si faltan series.
+- Tests en `tests/server/tango/facturaRemito.test.ts`.
+
 ## Decisiones sobre la evaluación de la app (2026-11-17)
 
 La evaluación (`docs/informes/evaluacion.pdf`) encontró cinco inconsistencias de prioridad alta. Lo que decidió el usuario:

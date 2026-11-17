@@ -102,7 +102,8 @@ export default async function RevisionPage({
   // 'conceptos' y 'tarjeta' no se atan a un remito -- ver validarTipoFactura.
   // Un remito tampoco: es el que entra, no el que se factura.
   const sinRemito =
-    tipoFacturaValor === 'conceptos' || tipoFacturaValor === 'tarjeta' || tipoFacturaValor === 'remito'
+    tipoFacturaValor === 'conceptos' || tipoFacturaValor === 'tarjeta' || tipoFacturaValor === 'remito' ||
+    tipoFacturaValor === 'facturaRemito'
   const remitosPendientes =
     !sinRemito && codProveeCampo && detalle.renglones.length > 0
       ? await buscarRemitosPendientes(codProveeCampo)

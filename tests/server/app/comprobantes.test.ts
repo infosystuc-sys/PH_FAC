@@ -423,7 +423,7 @@ describe('filtro por tipo de lectura', () => {
       await insertarComprobantePrueba(tx, { estado: 'error', tipoFactura: 'remito', razonSocial: `${marca} 3` })
 
       const porTipo = await contarPorTipoEn(tx, 'leido', marca)
-      expect(porTipo).toEqual({ todos: 2, conceptos: 1, articulos: 0, tarjeta: 0, remito: 1 })
+      expect(porTipo).toEqual({ todos: 2, conceptos: 1, articulos: 0, tarjeta: 0, remito: 1, facturaRemito: 0 })
 
       const porEstado = await contarPorEstadoEn(tx, marca, 'remito')
       expect(porEstado.todos).toBe(2)

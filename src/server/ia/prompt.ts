@@ -185,7 +185,7 @@ Brutos. Copiá el rótulo como figura, sin traducirlo ni abreviarlo.`
  * renglones, y dónde poner la atención. El operador ya eligió el tipo al
  * importar, así que acá se afirma, no se pregunta.
  */
-const SEGUN_TIPO: Record<TipoFactura, string> = {
+const SEGUN_TIPO: Record<Exclude<TipoFactura, 'facturaRemito'>, string> = {
   conceptos: `Este comprobante es una FACTURA DE CONCEPTOS: un servicio o un gasto
 (telefonía, luz, gas, agua, internet, seguros, alquiler, honorarios,
 fletes, publicidad, gastos bancarios y similares), no mercadería para la
@@ -358,6 +358,21 @@ No metas en ese array los totales de bultos, kilos, el transporte ni las
 leyendas del pie: solo la mercadería.`,
 }
 
+/**
+ * La factura-remito (2026-11-17) se lee como una factura de artículos: es la
+ * misma factura, que además hace de remito. Solo se le avisa eso y que las
+ * series por unidad no van en la descripción.
+ */
+const FACTURA_REMITO = `${SEGUN_TIPO.articulos}
+Esta factura es ADEMÁS el remito de la mercadería (una "factura-remito"):
+el número es uno solo y va en ptovta y nro como en cualquier factura.
+Si un renglón trae una línea POR UNIDAD con su número de serie, chasis,
+motor o similar, esos datos NO van en la descripción: se leen aparte.`
+
+function segunTipo(tipo: TipoFactura): string {
+  return tipo === 'facturaRemito' ? FACTURA_REMITO : SEGUN_TIPO[tipo]
+}
+
 function armar(tipo: TipoFactura): string {
   // Un remito no tiene importes: las reglas de IVA, percepciones e impuestos
   // solo le harían buscar datos que no están y que no se le piden.
@@ -375,7 +390,7 @@ function armar(tipo: TipoFactura): string {
       CONFIANZA,
       PUNTO_VENTA,
       quienEsElProveedor(process.env.PHF_CUIT_PROPIO?.trim() || null, tipo),
-      SEGUN_TIPO[tipo],
+      segunTipo(tipo),
       ...impuestos,
       MANUSCRITO,
     ]),

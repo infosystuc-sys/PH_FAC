@@ -29,7 +29,7 @@ import type { AlicuotaTango } from '@/lib/alicuotas'
 import type { RemitoPendiente } from '@/server/tango/remitos'
 import styles from './pantalla.module.css'
 import { Icono } from '@/components/icono'
-import { vaContraOc } from '@/lib/tipoFactura'
+import { entraAStock, vaContraOc } from '@/lib/tipoFactura'
 
 /**
  * pdf.js toca APIs de navegador (`DOMMatrix`) al evaluarse el módulo. Que
@@ -354,8 +354,9 @@ export function Pantalla({
           />
         )}
         {/* Los numeros de serie de los articulos que los usan (2026-11-04):
-            solo en remitos, y solo aparece si algun renglon los pide. */}
-        {iniciales.tipoFactura?.valor === 'remito' && (
+            en remitos y en la factura-remito (2026-11-17), y solo aparece si
+            algun renglon los pide. */}
+        {entraAStock(iniciales.tipoFactura?.valor) && (
           <SeriesRemito
             comprobanteId={comprobanteId}
             renglonesClave={renglones
