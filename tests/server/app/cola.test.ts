@@ -1330,3 +1330,31 @@ describe('observarDiferenciasEn', () => {
     })
   })
 })
+
+describe('marcarExistenteEnTangoEn con un CUIT de varios proveedores (2026-11-17)', () => {
+  it('sin proveedor resuelto, prueba con cada uno del CUIT y asigna el que tiene el comprobante', async () => {
+    const pool = await getPool()
+    // Un remito real de un proveedor cuyo CUIT comparte con otro (NEWSAN).
+    const real = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(h.N_COMP)) AS nComp, LTRIM(RTRIM(h.COD_PRO_CL)) AS prov, p.N_CUIT AS cuit
+      FROM STA14 h JOIN CPA01 p ON p.COD_PROVEE = h.COD_PRO_CL
+      WHERE h.TCOMP_IN_S = 'RP' AND LEN(LTRIM(RTRIM(h.N_COMP))) = 14 AND ISNULL(p.N_CUIT, '') <> ''
+        AND (SELECT COUNT(*) FROM CPA01 q WHERE q.N_CUIT = p.N_CUIT) > 1
+      ORDER BY h.ID_STA14 DESC`)
+    const f = real.recordset[0]
+    if (!f) return
+    const nComp = String(f.nComp)
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      const valores = { tipoFactura: 'remito', cuit: String(f.cuit), ptovta: nComp.slice(1, 6), nro: nComp.slice(6) }
+      expect(await marcarExistenteEnTangoEn(tx, id, null, valores)).toBe(true)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'codprovee')?.valorFinal).toBe(String(f.prov))
+      expect(d.auditoria.some((a) => a.texto.startsWith('Proveedor resuelto por el comprobante ya cargado'))).toBe(true)
+      const r = await tx.request().input('id', sql.Int, id).query('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')
+      expect(r.recordset[0].ESTADO).toBe('existente')
+    })
+  })
+})

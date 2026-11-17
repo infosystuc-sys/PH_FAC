@@ -5,7 +5,9 @@
 import sql from 'mssql'
 import { revalidatePath } from 'next/cache'
 import { getPool } from '../../db/pool'
-import { auditarEn, guardarCampoEn } from '../detalle'
+import { auditarEn, guardarCampoEn, obtenerDetalleEn } from '../detalle'
+import { marcarExistenteEnTangoEn } from '../completarLectura'
+import { archivarExistente } from '../carpetas'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { recalcularAVincularEn } from '../ordenCompra'
 import { leerSeriesSiFaltan } from '../cola'
@@ -71,6 +73,22 @@ export async function elegirProveedor(
 ): Promise<void> {
   const pool = await getPool()
   await elegirProveedorEn(pool, id, codProvee, razonSocial, corregido)
+  // Con el proveedor ya elegido se puede saber si el comprobante ya esta
+  // en Tango: si esta, pasa a existente y el archivo va a error/, en vez de
+  // quedar pendiente de revision (2026-11-17, pedido del usuario). Pasa con
+  // los CUIT de varios proveedores, que la lectura no resuelve.
+  const estado = await pool.request().input('id', sql.Int, id)
+    .query('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')
+  if (['leido', 'observacion', 'confirmado'].includes(estado.recordset[0]?.ESTADO)) {
+    const detalle = await obtenerDetalleEn(pool, id)
+    const valores = Object.fromEntries(detalle.campos.map((c) => [c.clave, c.valorFinal]))
+    if (await marcarExistenteEnTangoEn(pool, id, codProvee, valores)) {
+      await archivarExistente(id)
+      revalidatePath(`/comprobantes/${id}`)
+      revalidatePath('/comprobantes')
+      return
+    }
+  }
   // Un remito de un proveedor con regla de series (NEWSAN, IMSA) cuyo
   // proveedor no salio del CUIT: las series se leen ahora (2026-11-16).
   // Afuera de elegirProveedorEn: es un llamado a la IA, no va en una

@@ -470,7 +470,13 @@ export async function procesarUno({ id, ruta, tipoFactura: tipoImportado }: Pend
       return { codProvee: cod, yaExisteEnTango: existe }
     })
 
-    if (yaExisteEnTango) return
+    if (yaExisteEnTango) {
+      // A la carpeta error/ (2026-11-17). Import dinamico: carpetas.ts
+      // importa de este modulo.
+      const { archivarExistente } = await import('./carpetas')
+      await archivarExistente(id)
+      return
+    }
 
     // Los numeros de serie, solo en los remitos de un proveedor con regla
     // (2026-11-05: IMSA). Otro llamado a la API, fuera de la transaccion por

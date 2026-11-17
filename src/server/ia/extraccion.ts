@@ -10,6 +10,7 @@ import {
   type TipoFactura,
 } from '@/lib/tipoFactura'
 import { PROMPTS_EXTRACCION } from './prompt'
+import { descartarImpuestosEnCero } from '@/lib/impuestosEnCero'
 import { tipoPorContenido, TIPOS_ARCHIVO } from '@/lib/tipoArchivo'
 import { usoDeRespuesta, type UsoTokens } from '@/lib/usoIa'
 
@@ -127,7 +128,11 @@ export function parsearRespuesta(texto_: string, tipo: TipoFactura): Extraccion 
   // articulos los pide; en el resto se descartan aunque vinieran.
   const renglonesPdf = ANALIZA_RENGLONES_PDF[tipo] ? parsearRenglonesPdf(crudo.renglonesPdf) : []
 
-  return { campos, renglones, cargos, renglonesPdf }
+  // Los impuestos con importe cero no se cargan (2026-11-17, pedido del
+  // usuario): ver src/lib/impuestosEnCero.ts.
+  const { campos: sinCeros } = descartarImpuestosEnCero(campos, () => ({ valor: null, confianza: 0 }))
+
+  return { campos: sinCeros, renglones, cargos, renglonesPdf }
 }
 
 /** Los renglones del PDF. Uno sin código ni cantidad no sirve para cotejar. */

@@ -1,13 +1,14 @@
 import sql from 'mssql'
 import { tipoPorNombre } from '@/lib/tipoArchivo'
-import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { getPool } from '../db/pool'
 import { conTransaccion } from '../db/tx'
 import { TIPOS_FACTURA, type TipoFactura } from '@/lib/tipoFactura'
 import { importarComprobanteEn, despertarWorker } from './cola'
-import { buscarComprobantePorHashEn } from './detalle'
+import { auditarEn, buscarComprobantePorHashEn } from './detalle'
+import { tipoFacturaODefault } from '@/lib/tipoFactura'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -103,15 +104,71 @@ async function listarPdfsEstables(dir: string): Promise<string[]> {
   return candidatos
 }
 
-async function moverAProcesados(ruta: string, carpetaTipo: string): Promise<void> {
+async function moverAProcesados(ruta: string, carpetaTipo: string): Promise<string> {
   const destino = path.join(carpetaTipo, 'procesados', `${marcaTiempo()}-${path.basename(ruta)}`)
   await rename(ruta, destino)
+  return destino
 }
 
 async function moverAError(ruta: string, carpetaTipo: string, motivo: string): Promise<void> {
   const destino = path.join(carpetaTipo, 'error', `${marcaTiempo()}-${path.basename(ruta)}`)
   await rename(ruta, destino)
   await writeFile(`${destino}.txt`, motivo, 'utf-8')
+}
+
+/**
+ * Un comprobante que resultó estar ya cargado en Tango va a la carpeta
+ * `error/` de su tipo, con un `.txt` que dice por qué (2026-11-17, pedido
+ * del usuario). Si vino del escaneo, el archivo se MUEVE desde
+ * `procesados/`; si se cargó a mano y hay carpeta raíz configurada, se deja
+ * una COPIA (el original quedó en la PC del operador). Idempotente: si ya
+ * está en `error/` no hace nada. No lanza: el estado `existente` ya quedó
+ * grabado, esto es el archivo.
+ */
+export async function archivarExistente(id: number): Promise<void> {
+  try {
+    await archivarExistenteEn(await getPool(), id)
+  } catch (err) {
+    console.error(`archivarExistente[${id}]:`, err)
+  }
+}
+
+/** Lo mismo, con la conexion que se le pase (para probarlo en una transaccion). Lanza. */
+export async function archivarExistenteEn(pool: Ejecutor, id: number): Promise<string | null> {
+  {
+    const r = await pool.request().input('id', sql.Int, id).query(`
+      SELECT c.ESTADO, c.ARCHIVO_ORIGEN, c.ARCHIVO_RUTA, c.ARCHIVO_NOMBRE, c.TIPO_FACTURA,
+             (SELECT TOP 1 a.TEXTO FROM PHF_AUDITORIA a
+              WHERE a.COMPROBANTE_ID = c.ID AND a.TEXTO LIKE 'Ya existe en Tango%' ORDER BY a.FECHA DESC, a.ID DESC) AS MOTIVO
+      FROM PHF_COMPROBANTE c WHERE c.ID = @id`)
+    const f = r.recordset[0]
+    if (!f || f.ESTADO !== 'existente') return null
+    const origen: string | null = f.ARCHIVO_ORIGEN ?? null
+    if (origen && path.basename(path.dirname(origen)).toLowerCase() === 'error') return null
+
+    const motivo = `Comprobante #${id}. ${f.MOTIVO ?? 'Ya existe en Tango.'}`
+    let destino: string
+    if (origen && (await stat(origen).catch(() => null))) {
+      // procesados/<archivo> -> error/<archivo>
+      const carpetaTipo = path.dirname(path.dirname(origen))
+      await mkdir(path.join(carpetaTipo, 'error'), { recursive: true })
+      destino = path.join(carpetaTipo, 'error', path.basename(origen))
+      await rename(origen, destino)
+    } else {
+      if (origen) return null // estaba en procesados/ y alguien lo saco: no se inventa otro
+      const config = await leerConfiguracionCarpetasEn(pool)
+      if (!config.carpetaRaiz) return null
+      const carpetaTipo = carpetaDeTipo(config.carpetaRaiz, tipoFacturaODefault(f.TIPO_FACTURA ?? null))
+      await mkdir(path.join(carpetaTipo, 'error'), { recursive: true })
+      destino = path.join(carpetaTipo, 'error', `${marcaTiempo()}-${String(f.ARCHIVO_NOMBRE)}`)
+      await copyFile(String(f.ARCHIVO_RUTA), destino)
+    }
+    await writeFile(`${destino}.txt`, motivo, 'utf-8')
+    await pool.request().input('id', sql.Int, id).input('o', sql.NVarChar(500), destino)
+      .query('UPDATE PHF_COMPROBANTE SET ARCHIVO_ORIGEN = @o WHERE ID = @id')
+    await auditarEn(pool, id, `Archivo guardado en la carpeta error: ${destino}`)
+    return destino
+  }
 }
 
 /**
@@ -160,10 +217,14 @@ export async function escanearRaizEn(carpetaRaiz: string): Promise<ResultadoEsca
           continue
         }
 
-        await conTransaccion((tx) =>
+        const nuevoId = await conTransaccion((tx) =>
           importarComprobanteEn(tx, path.basename(ruta), datos, tipo, 'escaneo automático de carpeta'),
         )
-        await moverAProcesados(ruta, carpetaTipo)
+        const enProcesados = await moverAProcesados(ruta, carpetaTipo)
+        // Para poder mandarlo a error/ si despues resulta que ya estaba en
+        // Tango (ver archivarExistente).
+        await pool.request().input('id', sql.Int, nuevoId).input('o', sql.NVarChar(500), enProcesados)
+          .query('UPDATE PHF_COMPROBANTE SET ARCHIVO_ORIGEN = @o WHERE ID = @id')
         resultado.importados += 1
       } catch (err) {
         const mensaje = err instanceof Error ? err.message : String(err)

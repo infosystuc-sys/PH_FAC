@@ -569,7 +569,40 @@ export async function marcarExistenteEnTangoEn(
   codProvee: string | null,
   valores: Record<string, string | null | undefined>,
 ): Promise<boolean> {
-  if (!codProvee) return false
+  if (codProvee) return marcarExistenteConProveedorEn(e, id, codProvee, valores)
+
+  // Sin proveedor resuelto porque el CUIT es de varios proveedores de Tango
+  // (NEWSAN: 010003 y 010445), se prueba con cada uno (2026-11-17, pedido
+  // del usuario: lo que ya esta en Tango no va a revision). Si el
+  // comprobante esta cargado con uno de ellos, ese es el proveedor.
+  const cuit = (valores.cuit ?? '').trim()
+  if (!cuit) return false
+  for (const p of await buscarProveedoresPorCuit(cuit)) {
+    // El proveedor se escribe ANTES de pasar a existente: guardarCampoEn no
+    // escribe en un comprobante cerrado.
+    const asignar = async () => {
+      await guardarCampoEn(e, id, 'codprovee', p.codProvee, { corregidoPorUsuario: false })
+      await e
+        .request()
+        .input('id', sql.Int, id)
+        .input('cod', sql.VarChar(20), p.codProvee)
+        .input('razon', sql.NVarChar(200), p.razonSocial)
+        .query('UPDATE PHF_COMPROBANTE SET COD_PROVEE = @cod, RAZON_SOCIAL = @razon WHERE ID = @id')
+      await auditarEn(e, id, `Proveedor resuelto por el comprobante ya cargado en Tango: ${p.codProvee} — ${p.razonSocial}`)
+    }
+    if (await marcarExistenteConProveedorEn(e, id, p.codProvee, valores, asignar)) return true
+  }
+  return false
+}
+
+async function marcarExistenteConProveedorEn(
+  e: Ejecutor,
+  id: number,
+  codProvee: string,
+  valores: Record<string, string | null | undefined>,
+  /** Lo que hay que hacer si se encuentra, antes de cerrar el comprobante. */
+  alEncontrar?: () => Promise<void>,
+): Promise<boolean> {
 
   // Un remito se busca en Stock (STA14), no en Compras: ver remitosCompra.ts.
   if (valores.tipoFactura === 'remito') {
@@ -578,6 +611,7 @@ export async function marcarExistenteEnTangoEn(
     if (!ptovtaR || !nroR) return false
     const remito = await buscarRemitoEnSta14(codProvee, nCompRemito(ptovtaR, nroR))
     if (!remito) return false
+    await alEncontrar?.()
     await e
       .request()
       .input('id', sql.Int, id)
@@ -598,6 +632,7 @@ export async function marcarExistenteEnTangoEn(
   const nComprobante = armarNComp(letra, ptovta, nro)
   const enTango = await buscarFacturaEnCpa04(codProvee, nComprobante)
   if (!enTango) return false
+  await alEncontrar?.()
 
   await e
     .request()

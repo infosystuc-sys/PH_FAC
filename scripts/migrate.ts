@@ -76,6 +76,7 @@ const DEFINICIONES: Definicion[] = [
         IA_TOKENS_CACHE_LECTURA   INT      NULL,
         IA_TOKENS_CACHE_ESCRITURA INT      NULL,
         REMITO_SIN_REFERENCIA BIT          NOT NULL CONSTRAINT DF_PHF_COMP_REMSINREF DEFAULT 0,
+        ARCHIVO_ORIGEN      NVARCHAR(500)  NULL,
         FECHA_ALTA          DATETIME2      NOT NULL CONSTRAINT DF_PHF_COMP_ALTA DEFAULT SYSDATETIME(),
         USUARIO_ALTA        NVARCHAR(60)   NOT NULL,
         FECHA_MODIF         DATETIME2      NULL,
@@ -154,6 +155,10 @@ const DEFINICIONES: Definicion[] = [
         nombre: 'REMITO_SIN_REFERENCIA',
         ddl: 'REMITO_SIN_REFERENCIA BIT NOT NULL CONSTRAINT DF_PHF_COMP_REMSINREF DEFAULT 0',
       },
+      // Donde quedo el archivo escaneado (en procesados/), para moverlo a
+      // error/ si resulta que ya estaba en Tango (2026-11-17). NULL en la
+      // carga manual. Ver src/server/app/carpetas.ts.
+      { nombre: 'ARCHIVO_ORIGEN', ddl: 'ARCHIVO_ORIGEN NVARCHAR(500) NULL' },
     ],
   },
   {

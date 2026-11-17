@@ -33,6 +33,7 @@ import { previsualizarAsiento, type AsientoPreview } from '@/server/tango/asient
 import { previsualizarCuotas, type CuotasPreview } from '@/server/tango/cuotas'
 import { actualizarCantidadesRemitoEn } from './remitos'
 import { sincronizarRenglonesRemitoEn } from '../remitoFactura'
+import { archivarExistente } from '../carpetas'
 
 export type { AsientoPreview, LineaAsiento } from '@/server/tango/asiento'
 export type { CuotasPreview, CuotaPreview } from '@/server/tango/cuotas'
@@ -485,6 +486,9 @@ export async function revalidarContraTangoEn(e: Ejecutor, id: number): Promise<R
 
 export async function revalidarContraTango(id: number): Promise<ResultadoRevalidacion> {
   const r = await conTransaccion((tx) => revalidarContraTangoEn(tx, id))
+  // Si resulto estar ya en Tango, el archivo va a la carpeta error/
+  // (2026-11-17). No hace nada si no paso a existente.
+  await archivarExistente(id)
   revalidatePath('/comprobantes')
   revalidatePath(`/comprobantes/${id}`)
   return r

@@ -2,6 +2,19 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Lo que ya está en Tango va directo a existente y a la carpeta error (2026-11-17)
+
+Pedido del usuario: un comprobante que ya está en Tango no tiene que quedar "Pendiente de revisión"; pasa a "Comprobante existente" y el archivo va a la carpeta `error/`.
+
+- `marcarExistenteEnTangoEn` (`completarLectura.ts`): si el proveedor no quedó resuelto porque el CUIT es de varios proveedores (NEWSAN: 010003 y 010445), prueba con cada uno; si el comprobante está en Tango con alguno, le asigna ese proveedor (antes de cerrarlo: `guardarCampoEn` no escribe en uno cerrado) y lo pasa a existente.
+- `elegirProveedor` (`acciones/proveedores.ts`): al elegir el proveedor a mano, si el comprobante ya está en Tango pasa a existente (antes quedaba en revisión hasta revalidar).
+- `archivarExistente` (`carpetas.ts`): el escaneo ahora guarda dónde dejó el archivo (`PHF_COMPROBANTE.ARCHIVO_ORIGEN`, columna nueva). Al pasar a existente --en la lectura, al revalidar o al elegir el proveedor-- el archivo se mueve de `procesados/` a `error/` con un `.txt` que dice por qué. Si se cargó a mano y hay carpeta raíz configurada, se deja una copia en `error/` de su tipo. Idempotente.
+- Tests en `tests/server/app/carpetas.test.ts` y `tests/server/app/cola.test.ts`.
+
+## Los impuestos en cero no se cargan (2026-11-17)
+
+Pedido del usuario, con la liquidación CrediCash 959223: "REGIMEN DE RET.SIRTAC 0.00" e "IMPUESTO AL DEBITO 0.00" ocupaban los casilleros de impuestos varios. `descartarImpuestosEnCero` (`src/lib/impuestosEnCero.ts`), al parsear la lectura, saca los casilleros (IVA, percepciones, varios) cuyo importe es cero y corre los demás hacia arriba. Un importe vacío no es cero y se deja. Tests en `tests/lib/impuestosEnCero.test.ts`.
+
 ## Las series se leen también al elegir el proveedor a mano (2026-11-16)
 
 Reportado por el usuario con el remito de NEWSAN 02059748 (ID 35183): reprocesado, no leyó ninguna serie. Causa: la lectura de series necesita el proveedor y el CUIT de NEWSAN (30-64261755-5) es el de dos proveedores de Tango (lectura autorizada de `CPA01`: 010003 NEWSAN SOCIEDAD ANONIMA y 010445 NEWSAN SA LG), así que no se resuelve solo y el operador lo elige a mano después de la lectura.

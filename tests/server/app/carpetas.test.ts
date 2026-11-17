@@ -10,7 +10,10 @@ import {
   guardarConfiguracionCarpetasEn,
   escanearCarpetasEn,
   escanearRaizEn,
+  archivarExistenteEn,
 } from '@/server/app/carpetas'
+import { insertarComprobantePrueba } from '@/server/app/comprobantes'
+import { auditarEn } from '@/server/app/detalle'
 
 const tmpDirs: string[] = []
 const idsCreados: number[] = []
@@ -193,5 +196,38 @@ describe('escanearRaizEn', () => {
     expect(txtEnError).toBeDefined()
     const motivo = await readFile(path.join(carpetaTarjeta, 'error', txtEnError!), 'utf-8')
     expect(motivo).toContain(`#${idOriginal}`)
+  })
+})
+
+describe('archivarExistenteEn (2026-11-17)', () => {
+  it('mueve el archivo de procesados/ a error/ con el motivo, una sola vez', async () => {
+    const raiz = await mkdtemp(path.join(os.tmpdir(), 'phf-existente-'))
+    tmpDirs.push(raiz)
+    await mkdir(path.join(raiz, 'remito', 'procesados'), { recursive: true })
+    const enProcesados = path.join(raiz, 'remito', 'procesados', '20261117-000000-rto.pdf')
+    await writeFile(enProcesados, '%PDF-1.4 prueba')
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'existente' })
+      await tx.request().input('id', sql.Int, id).input('o', sql.NVarChar(500), enProcesados)
+        .query('UPDATE PHF_COMPROBANTE SET ARCHIVO_ORIGEN = @o WHERE ID = @id')
+      await auditarEn(tx, id, 'Ya existe en Tango: remito R0003002059748 (interno RP 00004273) — no se puede volver a registrar')
+
+      const destino = await archivarExistenteEn(tx, id)
+      expect(destino).toBe(path.join(raiz, 'remito', 'error', '20261117-000000-rto.pdf'))
+      expect(await readdir(path.join(raiz, 'remito', 'procesados'))).toEqual([])
+      const motivo = await readFile(`${destino}.txt`, 'utf-8')
+      expect(motivo).toContain('R0003002059748')
+
+      // Ya esta en error/: no se mueve de nuevo.
+      expect(await archivarExistenteEn(tx, id)).toBeNull()
+    })
+  })
+
+  it('no toca el archivo de un comprobante que no está en Tango', async () => {
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      expect(await archivarExistenteEn(tx, id)).toBeNull()
+    })
   })
 })
