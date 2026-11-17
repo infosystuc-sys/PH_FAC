@@ -2,6 +2,10 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Un solo cartel cuando ninguna OC tiene pendiente (2026-11-16)
+
+Pedido del usuario, con una factura de NEWSAN de tres renglones del 105440: cada renglón repetía "Cargá o ampliá la OC en Tango y volvé a abrir el comprobante". Ahora los renglones que son un artículo de Tango sin pendiente en ninguna OC del proveedor se juntan en un cartel arriba de la tabla (`renglones-factura.tsx`), con los artículos y el botón "Volver a buscar en Tango". El botón corre "Revalidar contra Tango" (sin IA, conserva las correcciones) y vuelve a pedir las órdenes. `ProblemaRenglon` ya no muestra ese caso por renglón (`ocultarSinPendiente`); la opción "Es un cargo: registrar sin OC" para esos renglones dejó de verse ahí.
+
 ## Series de NEWSAN leídas del remito (2026-11-16)
 
 Pedido del usuario, con la foto de un remito de NEWSAN (motos SIAM QU 110): cada unidad trae "Nro Serie", "Nro VIN", "Nro Motor" y "Nro DNRPA". Regla: `N_SERIE` = Nro VIN, `DESC1` = Nro Motor, `DESC2` = el color del código, `COMENTARIO` = Nro DNRPA. El usuario pidió "los 5 últimos dígitos" del código para el color; consultado, eligió lo que sigue a los 12 primeros (AZUL, ROJO, no EAZUL, EROJO), la misma regla con la que se busca el artículo.

@@ -105,6 +105,7 @@ export function ProblemaRenglon({
   onRecargar: cargar,
   soloLectura = false,
   permitirVincular = false,
+  ocultarSinPendiente = false,
 }: {
   comprobanteId: number
   codProvee: string | null
@@ -119,6 +120,12 @@ export function ProblemaRenglon({
    * `puedeVincular`: lo que se guarda es del proveedor, no del comprobante.
    */
   permitirVincular?: boolean
+  /**
+   * El renglón es un artículo de Tango que ninguna OC tiene pendiente: lo
+   * dice un cartel general arriba de la tabla, con el botón para volver a
+   * buscar (2026-11-16, pedido del usuario). Acá no se repite.
+   */
+  ocultarSinPendiente?: boolean
 }) {
   // El operador tildo "es un cargo" ANTES de elegir el articulo: se lee al
   // vincular, para que el vinculo se cree ya con SIN_OC=1 en el mismo paso.
@@ -267,6 +274,7 @@ export function ProblemaRenglon({
   // Reconocido y facturable: vincularlo de nuevo no cambia nada, lo que
   // falta es una orden con saldo (2026-10-14, DEPAOLO).
   if (reconocido && reconocido.escala !== 'base') {
+    if (ocultarSinPendiente) return null
     return (
       <div className={styles.problema}>
         <span className={styles.problemaTexto}>

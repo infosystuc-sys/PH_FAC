@@ -10,6 +10,7 @@ import {
 } from '@/server/app/acciones/ordenesCompra'
 import type { RenglonGuardado, RenglonPdfGuardado, SeriePdfGuardada } from '@/server/app/detalle'
 import { useToast } from '@/components/toast/toast-provider'
+import { revalidarContraTango } from '@/server/app/acciones/comprobantes'
 import {
   formatMoneda,
   formatCantidad,
@@ -231,6 +232,34 @@ export function RenglonesFactura({
     return { l, neto, imputados, ocActual, esCargo, candidatas, faltante: sinOrden.get(l.orden) ?? null }
   })
 
+  // Los renglones que son un articulo de Tango pero que ninguna orden de
+  // este proveedor tiene pendiente: se resuelve en Tango, no aca. Un solo
+  // cartel arriba en vez de uno por renglon, con el boton para volver a
+  // buscar una vez cargada la OC (2026-11-16, pedido del usuario).
+  const sinPendiente = filas.filter(
+    ({ faltante: f, esCargo }) =>
+      !esCargo &&
+      f !== null &&
+      !f.hayCandidata &&
+      f.equivalencias.length === 0 &&
+      f.reconocidoComo !== null &&
+      f.reconocidoComo.escala !== 'base',
+  )
+  const articulosSinPendiente = [...new Set(sinPendiente.map((f) => f.faltante!.reconocidoComo!.codArticu))]
+
+  // Vuelve a mirar Tango sin llamar a la IA: conserva lo que corrigio el
+  // operador. Las ordenes se piden de nuevo con cargar().
+  const volverABuscar = () =>
+    arrancar(async () => {
+      try {
+        await revalidarContraTango(comprobanteId)
+        cargar()
+        toast('Se volvió a buscar en Tango')
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'No se pudo volver a buscar en Tango.')
+      }
+    })
+
   if (lineas.length === 0) {
     return (
       <section className={styles.tarjeta}>
@@ -267,7 +296,28 @@ export function RenglonesFactura({
             No se pudieron buscar las órdenes de compra: {errorCarga}
           </p>
         )}
-        {!errorCarga && oferta !== null && codProvee && oferta.todas.length === 0 && (
+        {!errorCarga && sinPendiente.length > 0 && (
+          <div className={`${styles.avisoTabla} ${styles.avisoAccion}`}>
+            <span>
+              {sinPendiente.length === lineas.length
+                ? `Ningún renglón de ${esRemito ? 'este remito' : 'esta factura'} tiene`
+                : `${sinPendiente.length} renglón(es) de ${esRemito ? 'este remito' : 'esta factura'} no tienen`}{' '}
+              orden de compra con pendiente de {esRemito ? 'recibir' : 'facturar'}
+              {articulosSinPendiente.length > 0 && (
+                <>
+                  {' '}(<span className={styles.mono}>{articulosSinPendiente.join(', ')}</span>)
+                </>
+              )}
+              . Cargá o ampliá la OC en Tango y después volvé a buscar.
+            </span>
+            {!soloLectura && (
+              <button type="button" className={styles.secundario} disabled={pendiente} onClick={volverABuscar}>
+                {pendiente ? 'Buscando…' : 'Volver a buscar en Tango'}
+              </button>
+            )}
+          </div>
+        )}
+        {!errorCarga && oferta !== null && codProvee && oferta.todas.length === 0 && sinPendiente.length === 0 && (
           <p className={styles.avisoTabla}>
             Este proveedor no tiene órdenes de compra con saldo pendiente de{' '}
             {esRemito ? 'recibir' : 'facturar'}.
@@ -471,6 +521,7 @@ export function RenglonesFactura({
                 // conocimiento del proveedor, no un cambio de este
                 // comprobante (2026-10-07).
                 permitirVincular
+                ocultarSinPendiente
               />
 
               {/* Las series que se leyeron de este renglon, para revisarlas

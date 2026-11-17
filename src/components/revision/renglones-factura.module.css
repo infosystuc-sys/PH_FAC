@@ -46,6 +46,18 @@
   color: var(--alerta);
 }
 
+/* El cartel general con un boton a la derecha (2026-11-16). */
+.avisoAccion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.avisoAccion button {
+  flex-shrink: 0;
+}
+
 .avisoError {
   background: var(--error-fondo);
   color: var(--error);
