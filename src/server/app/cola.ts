@@ -230,6 +230,42 @@ export async function marcarFalloEn(e: Ejecutor, id: number, error: string): Pro
 }
 
 /**
+ * Lee las series de un remito que todavia no las tiene leidas, cuando el
+ * proveedor se conoce DESPUES de la lectura (2026-11-16). Pasa con NEWSAN:
+ * su CUIT es el de dos proveedores de Tango (010003 y 010445), la lectura
+ * no lo resuelve y el operador lo elige a mano; para entonces la cola ya
+ * habia salteado las series por no saber de quien era.
+ *
+ * Solo remitos de un proveedor con regla de series, y solo si no hay nada
+ * leido ni comprobante cerrado. Otro llamado a la IA. No lanza.
+ */
+export async function leerSeriesSiFaltan(id: number): Promise<void> {
+  try {
+    const pool = await getPool()
+    const r = await pool.request().input('id', sql.Int, id).query(`
+      SELECT c.ARCHIVO_RUTA, c.ESTADO,
+             (SELECT TOP 1 VALOR_FINAL FROM PHF_CAMPO f WHERE f.COMPROBANTE_ID = c.ID AND f.CLAVE = 'codprovee') AS codProvee,
+             (SELECT TOP 1 VALOR_FINAL FROM PHF_CAMPO f WHERE f.COMPROBANTE_ID = c.ID AND f.CLAVE = 'tipoFactura') AS tipo,
+             (SELECT COUNT(*) FROM PHF_SERIE_PDF s WHERE s.COMPROBANTE_ID = c.ID) AS leidas
+      FROM PHF_COMPROBANTE c WHERE c.ID = @id`)
+    const f = r.recordset[0]
+    if (!f || f.tipo !== 'remito' || Number(f.leidas) > 0) return
+    if (f.ESTADO === 'registrado' || f.ESTADO === 'existente' || f.ESTADO === 'procesando') return
+    const codProvee = String(f.codProvee ?? '').trim() || null
+    if (!reglaSeriesDe(codProvee)) return
+    const pdfs = await pool.request().input('id', sql.Int, id)
+      .query('SELECT CODIGO, CANTIDAD FROM PHF_RENGLON_PDF WHERE COMPROBANTE_ID = @id ORDER BY ORDEN')
+    const renglones = pdfs.recordset.map((x: { CODIGO: string | null; CANTIDAD: number | null }) => ({
+      codigo: x.CODIGO,
+      cantidad: x.CANTIDAD === null ? null : String(x.CANTIDAD),
+    }))
+    await leerSeriesDelPdf(id, await leerPdf(String(f.ARCHIVO_RUTA)), codProvee, renglones)
+  } catch (e) {
+    console.error(`leerSeriesSiFaltan[${id}]:`, e)
+  }
+}
+
+/**
  * Lee del comprobante los numeros de serie de cada renglon y los guarda en
  * PHF_SERIE_PDF, traducidos con la regla del proveedor. No hace nada si el
  * proveedor no tiene regla (ver src/lib/seriesProveedor.ts).

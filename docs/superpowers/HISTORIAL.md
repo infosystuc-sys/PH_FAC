@@ -2,6 +2,14 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Las series se leen también al elegir el proveedor a mano (2026-11-16)
+
+Reportado por el usuario con el remito de NEWSAN 02059748 (ID 35183): reprocesado, no leyó ninguna serie. Causa: la lectura de series necesita el proveedor y el CUIT de NEWSAN (30-64261755-5) es el de dos proveedores de Tango (lectura autorizada de `CPA01`: 010003 NEWSAN SOCIEDAD ANONIMA y 010445 NEWSAN SA LG), así que no se resuelve solo y el operador lo elige a mano después de la lectura.
+
+- `leerSeriesSiFaltan` (`cola.ts`): al elegir el proveedor a mano (`elegirProveedor`), si es un remito de un proveedor con regla de series y no hay nada leído, lee las series en ese momento (un llamado a la IA).
+- Probado sobre la foto real (sin grabar): VIN y motor correctos en las 5 unidades; el DNRPA, impreso en gris claro, sale con errores (un dígito de más, la barra que falta): hay que revisarlo contra el papel.
+- Ese remito ya está en Tango (R0003002059748, interno RP 00004273: lo detectó el revalidado del 16/11); el reproceso lo devolvió a "leído". El registro lo frena por duplicado.
+
 ## Regla de subtotal de CASTILLO / CrediCash (2026-11-16)
 
 Pedido del usuario, con la liquidación CrediCash 959223 (ID 35149): "no tengan en cuenta el importe de ventas y el neto a pagar; el subtotal son todos los conceptos del recuadro menos los impuestos". Se había importado como factura de conceptos: la IA dejó el neto vacío y tomó el neto a pagar (576.029,00) como total. Con las cifras del PDF, la regla da 403,00 + 28.690,66 + 267.779,49 = 296.873,15, que es exactamente lo que implica el IVA 21% impreso (62.343,36).

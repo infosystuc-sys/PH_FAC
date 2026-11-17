@@ -8,6 +8,7 @@ import { getPool } from '../../db/pool'
 import { auditarEn, guardarCampoEn } from '../detalle'
 import { buscarProveedoresPorRazonSocial, type Proveedor } from '@/server/tango/proveedores'
 import { recalcularAVincularEn } from '../ordenCompra'
+import { leerSeriesSiFaltan } from '../cola'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -70,6 +71,11 @@ export async function elegirProveedor(
 ): Promise<void> {
   const pool = await getPool()
   await elegirProveedorEn(pool, id, codProvee, razonSocial, corregido)
+  // Un remito de un proveedor con regla de series (NEWSAN, IMSA) cuyo
+  // proveedor no salio del CUIT: las series se leen ahora (2026-11-16).
+  // Afuera de elegirProveedorEn: es un llamado a la IA, no va en una
+  // transaccion. No lanza.
+  await leerSeriesSiFaltan(id)
   revalidatePath(`/comprobantes/${id}`)
   // La bandeja muestra la pestaña "A vincular", que depende del contador.
   revalidatePath('/comprobantes')
