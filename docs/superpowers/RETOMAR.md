@@ -1,8 +1,8 @@
 # Estado del proyecto
 
-> **18/11/2026: leer primero [`CONTINUAR_2026-11-18.md`](CONTINUAR_2026-11-18.md).** Todo quedó mergeado en `master` y subido a GitHub (sin `docs/informes`), sin deploy. Producción se actualiza desde el repo: [`ACTUALIZAR_PRODUCCION.md`](ACTUALIZAR_PRODUCCION.md). Ahí están los pasos para pasar a producción (incluido `pnpm migrate`) y los pendientes. Esta página todavía no tiene lo del 18/11.
+> **18/11/2026: producción actualizada a `3eb9124` desde GitHub.** Lo que entró y los pendientes abiertos están en [`CONTINUAR_2026-11-18.md`](CONTINUAR_2026-11-18.md); cómo actualizar producción la próxima vez, en [`ACTUALIZAR_PRODUCCION.md`](ACTUALIZAR_PRODUCCION.md). Esta página todavía no tiene el detalle funcional del 18/11.
 
-**Actualizado: 2026-11-17** (rama `fix/circuito-oc-factura-remito`, sin mergear). Esto es lo que hay que saber para retomar. El detalle de cada funcionalidad (cómo se construyó, cómo se verificó, por qué se decidió lo que se decidió) está en la bitácora, [`HISTORIAL.md`](HISTORIAL.md). Si algo de la bitácora contradice esta página, gana esta página.
+**Actualizado: 2026-11-18** (`master` = `origin/master`, en producción). Esto es lo que hay que saber para retomar. El detalle de cada funcionalidad (cómo se construyó, cómo se verificó, por qué se decidió lo que se decidió) está en la bitácora, [`HISTORIAL.md`](HISTORIAL.md). Si algo de la bitácora contradice esta página, gana esta página.
 
 **Al terminar una sesión:** actualizá esta página (estado, pendientes, decisiones nuevas) y agregá el detalle en `HISTORIAL.md`, arriba de todo y con fecha. Esta página tiene que seguir entrando en una lectura.
 
@@ -12,11 +12,10 @@
 
 | | |
 |---|---|
-| Base | `PUNTO_HOGAR_1` en `INFOSYS01\AXSQLSERVER` (Tango Gestión, datos reales). Necesita SQL Server Browser corriendo |
-| Código | `D:\APP\PH_FAC`, rama `master` |
-| PDFs importados | `PHF_STORAGE_DIR` = `C:/APP/PH_FAC/storage` (fuera del repo) |
-| App | **Modo producción** en el puerto 3013 (`iniciar-app.bat`: `pnpm build` + `pnpm start -p 3013`) |
-| Remoto | `origin` = `git@github.com:infosystuc-sys/PH_FAC.git` por SSH. El push funciona desde este servidor |
+| **Desarrollo** | Este equipo, `INFOSYS01`. Código en `D:\APP\PH_FAC`, rama `master`. Base `PUNTO_HOGAR_1` en `INFOSYS01\AXSQLSERVER` (`@@SERVERNAME` contesta `DESKTOP-OLHNIK3\AXSQLSERVER`). Necesita SQL Server Browser corriendo |
+| **Producción** | Equipo `SERVIDORT`, `C:\APP\PH_FAC` (clon del repo). Base `PUNTO_HOGAR_1` en `SERVIDORT\AXSQLEXPRESS`. PDF en `C:\APP\PH_FAC\storage`. Carpeta escaneada `\\Servidort\comprobantes`. **Solo lectura desde desarrollo**; se actualiza con `git pull` (ver `ACTUALIZAR_PRODUCCION.md`) |
+| App | **Modo producción** en el puerto 3013 (`iniciar-app.bat`: `pnpm build` + `pnpm start -p 3013`), en los dos equipos |
+| Remoto | `origin` = `git@github.com:infosystuc-sys/PH_FAC.git` por SSH, **repo público**. Se sube desde desarrollo; producción baja. `docs/informes/` no se sube (datos reales) |
 
 - **Instancia de prueba:** `PHF_SIN_WORKER=1` apaga la cola y el escaneo de carpetas, para levantar otra copia contra la misma base sin procesar en paralelo con producción (configuración `ph-fac-prueba`, puerto 3014).
 - **Compilar siempre desde `D:\APP\PH_FAC` con esas mayúsculas.** Compilada desde `D:\app\ph_fac`, la app no abre ninguna pantalla (`invariant expected layout router to be mounted`). Los `.bat` ya corrigen la ruta solos (2026-11-05); un `pnpm build` a mano, no.
@@ -25,7 +24,8 @@
 - **Escaneo de carpetas:** se configura en `/configuracion` (fila única de `PHF_CONFIGURACION`). Los PDF van sueltos en la raíz de `articulos/`, `conceptos/` o `tarjeta/`; `procesados/` y `error/` las maneja la app y **nunca se escanean**: un archivo dejado ahí a mano no entra nunca.
 - **Base `CENTRAL`** (Tango de una versión anterior, sin remitos `RP`): la lectura se adapta sola (`src/server/tango/esquema.ts`), el registro no está adaptado.
 - **El historial de git se reescribió el 2026-11-03** antes del primer push a `PH_FAC`, para sacar la contraseña de SQL Server de tres commits viejos. Los hashes anteriores a esa fecha no coinciden con los de los documentos viejos. El historial original quedó en la rama local `respaldo-antes-de-limpiar` (no se sube). El repo anterior, `infosystuc-sys/factura`, quedó sin tocar.
-- Hubo una instalación en `SERVIDORT\AXSQLEXPRESS` (mudanza del 2026-08-31, ver bitácora). La app volvió a `INFOSYS01` el 2026-10-25.
+- **El historial se reescribió de nuevo el 2026-11-18**, antes del push, para sacar `docs/informes/` de los commits no publicados. Los commits hasta `083664d` conservaron su hash; desde ahí cambiaron (el merge del DNRPA, `ac46ad9`, es `efcfc8f`). Original en la rama local `respaldo-antes-de-quitar-informes`.
+- Hubo una instalación en `SERVIDORT\AXSQLEXPRESS` (mudanza del 2026-08-31, ver bitácora). La app volvió a `INFOSYS01` el 2026-10-25, e `INFOSYS01` pasó a ser desarrollo; producción corre otra vez en `SERVIDORT` (informe del 2026-11-18).
 
 ---
 

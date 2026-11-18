@@ -2,6 +2,15 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Push a GitHub y pase a producción desde el repo (2026-11-18)
+
+Pedido del usuario: que la PC de desarrollo (`INFOSYS01`) suba al repo `infosystuc-sys/PH_FAC` y que producción se actualice desde ahí.
+
+- **Push.** `master` estaba 34 commits adelante de `origin/master` (`da19035`). El repo es público y esos commits traían 220 archivos de `docs/informes/` con datos reales de Tango (CSV, consultas, informes). Por decisión del usuario se sacaron con `git filter-branch --index-filter` sobre `origin/master..master` antes del push, y `/docs/informes/` pasó al `.gitignore`; los archivos siguen en el disco de desarrollo. Los commits que no tocaban esa carpeta (hasta `083664d`) conservaron el hash. Original en la rama local `respaldo-antes-de-quitar-informes`. El filter-branch borró del disco los archivos que dejaban de estar trackeados: se restauraron desde la rama de respaldo y se verificaron por hash.
+- **Producción.** Un informe de solo lectura del Claude Code de producción mostró que es `SERVIDORT`, `C:\APP\PH_FAC`, clon del repo en `083664d`, con la base `SERVIDORT\AXSQLEXPRESS` ya migrada (todas las columnas nuevas existían) y 324 comprobantes / 324 archivos en `storage`. Como `083664d` está en la historia de `origin/master` y no cambiaban dependencias ni `migrate.ts`, el pase fue `git merge --ff-only` + `iniciar-app.bat --recompilar`, sin `pnpm install` ni `pnpm migrate`. Respaldos: rama `respaldo-prod-083664d` y compilación en `.next-083664d` (ahora ignorada por `.gitignore`).
+- **Verificado:** producción quedó en `3eb9124` con sus 2 stashes y el cambio local de `.env.local.example` intactos. No se recibió del servidor la confirmación del build ni el recuento de `PHF_COMPROBANTE` posterior.
+- Procedimiento para las próximas veces: `docs/superpowers/ACTUALIZAR_PRODUCCION.md`.
+
 ## Circuito OC → factura → remito como Tango (2026-11-17, rama `fix/circuito-oc-factura-remito`)
 
 Pedido desde `D:\TGA_MOV\envio_app`: alinear la factura vinculada a la OC y el remito vinculado a esa factura con lo que grabó Tango Compras 26.1 (factura `A0000100001704` y remito `R0000100001704`, relevados con foto de la base y traza). Detalle punto por punto, efectos sobre lo que quedó fuera de alcance, diagnóstico de producción y propuesta de corrección (sin ejecutar) en `docs/informes/correccion_circuito_oc_factura_remito.md`.

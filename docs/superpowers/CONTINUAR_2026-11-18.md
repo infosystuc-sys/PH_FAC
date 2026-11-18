@@ -9,7 +9,7 @@ Documento de traspaso. Lo escribió la sesión del 18/11/2026, que se cortó por
   - Las dos ramas siguen existiendo, ya mergeadas.
   - Las carpetas auxiliares `PH_FAC_master` y `PH_FAC_dnrpa` se borraron.
 - **Push:** hecho el 18/11 a `infosystuc-sys/PH_FAC` (`origin/master` = `master`), sin `docs/informes`. Para actualizar producción desde el repo: [`ACTUALIZAR_PRODUCCION.md`](ACTUALIZAR_PRODUCCION.md).
-- **Deploy:** no se hizo.
+- **Deploy:** hecho el 18/11: producción (`SERVIDORT`, `C:\APP\PH_FAC`) quedó en `3eb9124`.
 - **Verificado sobre `master`:**
   - typecheck sin errores;
   - `pnpm test`: 1092 tests pasan, contra la base de desarrollo;
@@ -19,7 +19,7 @@ Documento de traspaso. Lo escribió la sesión del 18/11/2026, que se cortó por
   - Corre `master` (`ac46ad9`, hoy `efcfc8f`), compilada, apuntando a la base de **desarrollo** (`DESKTOP-OLHNIK3\AXSQLSERVER` / `PUNTO_HOGAR_1`).
   - La compilación anterior, que era la de producción (`da19035`), quedó en `.next-da19035` dentro de esa carpeta.
   - La app de la rama del puerto 3014 está apagada.
-- **Producción hoy:** commit `da19035`.
+- **Producción hoy:** commit `3eb9124` (antes `083664d`; el `da19035` de este documento estaba desactualizado).
 
 ## Qué cambió desde producción (`da19035`), para probar
 
@@ -88,8 +88,8 @@ Lo del 18/11, todo por pedido del usuario:
 - **CUIT 30-64261755-5 en dos proveedores** (`010003` NEWSAN y `010445` NEWSAN SA LG): el operador tiene que elegir el proveedor a mano en cada comprobante.
 - **VERTEC (`010155`):** le falta el concepto en `CPA_CONCEPTOS_PROVEEDOR` del Tango de desarrollo.
 - **DNRPA en las tablas de la app:** la importación no actualiza `PHF_SERIE`/`PHF_SERIE_PDF`, solo Tango.
-- **`CLAUDE.md`:** falta anotar que la app ahora modifica `COMENTARIO` de `STA06`/`STA07` (importación del DNRPA), como están anotadas las demás escrituras en Tango.
-- **`RETOMAR.md` y `HISTORIAL.md`:** no se actualizaron con lo del 18/11. Hay que pasar ahí lo de este documento.
+- ~~**`CLAUDE.md`:** anotar la escritura de `COMENTARIO` en `STA06`/`STA07`~~ hecho el 18/11.
+- **`RETOMAR.md` y `HISTORIAL.md`:** tienen el push y el pase a producción del 18/11; falta pasarles el detalle funcional de este documento.
 - **Script de producción:** sigue pendiente correr `diagnostico_produccion.sql` en producción (de una sesión anterior).
 
 ## Herramientas de prueba (en `docs/informes/`)

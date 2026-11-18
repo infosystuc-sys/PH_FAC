@@ -28,3 +28,6 @@ storage-central/
 # (proveedores, importes, precios). Quedan en la PC de desarrollo,
 # no van al repo (2026-11-18).
 /docs/informes/
+
+# Respaldos de la compilacion anterior al actualizar (.next-<commit>)
+/.next-*/
