@@ -21,7 +21,6 @@ import { normalizarCodigo } from '@/lib/cotejoOc'
 import { aprenderArticuloEn, marcarSinOcEn } from '../articulosProveedor'
 import { recalcularAVincularEn, sincronizarCargosEn } from '../ordenCompra'
 import { aprenderImpuesto } from '../aprendizajeImpuestos'
-import { codigoParaSinonimo } from '@/lib/codigoProveedor'
 
 type Ejecutor = { request(): sql.Request }
 
@@ -72,13 +71,15 @@ export async function asociarCodigoProveedor(
   codArticu: string,
   codSinoni: string,
 ): Promise<void> {
-  await asociarArticuloProveedor(codProvee, codArticu, codSinoni)
+  // Lo que quedo en CPA15: recortado o entero segun el proveedor y si el
+  // articulo lleva serie (ver codigoProveedor.ts).
+  const guardado = await asociarArticuloProveedor(codProvee, codArticu, codSinoni)
 
   await conTransaccion((tx) =>
     auditarEn(
       tx,
       comprobanteId,
-      `Código del proveedor asociado en Tango: "${codigoParaSinonimo(codProvee, codSinoni)}" = ${codArticu}`,
+      `Código del proveedor asociado en Tango: "${guardado ?? codSinoni.trim()}" = ${codArticu}`,
     ),
   )
 

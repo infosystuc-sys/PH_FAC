@@ -28,6 +28,45 @@ export function codigoParaSinonimo(codProvee: string | null | undefined, codigo:
   return largo ? c.slice(0, largo).trim() : c
 }
 
+/** El largo de `CPA15.COD_SINONI`. */
+export const LARGO_COD_SINONI = 15
+
+/**
+ * Proveedores con regla de largo (`LARGO_SINONIMO_POR_PROVEEDOR`) que, para
+ * los artículos con número de serie, buscan PRIMERO el código impreso entero
+ * (hasta los 15 de `CPA15.COD_SINONI`) y solo si no aparece, el principio.
+ *
+ * IMSA (`010337`): decisión del usuario, 2026-11-18. En las motos el
+ * principio no alcanza para distinguir el modelo (`MNLD-110PL-AUE2`, la LD
+ * 110 MAX pl, y cualquier otra `MNLD-110…` comparten los 8), así que el
+ * sinónimo de esos artículos se carga entero en Tango. El entero solo cuenta
+ * si lleva a un artículo con serie (`STA11.USA_SERIE`); para los demás sigue
+ * valiendo solo el principio, como hasta ahora.
+ */
+export const PROVEEDORES_ENTERO_CON_SERIE: ReadonlySet<string> = new Set(['010337'])
+
+/**
+ * El código impreso entero (hasta 15) que se busca primero para los
+ * artículos con serie, o `null` si el proveedor no tiene esa regla o si es
+ * lo mismo que ya se busca con `codigoParaSinonimo`.
+ */
+export function codigoEnteroConSerie(codProvee: string | null | undefined, codigo: string): string | null {
+  const prov = (codProvee ?? '').trim()
+  if (!PROVEEDORES_ENTERO_CON_SERIE.has(prov)) return null
+  const entero = codigo.trim().slice(0, LARGO_COD_SINONI).trim()
+  return entero !== '' && entero !== codigoParaSinonimo(prov, codigo) ? entero : null
+}
+
+/**
+ * El sinónimo que se guarda en `CPA15` al enseñar un código: el entero
+ * (hasta 15) si el artículo lleva serie y el proveedor tiene esa regla, para
+ * que la búsqueda de arriba lo encuentre; si no, `codigoParaSinonimo`.
+ */
+export function sinonimoAGuardar(codProvee: string | null | undefined, codigo: string, usaSerie: boolean): string {
+  const entero = usaSerie ? codigoEnteroConSerie(codProvee, codigo) : null
+  return entero ?? codigoParaSinonimo(codProvee, codigo)
+}
+
 /**
  * Proveedores con un largo de RESPALDO: primero se busca el código impreso
  * entero y, si no aparece, se comparan los primeros N caracteres contra los

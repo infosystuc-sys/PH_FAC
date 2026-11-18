@@ -310,3 +310,43 @@ describe('respaldo de 12 caracteres de NEWSAN', () => {
     expect(m.get(normalizarCodigo(impreso))).toEqual({ art: String(x.art), porPrefijo: true })
   })
 })
+
+/**
+ * IMSA, articulos con serie (2026-11-18, decision del usuario): primero el
+ * codigo impreso entero (hasta 15) y, si no aparece, los 8 primeros. Con un
+ * sinonimo real de mas de 8 de un articulo con serie, descubierto.
+ */
+describe('IMSA: codigo entero para articulos con serie', () => {
+  async function sinonimoImsaConSerie() {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(c.COD_ARTICU)) AS art, LTRIM(RTRIM(c.COD_SINONI)) AS sinonimo
+      FROM CPA15 c JOIN STA11 a ON a.COD_ARTICU = c.COD_ARTICU
+      WHERE LTRIM(RTRIM(c.COD_PROVEE)) = '010337' AND a.USA_SERIE = 1
+        AND LEN(LTRIM(RTRIM(ISNULL(c.COD_SINONI,'')))) > 8
+      ORDER BY c.COD_ARTICU`)
+    return r.recordset[0] ?? null
+  }
+
+  it('emparejarSinonimos lo encuentra por el codigo entero', async () => {
+    const x = await sinonimoImsaConSerie()
+    if (!x) return
+    const m = await emparejarSinonimos('010337', [String(x.sinonimo)])
+    expect(m.get(normalizarCodigo(String(x.sinonimo)))).toEqual({ art: String(x.art), porPrefijo: false })
+  })
+
+  it('el buscador lo encuentra pegando el codigo entero', async () => {
+    const x = await sinonimoImsaConSerie()
+    if (!x) return
+    const r = await buscarArticulos(String(x.sinonimo), '010337')
+    expect(r[0]?.codArticu).toBe(String(x.art))
+    expect(r[0]?.porQue).toBe('código del proveedor')
+  })
+
+  it('otro proveedor no lo encuentra con el mismo codigo', async () => {
+    const x = await sinonimoImsaConSerie()
+    if (!x) return
+    const m = await emparejarSinonimos('010685', [String(x.sinonimo)])
+    expect(m.get(normalizarCodigo(String(x.sinonimo)))?.art).not.toBe(String(x.art))
+  })
+})

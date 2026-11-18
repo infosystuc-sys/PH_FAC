@@ -3,7 +3,12 @@ import { getPool } from '../db/pool'
 import { tieneColumna } from './esquema'
 import type { CriterioOc } from '@/lib/tipoFactura'
 import { normalizarCodigo } from '@/lib/cotejoOc'
-import { codigoParaSinonimo, prefijoDeRespaldo } from '@/lib/codigoProveedor'
+import {
+  codigoParaSinonimo,
+  codigoEnteroConSerie,
+  prefijoDeRespaldo,
+  sinonimoAGuardar,
+} from '@/lib/codigoProveedor'
 
 export type ArticuloTango = {
   codArticu: string
@@ -58,6 +63,8 @@ export async function buscarArticulos(
     // Contra CPA15, con la regla de largo del proveedor si tiene (IMSA):
     // pegar el codigo impreso entero tiene que encontrar su sinonimo.
     .input('sinonimo', sql.VarChar(60), codigoParaSinonimo(codProvee, t))
+    // IMSA, artículos con serie (2026-11-18): también el código entero, hasta 15.
+    .input('enteroSerie', sql.VarChar(60), codigoEnteroConSerie(codProvee, t))
     // Y el respaldo: los 12 primeros de los dos lados en NEWSAN (2026-11-16),
     // los 15 de CPA15.COD_SINONI en el resto (2026-11-17).
     .input('prefijo', sql.VarChar(60), prefijoDeRespaldo(codProvee, t)?.toUpperCase() ?? null)
@@ -95,6 +102,8 @@ export async function buscarArticulos(
        AND @prov IS NOT NULL
        AND LTRIM(RTRIM(sin.COD_PROVEE)) = @prov
        AND (LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @sinonimo
+            OR (@enteroSerie IS NOT NULL AND a.USA_SERIE = 1
+                AND LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @enteroSerie)
             OR (@prefijo IS NOT NULL
                 AND UPPER(LEFT(LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))), LEN(@prefijo))) = @prefijo))
       WHERE sin.COD_ARTICU IS NOT NULL
@@ -144,15 +153,22 @@ export async function asociarArticuloProveedor(
   codProvee: string,
   codArticu: string,
   codSinoni: string,
-): Promise<void> {
+): Promise<string | null> {
   const prov = codProvee.trim()
   const art = codArticu.trim()
-  // Recortado si el proveedor tiene regla (IMSA: los 8 primeros), para que
-  // `articulosPorSinonimo` lo encuentre despues. Ver codigoProveedor.ts.
-  const sinonimo = codigoParaSinonimo(prov, codSinoni)
-  if (!prov || !art || !sinonimo) return
+  if (!prov || !art) return null
 
   const pool = await getPool()
+  // Recortado si el proveedor tiene regla (IMSA: los 8 primeros), para que
+  // `articulosPorSinonimo` lo encuentre despues; entero (hasta 15) si ademas
+  // el articulo lleva serie (IMSA, 2026-11-18). Ver codigoProveedor.ts.
+  const serie = await pool
+    .request()
+    .input('art', sql.VarChar(15), art)
+    .query<{ u: boolean | null }>(`SELECT USA_SERIE AS u FROM STA11 WHERE COD_ARTICU = @art`)
+  const sinonimo = sinonimoAGuardar(prov, codSinoni, serie.recordset[0]?.u === true)
+  if (!sinonimo) return null
+
   // Las bases mas viejas no tienen ID_STA11 / ID_CPA01 en CPA15.
   const conIds = await tieneColumna('CPA15', 'ID_STA11')
   const columnasIds = conIds ? 'ID_STA11, ID_CPA01, ' : ''
@@ -181,6 +197,7 @@ export async function asociarArticuloProveedor(
           ${valoresIds}@prov
         );
     `)
+  return sinonimo.slice(0, 15)
 }
 
 /**
@@ -222,20 +239,27 @@ export async function articulosPorSinonimo(
  * El respaldo solo se usa si el código entero no aparece, y solo si los
  * primeros caracteres llevan a UN único artículo del proveedor: dos modelos
  * que compartan el principio quedan sin emparejar, para el operador.
+ *
+ * IMSA (2026-11-18, ver `PROVEEDORES_ENTERO_CON_SERIE`): antes de los 8
+ * primeros se prueba el código impreso entero (hasta 15), y solo vale si
+ * lleva a un artículo con número de serie.
  */
 export async function emparejarSinonimos(
   codProvee: string,
   sinonimos: string[],
 ): Promise<Map<string, { art: string; porPrefijo: boolean }>> {
   const prov = codProvee.trim()
-  // codigo entero normalizado -> la parte que se busca y el respaldo, normalizados
-  const buscados = new Map<string, { parte: string; prefijo: string | null }>()
+  // codigo entero normalizado -> lo que se busca (entero con serie, la parte
+  // y el respaldo), normalizado
+  const buscados = new Map<string, { enteroSerie: string | null; parte: string; prefijo: string | null }>()
   for (const s of sinonimos) {
     const entero = normalizarCodigo(s)
     const parte = normalizarCodigo(codigoParaSinonimo(prov, s))
+    const conSerie = codigoEnteroConSerie(prov, s)
+    const enteroSerie = conSerie === null ? null : normalizarCodigo(conSerie) || null
     const crudo = prefijoDeRespaldo(prov, s)
     const prefijo = crudo === null ? null : normalizarCodigo(crudo) || null
-    if (entero !== '' && parte !== '') buscados.set(entero, { parte, prefijo })
+    if (entero !== '' && parte !== '') buscados.set(entero, { enteroSerie, parte, prefijo })
   }
   if (!prov || buscados.size === 0) return new Map()
 
@@ -244,13 +268,18 @@ export async function emparejarSinonimos(
     .request()
     .input('prov', sql.VarChar(6), prov)
     .query<Record<string, unknown>>(`
-      SELECT LTRIM(RTRIM(COD_ARTICU)) AS art, LTRIM(RTRIM(COD_SINONI)) AS sinonimo
-      FROM CPA15
-      WHERE LTRIM(RTRIM(COD_PROVEE)) = @prov
-        AND LTRIM(RTRIM(ISNULL(COD_SINONI,''))) <> ''
+      SELECT LTRIM(RTRIM(c.COD_ARTICU)) AS art, LTRIM(RTRIM(c.COD_SINONI)) AS sinonimo,
+             CASE WHEN EXISTS (SELECT 1 FROM STA11 a
+                               WHERE a.COD_ARTICU = c.COD_ARTICU AND a.USA_SERIE = 1)
+                  THEN 1 ELSE 0 END AS conSerie
+      FROM CPA15 c
+      WHERE LTRIM(RTRIM(c.COD_PROVEE)) = @prov
+        AND LTRIM(RTRIM(ISNULL(c.COD_SINONI,''))) <> ''
     `)
 
   const artPorSinonimo = new Map<string, string>()
+  // Lo mismo, solo con los articulos que llevan serie.
+  const artConSeriePorSinonimo = new Map<string, string>()
   // Los primeros N caracteres de cada sinonimo guardado -> los articulos que
   // los usan. Recortado igual que el impreso, antes de normalizar; uno que
   // no pasa de N cuenta entero.
@@ -259,6 +288,7 @@ export async function emparejarSinonimos(
     const sinonimo = String(f.sinonimo)
     const art = String(f.art)
     artPorSinonimo.set(normalizarCodigo(sinonimo), art)
+    if (Number(f.conSerie) === 1) artConSeriePorSinonimo.set(normalizarCodigo(sinonimo), art)
     const clave = normalizarCodigo(prefijoDeRespaldo(prov, sinonimo) ?? sinonimo)
     if (clave === '') continue
     const arts = artsPorPrefijo.get(clave) ?? new Set<string>()
@@ -267,7 +297,12 @@ export async function emparejarSinonimos(
   }
 
   const m = new Map<string, { art: string; porPrefijo: boolean }>()
-  for (const [entero, { parte, prefijo }] of buscados) {
+  for (const [entero, { enteroSerie, parte, prefijo }] of buscados) {
+    const conSerie = enteroSerie === null ? undefined : artConSeriePorSinonimo.get(enteroSerie)
+    if (conSerie !== undefined) {
+      m.set(entero, { art: conSerie, porPrefijo: false })
+      continue
+    }
     const art = artPorSinonimo.get(parte)
     if (art !== undefined) {
       m.set(entero, { art, porPrefijo: false })
