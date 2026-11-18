@@ -13,6 +13,8 @@ import {
   sincronizarRenglonesRemitoEn,
   elegirFacturaRenglonEn,
   marcarRemitoSinReferenciaEn,
+  ofertaFacturasRemitoEn,
+  elegirOcRenglonEn,
 } from '@/server/app/remitoFactura'
 
 afterAll(async () => {
@@ -301,7 +303,8 @@ describe('registrarComprobanteEn con un remito contra una factura (2026-11-16)',
       // Un renglon de OC real con algo pendiente de recibir, de un articulo
       // que entra por remito sin series ni partidas.
       const q = await tx.request().query(`
-        SELECT TOP 1 LTRIM(RTRIM(h.COD_PROVEE)) AS COD_PROVEE, LTRIM(RTRIM(r.COD_ARTICU)) AS COD_ARTICU
+        SELECT TOP 1 LTRIM(RTRIM(h.COD_PROVEE)) AS COD_PROVEE, LTRIM(RTRIM(r.COD_ARTICU)) AS COD_ARTICU,
+               r.N_ORDEN_CO, r.N_RENGL_OC, r.TALONARIO
         FROM CPA36 r
         JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO AND h.TALONARIO = r.TALONARIO
         JOIN STA11 a ON a.COD_ARTICU = r.COD_ARTICU
@@ -313,11 +316,22 @@ describe('registrarComprobanteEn con un remito contra una factura (2026-11-16)',
 
       const { id, renglonId } = await remitoDePrueba(tx, { codProvee: p.COD_PROVEE, codArticu: p.COD_ARTICU }, 1, '87654329')
       // Aunque el proveedor tenga una factura sin recibir, se prueba el caso
-      // sin factura: el renglon toma la orden.
+      // sin factura. La orden NO se asigna sola: se ofrece y la elige el
+      // operador (2026-11-18).
       await elegirFacturaRenglonEn(tx, id, renglonId, null)
+      expect((await obtenerDetalleEn(tx, id)).renglones[0].ocNOrdenCo).toBeNull()
+      const oferta = await ofertaFacturasRemitoEn(tx, id)
+      const propuesta = oferta.ocsPorRenglon[renglonId].find(
+        (c) => c.nOrdenCo === p.N_ORDEN_CO && c.nRenglOc === p.N_RENGL_OC && c.talonario === Number(p.TALONARIO),
+      )
+      expect(propuesta).toBeDefined()
+      expect(oferta.ocs.some((o) => o.nOrdenCo === p.N_ORDEN_CO)).toBe(true)
+      await elegirOcRenglonEn(tx, id, renglonId, { nOrdenCo: p.N_ORDEN_CO, talonario: Number(p.TALONARIO), nRenglOc: p.N_RENGL_OC })
+      // Releer el remito no la saca.
+      await sincronizarRenglonesRemitoEn(tx, id)
       const r = (await obtenerDetalleEn(tx, id)).renglones[0]
       expect(r.factura).toBeNull()
-      expect(r.ocNOrdenCo).not.toBeNull()
+      expect(r.ocNOrdenCo).toBe(p.N_ORDEN_CO)
       const oc = { n: r.ocNOrdenCo!, renglon: r.ocNRenglOc!, tal: r.ocTalonario! }
 
       const listo = await validarListoParaRegistrarEn(tx, id)

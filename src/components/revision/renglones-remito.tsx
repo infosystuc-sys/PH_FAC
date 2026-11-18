@@ -7,6 +7,8 @@ import {
   elegirFacturaRenglon,
   elegirFacturaRemito,
   marcarRemitoSinReferencia,
+  elegirOcRenglon,
+  elegirOcRemito,
 } from '@/server/app/acciones/remitos'
 import {
   asociarCodigoProveedor,
@@ -15,7 +17,7 @@ import {
 } from '@/server/app/acciones/articulos'
 import type { OfertaFacturasRemito } from '@/server/app/remitoFactura'
 import type { RenglonGuardado, SeriePdfGuardada } from '@/server/app/detalle'
-import { claveRenglonFactura, claveFactura, type CandidatoFactura } from '@/lib/remitoFactura'
+import { claveRenglonFactura, claveFactura, claveOcRenglon, claveOc, type CandidatoFactura } from '@/lib/remitoFactura'
 import { formatCantidad, formatFecha, parsearImporteONulo } from '@/lib/formato'
 import { useToast } from '@/components/toast/toast-provider'
 import { BuscadorArticulos } from './buscador-articulos'
@@ -97,6 +99,12 @@ export function RenglonesRemito({
   // La factura que tienen todos los renglones, para mostrarla en el selector general.
   const facturasUsadas = [...new Set(renglones.filter((r) => r.factura).map((r) => claveFactura(r.factura!)))]
   const facturaGeneral = facturasUsadas.length === 1 && sinFactura.length === 0 ? facturasUsadas[0] : ''
+  // Lo mismo con la orden de compra de los renglones sin factura (2026-11-18).
+  const hayOcs = (oferta?.ocs.length ?? 0) > 0
+  const ocsUsadas = [
+    ...new Set(conSoloOc.map((r) => claveOc({ talonario: r.ocTalonario, nOrdenCo: r.ocNOrdenCo! }))),
+  ]
+  const ocGeneral = ocsUsadas.length === 1 && sinNada.length === 0 ? ocsUsadas[0] : ''
 
   if (soloLectura) {
     return (
@@ -170,7 +178,41 @@ export function RenglonesRemito({
         </div>
       )}
 
-      {/* El cartel: no hay factura para todo, y se puede grabar igual. */}
+      {/* Sin factura: las OC que tienen los articulos del remito, para
+          elegir una para todo (2026-11-18). No se asigna sola. */}
+      {oferta && sinFactura.length > 0 && hayOcs && (
+        <div className={styles.general}>
+          <span className={styles.etiqueta}>Orden de compra</span>
+          <select
+            className={styles.select}
+            value={ocGeneral}
+            disabled={pendiente}
+            onChange={(e) => {
+              const o = oferta.ocs.find((x) => claveOc(x) === e.target.value)
+              if (!o) return
+              accion(
+                async () => {
+                  const r = await elegirOcRemito(comprobanteId, { nOrdenCo: o.nOrdenCo, talonario: o.talonario })
+                  if (r.cubiertos < r.total) {
+                    toast(`La orden ${o.nOrdenCo.trim()} cubre ${r.cubiertos} de ${r.total} renglón(es) sin factura.`)
+                  }
+                },
+                `Orden de compra ${o.nOrdenCo.trim()} elegida para el remito`,
+              )
+            }}
+          >
+            <option value="">{ocsUsadas.length > 1 ? 'Varias órdenes' : 'Elegir orden de compra…'}</option>
+            {oferta.ocs.map((o) => (
+              <option key={claveOc(o)} value={claveOc(o)}>
+                {o.nOrdenCo.trim()}
+                {o.fechaEmision ? ` · ${formatFecha(o.fechaEmision)}` : ''} · {o.renglones} artículo(s) del remito
+                pendiente(s) de recibir
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {oferta && conSoloOc.length > 0 && (
         <p className={styles.aviso}>
           {conSoloOc.length === renglones.length ? 'El remito' : `${conSoloOc.length} renglón(es)`} todavía sin
@@ -181,14 +223,16 @@ export function RenglonesRemito({
         </p>
       )}
 
+      {/* El cartel: sin factura ni orden, se puede grabar igual. */}
+
       {oferta && renglones.length > 0 && sinNada.length > 0 && (
         <div className={sinReferencia ? styles.cartelConfirmado : styles.cartel}>
           <p className={styles.cartelTexto}>
-            {!hayFacturas && conSoloOc.length === 0
-              ? 'Este proveedor no tiene ninguna factura registrada en Tango con mercadería sin recibir: el remito no tiene a qué factura vincularse.'
+            {!hayFacturas && !hayOcs
+              ? 'Este proveedor no tiene ninguna factura con mercadería sin recibir ni orden de compra con estos artículos pendientes: el remito no tiene a qué vincularse.'
               : sinNada.length === renglones.length
-                ? 'Ningún renglón del remito tiene factura ni orden de compra de referencia.'
-                : `${sinNada.length} renglón(es) no tienen factura ni orden de compra de referencia.`}{' '}
+                ? 'Ningún renglón del remito tiene factura ni orden de compra de referencia: elegí una arriba o en cada renglón.'
+                : `${sinNada.length} renglón(es) no tienen factura ni orden de compra de referencia: elegí una arriba o en cada renglón.`}{' '}
             {sinReferencia
               ? 'Se van a grabar sin comprobante de referencia: entran a stock sin vincularse a ninguna factura ni orden de compra.'
               : 'Podés grabarlos sin comprobante de referencia: entran a stock sin vincularse a ninguna factura ni orden de compra.'}
@@ -298,20 +342,44 @@ export function RenglonesRemito({
                   {falta === null ? '—' : formatCantidad(falta)}
                   {excede && ' !'}
                 </span>
-                <span
-                  className={`${styles.mono} ${styles.tenue}`}
-                  title={
-                    !r?.factura && r?.ocNOrdenCo
-                      ? `Sin factura: va contra el renglón ${r.ocNRenglOc} de la orden, que tiene ${formatCantidad(parsearImporteONulo(r.ocPendiente))} pendiente(s) de recibir.`
-                      : undefined
-                  }
-                >
-                  {elegido?.oc
-                    ? elegido.oc.nOrdenCo.trim()
-                    : !r?.factura && r?.ocNOrdenCo
-                      ? `${r.ocNOrdenCo.trim()} · pend. ${formatCantidad(parsearImporteONulo(r.ocPendiente))}`
-                      : '—'}
-                </span>
+                {/* Con factura, la OC es la de la factura. Sin factura, el
+                    operador elige entre las que tienen el articulo pendiente
+                    de recibir (2026-11-18): no se asigna sola. */}
+                {r && !r.factura && (r.codigoFinal ?? r.codigo) ? (
+                  <select
+                    className={`${styles.select} ${r.ocNOrdenCo ? '' : styles.selectVacio}`}
+                    value={r.ocNOrdenCo ? claveOcRenglon({ talonario: r.ocTalonario, nOrdenCo: r.ocNOrdenCo, nRenglOc: r.ocNRenglOc }) : ''}
+                    disabled={pendiente || !oferta}
+                    title="Orden de compra que recibe este renglón, mientras no llega la factura"
+                    onChange={(e) => {
+                      const c = (oferta?.ocsPorRenglon[r.id] ?? []).find((x) => claveOcRenglon(x) === e.target.value) ?? null
+                      accion(
+                        () =>
+                          elegirOcRenglon(
+                            comprobanteId,
+                            r.id,
+                            c ? { nOrdenCo: c.nOrdenCo, talonario: c.talonario, nRenglOc: c.nRenglOc } : null,
+                          ),
+                        c
+                          ? `Orden ${c.nOrdenCo.trim()} elegida para el renglón ${l.pdfOrden}`
+                          : `Renglón ${l.pdfOrden} sin orden de compra`,
+                      )
+                    }}
+                  >
+                    <option value="">
+                      {(oferta?.ocsPorRenglon[r.id] ?? []).length === 0 ? 'Ninguna OC lo tiene' : 'Sin OC'}
+                    </option>
+                    {(oferta?.ocsPorRenglon[r.id] ?? []).map((c) => (
+                      <option key={claveOcRenglon(c)} value={claveOcRenglon(c)}>
+                        {c.nOrdenCo.trim()}
+                        {c.fechaEmision ? ` · ${formatFecha(c.fechaEmision)}` : ''} · renglón {c.nRenglOc} · pend.{' '}
+                        {formatCantidad(c.pendiente)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className={`${styles.mono} ${styles.tenue}`}>{elegido?.oc ? elegido.oc.nOrdenCo.trim() : '—'}</span>
+                )}
                 <SeriesLeidas
                   series={seriesPdf.filter((s) => s.pdfOrden === l.pdfOrden)}
                   cantidad={l.cantidad}
@@ -325,8 +393,8 @@ export function RenglonesRemito({
       <p className={styles.explicacion}>
         Cada renglón entra al depósito de su orden de compra (01 si no tiene). Contra una factura, se vincula a
         ella y, si la factura se imputó a una orden de compra, descuenta lo pendiente de recibir de esa orden.
-        Sin factura, va contra la orden de compra que tiene el artículo pendiente de recibir y queda pendiente de
-        facturar.
+        Sin factura, elegí la orden de compra que lo recibe entre las que tienen el artículo pendiente de recibir: queda
+        pendiente de facturar y se vincula a la factura cuando llegue.
       </p>
     </section>
   )

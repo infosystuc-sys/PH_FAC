@@ -16,6 +16,8 @@ import {
   elegirFacturaRenglonEn,
   elegirFacturaRemitoEn,
   marcarRemitoSinReferenciaEn,
+  elegirOcRenglonEn,
+  elegirOcRemitoEn,
   type OfertaFacturasRemito,
 } from '../remitoFactura'
 
@@ -223,4 +225,24 @@ export async function elegirFacturaRemito(
 export async function marcarRemitoSinReferencia(comprobanteId: number, valor: boolean): Promise<void> {
   await conTransaccion((tx) => marcarRemitoSinReferenciaEn(tx, comprobanteId, valor))
   revalidatePath(`/comprobantes/${comprobanteId}`)
+}
+
+/** La orden de compra de un renglón sin factura, o ninguna con `null` (2026-11-18). */
+export async function elegirOcRenglon(
+  comprobanteId: number,
+  renglonId: number,
+  ref: { nOrdenCo: string; talonario: number; nRenglOc: number } | null,
+): Promise<void> {
+  await conTransaccion((tx) => elegirOcRenglonEn(tx, comprobanteId, renglonId, ref))
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+}
+
+/** Una orden de compra para todos los renglones sin factura del remito (2026-11-18). */
+export async function elegirOcRemito(
+  comprobanteId: number,
+  oc: { nOrdenCo: string; talonario: number },
+): Promise<{ cubiertos: number; total: number }> {
+  const r = await conTransaccion((tx) => elegirOcRemitoEn(tx, comprobanteId, oc))
+  revalidatePath(`/comprobantes/${comprobanteId}`)
+  return r
 }

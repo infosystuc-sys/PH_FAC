@@ -126,7 +126,7 @@
    artículo de Tango, la factura, lo que le falta recibir y la OC heredada. */
 .fila {
   display: grid;
-  grid-template-columns: 24px 120px minmax(220px, 1fr) 56px minmax(220px, 1fr) 300px 84px 120px;
+  grid-template-columns: 24px 120px minmax(200px, 1fr) 56px minmax(200px, 1fr) 280px 84px 200px;
   column-gap: 10px;
   align-items: start;
   min-width: 1240px;

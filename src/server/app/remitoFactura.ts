@@ -10,6 +10,8 @@ import {
   proponerFacturas,
   claveFactura,
   claveRenglonFactura,
+  claveOcRenglon,
+  claveOc,
   type CandidatoFactura,
 } from '@/lib/remitoFactura'
 
@@ -28,7 +30,7 @@ import {
  * imputada a una, el registro la hereda (decisión del usuario).
  *
  * Si no hay factura, se vincula a la orden de compra que tenga el artículo
- * pendiente de recibir (2026-11-18, ver `proponerOcEn`), y la factura que
+ * pendiente de recibir que elija el operador (2026-11-18, ver `elegirOcRenglonEn`), y la factura que
  * llegue después lo consume. Sin factura ni orden, el operador confirma
  * grabarlo sin comprobante de referencia
  * (`PHF_COMPROBANTE.REMITO_SIN_REFERENCIA`): entra a stock sin vincularse a
@@ -173,8 +175,12 @@ export async function sincronizarRenglonesRemitoEn(
         .query(`
           UPDATE PHF_RENGLON
           SET CODIGO_IA = @codigo, DESCRIPCION_IA = @desc, CANTIDAD_IA = @cant, COD_PROVEEDOR = @codProv,
-              -- El remito ya no va contra la OC: la hereda de la factura al registrar.
-              OC_N_ORDEN_CO = NULL, OC_TALONARIO = NULL, OC_N_RENGL_OC = NULL, OC_PENDIENTE = NULL,
+              -- La OC la elige el operador para los renglones sin factura
+              -- (2026-11-18): se conserva salvo que cambie el articulo.
+              OC_N_ORDEN_CO = CASE WHEN @limpiar = 1 THEN NULL ELSE OC_N_ORDEN_CO END,
+              OC_TALONARIO  = CASE WHEN @limpiar = 1 THEN NULL ELSE OC_TALONARIO END,
+              OC_N_RENGL_OC = CASE WHEN @limpiar = 1 THEN NULL ELSE OC_N_RENGL_OC END,
+              OC_PENDIENTE  = CASE WHEN @limpiar = 1 THEN NULL ELSE OC_PENDIENTE END,
               PRECIO_UNITARIO_IA = NULL, IMPORTE_IA = NULL,
               FAC_TCOMP_IN_C = CASE WHEN @limpiar = 1 THEN NULL ELSE FAC_TCOMP_IN_C END,
               FAC_NCOMP_IN_C = CASE WHEN @limpiar = 1 THEN NULL ELSE FAC_NCOMP_IN_C END,
@@ -201,7 +207,7 @@ export async function sincronizarRenglonesRemitoEn(
   }
 
   const propuestos = await proponerEn(e, comprobanteId)
-  await proponerOcEn(e, comprobanteId)
+  await depurarOcEn(e, comprobanteId)
   return { renglones: lineas.length, propuestos }
 }
 
@@ -210,24 +216,36 @@ export async function sincronizarRenglonesRemitoEn(
  * pedido del usuario: "el remito que llega antes que la factura se vincula
  * a la OC, y cuando llega la factura se vincula con la OC").
  *
- * A cada renglón sin factura se le asigna el renglón de OC del proveedor con
- * ese artículo pendiente de RECIBIR (`CPA36.CAN_PENDIE`) que alcance para su
- * cantidad, de la orden más vieja a la más nueva, sin pasarse de lo que ya
- * tomaron los otros renglones del remito. Al registrar se graba como Tango
- * graba un remito contra OC sin factura (STA20 con la OC y `CANT_PEND` =
- * la cantidad, `CPA_OC_REMITO`, contadores de recepción de `CPA36` y
+ * La app NO la asigna sola (mismo día, corrección del usuario: "que el
+ * remito no se vincule automáticamente a una OC; proponé las OC que tengan
+ * los artículos"): ofrece los renglones de OC del proveedor con el artículo
+ * pendiente de RECIBIR (`CPA36.CAN_PENDIE`), de la orden más vieja a la más
+ * nueva, y el operador elige por renglón (`elegirOcRenglonEn`) o una orden
+ * para todo el remito (`elegirOcRemitoEn`). Al registrar se graba como Tango
+ * graba un remito contra OC sin factura (STA20 con la OC y `CANT_PEND` = la
+ * cantidad, `CPA_OC_REMITO`, contadores de recepción de `CPA36` y
  * `STA19.CANT_PEND`), y la factura que llegue después lo consume por ese
  * renglón de OC (ver `saldosDeRemitoEn`).
  *
  * Los renglones con factura no llevan OC propia: la heredan de la factura.
  */
-async function proponerOcEn(e: Ejecutor, comprobanteId: number): Promise<void> {
-  const detalle = await obtenerDetalleEn(e, comprobanteId)
+export type CandidatoOcRemito = {
+  nOrdenCo: string
+  talonario: number
+  nRenglOc: number
+  codArticu: string
+  fechaEmision: Date | null
+  /** Lo pendiente de recibir del renglón de OC (`CPA36.CAN_PENDIE`). */
+  pendiente: number
+}
+
+
+/** Los renglones de OC del proveedor con algo pendiente de recibir, de la orden más vieja a la más nueva. */
+async function candidatosOcEn(detalle: Detalle): Promise<CandidatoOcRemito[]> {
   const codProvee = codProveeDe(detalle)
-  const sinFactura = detalle.renglones.filter((r) => !r.factura)
-  const ocs = codProvee && sinFactura.length > 0 ? await buscarOcPendientes(codProvee, 'recibir') : []
-  // De la mas vieja a la mas nueva (buscarOcPendientes las trae al reves).
-  const candidatos = ocs
+  if (!codProvee) return []
+  const ocs = await buscarOcPendientes(codProvee, 'recibir')
+  return ocs
     .slice()
     .sort(
       (a, b) =>
@@ -238,37 +256,125 @@ async function proponerOcEn(e: Ejecutor, comprobanteId: number): Promise<void> {
         nOrdenCo: oc.nOrdenCo,
         talonario: oc.talonario,
         nRenglOc: r.nRenglOc,
-        codArticu: normalizarCodigo(r.codArticu),
+        codArticu: r.codArticu,
+        fechaEmision: oc.fechaEmision,
         pendiente: r.pendiente,
       })),
     )
+}
 
-  const tomado = new Map<string, number>()
-  const clave = (c: { talonario: number; nOrdenCo: string; nRenglOc: number }) =>
-    `${c.talonario}|${c.nOrdenCo}|${c.nRenglOc}`
-  for (const r of detalle.renglones) {
-    let elegido: (typeof candidatos)[number] | null = null
-    if (!r.factura) {
-      const art = normalizarCodigo(r.codigoFinal ?? r.codigo ?? '')
-      const cantidad = parsearImporte(r.cantidad)
-      elegido =
-        candidatos.find(
-          (c) => art !== '' && c.codArticu === art && c.pendiente - (tomado.get(clave(c)) ?? 0) - cantidad > -0.00005,
-        ) ?? null
-      if (elegido) tomado.set(clave(elegido), (tomado.get(clave(elegido)) ?? 0) + cantidad)
-    }
-    await e
-      .request()
-      .input('id', sql.Int, r.id)
-      .input('oc', sql.VarChar(14), elegido?.nOrdenCo ?? null)
-      .input('tal', sql.Int, elegido?.talonario ?? null)
-      .input('nr', sql.Int, elegido?.nRenglOc ?? null)
-      .input('pend', sql.Decimal(19, 4), elegido?.pendiente ?? null)
-      .query(`
-        UPDATE PHF_RENGLON
-        SET OC_N_ORDEN_CO = @oc, OC_TALONARIO = @tal, OC_N_RENGL_OC = @nr, OC_PENDIENTE = @pend
-        WHERE ID = @id`)
+async function escribirOcEn(e: Ejecutor, renglonId: number, c: CandidatoOcRemito | null): Promise<void> {
+  await e
+    .request()
+    .input('id', sql.Int, renglonId)
+    .input('oc', sql.VarChar(14), c?.nOrdenCo ?? null)
+    .input('tal', sql.Int, c?.talonario ?? null)
+    .input('nr', sql.Int, c?.nRenglOc ?? null)
+    .input('pend', sql.Decimal(19, 4), c?.pendiente ?? null)
+    .query(`
+      UPDATE PHF_RENGLON
+      SET OC_N_ORDEN_CO = @oc, OC_TALONARIO = @tal, OC_N_RENGL_OC = @nr, OC_PENDIENTE = @pend
+      WHERE ID = @id`)
+}
+
+/**
+ * Mantiene al día la OC que eligió el operador: se saca si el renglón pasó a
+ * tener factura o si ese renglón de OC ya no tiene el artículo pendiente, y
+ * se refresca la foto de lo pendiente. No asigna ninguna.
+ */
+async function depurarOcEn(e: Ejecutor, comprobanteId: number): Promise<void> {
+  const detalle = await obtenerDetalleEn(e, comprobanteId)
+  const conOc = detalle.renglones.filter((r) => r.ocNOrdenCo)
+  if (conOc.length === 0) return
+  const porClave = new Map((await candidatosOcEn(detalle)).map((c) => [claveOcRenglon(c), c]))
+  for (const r of conOc) {
+    const c = porClave.get(claveOcRenglon({ talonario: r.ocTalonario, nOrdenCo: r.ocNOrdenCo!, nRenglOc: r.ocNRenglOc }))
+    const vale =
+      !r.factura && c && normalizarCodigo(c.codArticu) === normalizarCodigo(r.codigoFinal ?? r.codigo ?? '')
+    await escribirOcEn(e, r.id, vale ? c! : null)
   }
+}
+
+/**
+ * El operador elige la OC de un renglón sin factura (o ninguna, con `null`).
+ * Tiene que ser del artículo y tener pendiente de recibir lo que el renglón
+ * trae, descontado lo que ya tomaron de ese mismo renglón de OC los otros
+ * renglones del remito.
+ */
+export async function elegirOcRenglonEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  renglonId: number,
+  ref: { nOrdenCo: string; talonario: number; nRenglOc: number } | null,
+): Promise<void> {
+  if (await cerradoEn(e, comprobanteId)) throw new Error('El comprobante ya está registrado.')
+  const detalle = await obtenerDetalleEn(e, comprobanteId)
+  const r = detalle.renglones.find((x) => x.id === renglonId)
+  if (!r) throw new Error('El renglón ya no existe.')
+  const n = r.pdfOrden ?? r.orden
+
+  if (ref === null) {
+    await escribirOcEn(e, renglonId, null)
+    await auditarEn(e, comprobanteId, `Renglón ${n} del remito sin orden de compra`)
+    return
+  }
+  if (r.factura) throw new Error(`El renglón ${n} va contra la factura ${r.factura.nComp ?? ''}: la orden es la de la factura.`)
+
+  const c = (await candidatosOcEn(detalle)).find((x) => claveOcRenglon(x) === claveOcRenglon(ref))
+  if (!c) throw new Error(`El renglón ${ref.nRenglOc} de la orden ${ref.nOrdenCo.trim()} ya no tiene nada pendiente de recibir.`)
+  if (normalizarCodigo(c.codArticu) !== normalizarCodigo(r.codigoFinal ?? r.codigo ?? '')) {
+    throw new Error(`El renglón ${c.nRenglOc} de la orden ${c.nOrdenCo.trim()} es del artículo ${c.codArticu}, no del de este renglón.`)
+  }
+  const tomado = detalle.renglones
+    .filter((x) => x.id !== renglonId && x.ocNOrdenCo && claveOcRenglon({ talonario: x.ocTalonario, nOrdenCo: x.ocNOrdenCo, nRenglOc: x.ocNRenglOc }) === claveOcRenglon(c))
+    .reduce((t, x) => t + parsearImporte(x.cantidad), 0)
+  const cantidad = parsearImporte(r.cantidad)
+  if (cantidad + tomado - c.pendiente > 0.00005) {
+    throw new Error(
+      `La orden ${c.nOrdenCo.trim()} tiene ${c.pendiente} pendiente(s) de recibir de ${c.codArticu}` +
+        (tomado > 0 ? ` y otros renglones del remito ya toman ${tomado}` : '') +
+        `: no alcanza para ${cantidad}.`,
+    )
+  }
+  await escribirOcEn(e, renglonId, c)
+  await auditarEn(e, comprobanteId, `Orden de compra ${c.nOrdenCo.trim()} (renglón ${c.nRenglOc}) elegida para el renglón ${n} del remito`)
+}
+
+/**
+ * El operador elige UNA orden para todo el remito: cada renglón sin factura
+ * va contra el renglón de esa orden que tenga su artículo y pendiente
+ * suficiente. Los que la orden no cubre quedan como estaban.
+ */
+export async function elegirOcRemitoEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  oc: { nOrdenCo: string; talonario: number },
+): Promise<{ cubiertos: number; total: number }> {
+  if (await cerradoEn(e, comprobanteId)) throw new Error('El comprobante ya está registrado.')
+  const detalle = await obtenerDetalleEn(e, comprobanteId)
+  const candidatos = (await candidatosOcEn(detalle)).filter((c) => claveOc(c) === claveOc(oc))
+  if (candidatos.length === 0) throw new Error(`La orden ${oc.nOrdenCo.trim()} ya no tiene nada pendiente de recibir.`)
+
+  const sinFactura = detalle.renglones.filter((r) => !r.factura)
+  const tomado = new Map<string, number>()
+  let cubiertos = 0
+  for (const r of sinFactura) {
+    const art = normalizarCodigo(r.codigoFinal ?? r.codigo ?? '')
+    const cantidad = parsearImporte(r.cantidad)
+    const c = candidatos.find(
+      (x) => art !== '' && normalizarCodigo(x.codArticu) === art && x.pendiente - (tomado.get(claveOcRenglon(x)) ?? 0) - cantidad > -0.00005,
+    )
+    if (!c) continue
+    tomado.set(claveOcRenglon(c), (tomado.get(claveOcRenglon(c)) ?? 0) + cantidad)
+    await escribirOcEn(e, r.id, c)
+    cubiertos += 1
+  }
+  await auditarEn(
+    e,
+    comprobanteId,
+    `Orden de compra ${oc.nOrdenCo.trim()} elegida para el remito — ${cubiertos} de ${sinFactura.length} renglón(es) sin factura`,
+  )
+  return { cubiertos, total: sinFactura.length }
 }
 
 /**
@@ -312,6 +418,13 @@ export type OfertaFacturasRemito = {
   candidatosPorRenglon: Record<number, CandidatoFactura[]>
   /** Las facturas del proveedor con algo sin recibir, para elegir una para todo el remito. */
   facturas: { tcompInC: string; ncompInC: number; nComp: string; fechaEmision: Date | null; renglones: number }[]
+  /**
+   * Los renglones de OC con el artículo pendiente de recibir, por ID de
+   * PHF_RENGLON (2026-11-18): lo que se le propone a un renglón sin factura.
+   */
+  ocsPorRenglon: Record<number, CandidatoOcRemito[]>
+  /** Las órdenes que tienen pendiente algún artículo del remito, para elegir una para todo. */
+  ocs: { nOrdenCo: string; talonario: number; fechaEmision: Date | null; renglones: number }[]
   sinReferencia: boolean
 }
 
@@ -336,10 +449,27 @@ export async function ofertaFacturasRemitoEn(e: Ejecutor, comprobanteId: number)
     facturas.set(k, f)
   }
 
+  // Las OC que tienen los articulos del remito: se proponen, no se asignan.
+  const candidatosOc = codProvee ? await candidatosOcEn(detalle) : []
+  const ocsPorRenglon: Record<number, CandidatoOcRemito[]> = {}
+  const ocs = new Map<string, OfertaFacturasRemito['ocs'][number]>()
+  for (const r of detalle.renglones) {
+    const art = normalizarCodigo(r.codigoFinal ?? r.codigo ?? '')
+    if (!art) continue
+    ocsPorRenglon[r.id] = candidatosOc.filter((c) => normalizarCodigo(c.codArticu) === art)
+    for (const c of new Map(ocsPorRenglon[r.id].map((x) => [claveOc(x), x])).values()) {
+      const o = ocs.get(claveOc(c)) ?? { nOrdenCo: c.nOrdenCo, talonario: c.talonario, fechaEmision: c.fechaEmision, renglones: 0 }
+      o.renglones += 1
+      ocs.set(claveOc(c), o)
+    }
+  }
+
   return {
     lineas,
     candidatosPorRenglon,
     facturas: [...facturas.values()],
+    ocsPorRenglon,
+    ocs: [...ocs.values()],
     sinReferencia: await remitoSinReferenciaEn(e, comprobanteId),
   }
 }
@@ -362,7 +492,7 @@ export async function elegirFacturaRenglonEn(
 
   if (ref === null) {
     await escribirFacturaEn(e, renglonId, null, true)
-    await proponerOcEn(e, comprobanteId)
+    await depurarOcEn(e, comprobanteId)
     const oc = (await obtenerDetalleEn(e, comprobanteId)).renglones.find((x) => x.id === renglonId)?.ocNOrdenCo
     await auditarEn(
       e,
@@ -382,7 +512,7 @@ export async function elegirFacturaRenglonEn(
     throw new Error(`El renglón de la factura ${c.nComp} es del artículo ${c.codArticu}, no del de este renglón.`)
   }
   await escribirFacturaEn(e, renglonId, c, true)
-  await proponerOcEn(e, comprobanteId)
+  await depurarOcEn(e, comprobanteId)
   await auditarEn(e, comprobanteId, `Factura ${c.nComp} (renglón ${c.nRenglC}) elegida para el renglón ${r.pdfOrden ?? r.orden} del remito`)
 }
 
@@ -412,7 +542,7 @@ export async function elegirFacturaRemitoEn(
   // Sin limite de antiguedad: la eligio el operador.
   const asignados = proponerFacturas(renglones, candidatos, new Date(8640000000000000))
   for (const [id, c] of asignados) await escribirFacturaEn(e, id, c, true)
-  await proponerOcEn(e, comprobanteId)
+  await depurarOcEn(e, comprobanteId)
   await e.request().input('id', sql.Int, comprobanteId)
     .query('UPDATE PHF_COMPROBANTE SET REMITO_SIN_REFERENCIA = 0 WHERE ID = @id')
   await auditarEn(

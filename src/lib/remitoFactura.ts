@@ -212,3 +212,10 @@ export function validarFacturasRemito(
       : `${contra}; ${sinNada.length} se graban sin comprobante de referencia.`,
   }
 }
+
+/** La clave de un renglón de OC (talonario, número y renglón), para elegirlo en el remito (2026-11-18). */
+export const claveOcRenglon = (c: { talonario: number | null; nOrdenCo: string; nRenglOc: number | null }) =>
+  `${c.talonario ?? ''}|${c.nOrdenCo}|${c.nRenglOc ?? ''}`
+
+/** La clave de una OC (talonario y número). */
+export const claveOc = (c: { talonario: number | null; nOrdenCo: string }) => `${c.talonario ?? ''}|${c.nOrdenCo}`
