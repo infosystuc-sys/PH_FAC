@@ -6,6 +6,7 @@ import { normalizarCodigo } from '@/lib/cotejoOc'
 import {
   codigoParaSinonimo,
   codigoEnteroConSerie,
+  codigoRecortadoACodSinoni,
   prefijoDeRespaldo,
   sinonimoAGuardar,
 } from '@/lib/codigoProveedor'
@@ -65,6 +66,8 @@ export async function buscarArticulos(
     .input('sinonimo', sql.VarChar(60), codigoParaSinonimo(codProvee, t))
     // IMSA, artículos con serie (2026-11-18): también el código entero, hasta 15.
     .input('enteroSerie', sql.VarChar(60), codigoEnteroConSerie(codProvee, t))
+    // Lo impreso recortado a los 15 de COD_SINONI (2026-11-18).
+    .input('recortado', sql.VarChar(60), codigoRecortadoACodSinoni(codProvee, t)?.toUpperCase() ?? null)
     // Y el respaldo: los 12 primeros de los dos lados en NEWSAN (2026-11-16),
     // los 15 de CPA15.COD_SINONI en el resto (2026-11-17).
     .input('prefijo', sql.VarChar(60), prefijoDeRespaldo(codProvee, t)?.toUpperCase() ?? null)
@@ -104,6 +107,8 @@ export async function buscarArticulos(
        AND (LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @sinonimo
             OR (@enteroSerie IS NOT NULL AND a.USA_SERIE = 1
                 AND LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))) = @enteroSerie)
+            OR (@recortado IS NOT NULL
+                AND UPPER(LTRIM(RTRIM(ISNULL(sin.COD_SINONI,'')))) = @recortado)
             OR (@prefijo IS NOT NULL
                 AND UPPER(LEFT(LTRIM(RTRIM(ISNULL(sin.COD_SINONI,''))), LEN(@prefijo))) = @prefijo))
       WHERE sin.COD_ARTICU IS NOT NULL
@@ -251,15 +256,21 @@ export async function emparejarSinonimos(
   const prov = codProvee.trim()
   // codigo entero normalizado -> lo que se busca (entero con serie, la parte
   // y el respaldo), normalizado
-  const buscados = new Map<string, { enteroSerie: string | null; parte: string; prefijo: string | null }>()
+  const buscados = new Map<
+    string,
+    { enteroSerie: string | null; parte: string; recortado: string | null; prefijo: string | null }
+  >()
   for (const s of sinonimos) {
     const entero = normalizarCodigo(s)
     const parte = normalizarCodigo(codigoParaSinonimo(prov, s))
     const conSerie = codigoEnteroConSerie(prov, s)
     const enteroSerie = conSerie === null ? null : normalizarCodigo(conSerie) || null
+    // Los 15 de COD_SINONI, si lo impreso es mas largo (2026-11-18).
+    const a15 = codigoRecortadoACodSinoni(prov, s)
+    const recortado = a15 === null ? null : normalizarCodigo(a15) || null
     const crudo = prefijoDeRespaldo(prov, s)
     const prefijo = crudo === null ? null : normalizarCodigo(crudo) || null
-    if (entero !== '' && parte !== '') buscados.set(entero, { enteroSerie, parte, prefijo })
+    if (entero !== '' && parte !== '') buscados.set(entero, { enteroSerie, parte, recortado, prefijo })
   }
   if (!prov || buscados.size === 0) return new Map()
 
@@ -297,7 +308,7 @@ export async function emparejarSinonimos(
   }
 
   const m = new Map<string, { art: string; porPrefijo: boolean }>()
-  for (const [entero, { enteroSerie, parte, prefijo }] of buscados) {
+  for (const [entero, { enteroSerie, parte, recortado, prefijo }] of buscados) {
     const conSerie = enteroSerie === null ? undefined : artConSeriePorSinonimo.get(enteroSerie)
     if (conSerie !== undefined) {
       m.set(entero, { art: conSerie, porPrefijo: false })
@@ -306,6 +317,14 @@ export async function emparejarSinonimos(
     const art = artPorSinonimo.get(parte)
     if (art !== undefined) {
       m.set(entero, { art, porPrefijo: false })
+      continue
+    }
+    // El codigo impreso recortado a los 15 de COD_SINONI, exacto (2026-11-18).
+    // Cuenta como encontrado por el principio: en NEWSAN lo que sigue a los 12
+    // sigue siendo el color que se propone para las series.
+    const art15 = recortado === null ? undefined : artPorSinonimo.get(recortado)
+    if (art15 !== undefined) {
+      m.set(entero, { art: art15, porPrefijo: prefijo !== null })
       continue
     }
     if (prefijo === null) continue

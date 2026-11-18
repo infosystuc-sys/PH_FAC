@@ -350,3 +350,36 @@ describe('IMSA: codigo entero para articulos con serie', () => {
     expect(m.get(normalizarCodigo(String(x.sinonimo)))?.art).not.toBe(String(x.art))
   })
 })
+
+/**
+ * Un codigo impreso mas largo que los 15 de COD_SINONI (2026-11-18, NEWSAN
+ * CUBQU110BASEAZUL): se busca exacto recortado a 15, antes del respaldo de 12,
+ * que con dos colores del mismo modelo no alcanza. Con un sinonimo real de 15.
+ */
+describe('codigo impreso recortado a 15', () => {
+  async function sinonimoDe15() {
+    const pool = await getPool()
+    const r = await pool.request().query(`
+      SELECT TOP 1 LTRIM(RTRIM(COD_PROVEE)) AS prov, LTRIM(RTRIM(COD_ARTICU)) AS art, LTRIM(RTRIM(COD_SINONI)) AS sinonimo
+      FROM CPA15
+      WHERE LTRIM(RTRIM(COD_PROVEE)) <> '010337' AND LEN(LTRIM(RTRIM(ISNULL(COD_SINONI,'')))) = 15
+      ORDER BY CASE WHEN LTRIM(RTRIM(COD_PROVEE)) = '010003' THEN 0 ELSE 1 END, COD_ARTICU`)
+    return r.recordset[0] ?? null
+  }
+
+  it('emparejarSinonimos lo encuentra con el codigo impreso entero', async () => {
+    const x = await sinonimoDe15()
+    if (!x) return
+    const impreso = `${x.sinonimo}LARGO`
+    const m = await emparejarSinonimos(String(x.prov), [impreso])
+    expect(m.get(normalizarCodigo(impreso))?.art).toBe(String(x.art))
+  })
+
+  it('el buscador lo encuentra pegando el codigo impreso entero', async () => {
+    const x = await sinonimoDe15()
+    if (!x) return
+    const r = await buscarArticulos(`${x.sinonimo}LARGO`, String(x.prov))
+    expect(r[0]?.codArticu).toBe(String(x.art))
+    expect(r[0]?.porQue).toBe('código del proveedor')
+  })
+})

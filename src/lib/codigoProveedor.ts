@@ -32,6 +32,24 @@ export function codigoParaSinonimo(codProvee: string | null | undefined, codigo:
 export const LARGO_COD_SINONI = 15
 
 /**
+ * Los primeros 15 caracteres del código impreso, cuando es más largo de lo
+ * que entra en `CPA15.COD_SINONI` (2026-11-18, pedido del usuario con NEWSAN
+ * `CUBQU110BASEAZUL`: "el código del proveedor en la factura es más largo
+ * que el que se puede poner en Tango; limitá la lectura a 15 caracteres").
+ * El sinónimo se carga en Tango con esos 15 -- y la app, al enseñarlo, ya lo
+ * guarda recortado a 15 --, así que se busca EXACTO, antes de cualquier
+ * respaldo por principio. `null` si el código entra entero, o para los
+ * proveedores con regla de largo propia (IMSA), que buscan su principio.
+ */
+export function codigoRecortadoACodSinoni(codProvee: string | null | undefined, codigo: string): string | null {
+  const prov = (codProvee ?? '').trim()
+  if (LARGO_SINONIMO_POR_PROVEEDOR[prov]) return null
+  const c = codigo.trim()
+  if (c.length <= LARGO_COD_SINONI) return null
+  return c.slice(0, LARGO_COD_SINONI).trim() || null
+}
+
+/**
  * Proveedores con regla de largo (`LARGO_SINONIMO_POR_PROVEEDOR`) que, para
  * los artículos con número de serie, buscan PRIMERO el código impreso entero
  * (hasta los 15 de `CPA15.COD_SINONI`) y solo si no aparece, el principio.

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   codigoParaSinonimo,
   codigoEnteroConSerie,
+  codigoRecortadoACodSinoni,
   prefijoDeRespaldo,
   restoDelCodigo,
   sinonimoAGuardar,
@@ -80,5 +81,20 @@ describe('IMSA, articulos con serie: primero el codigo entero (2026-11-18)', () 
     expect(sinonimoAGuardar('010337', 'MNLD-110PL-AUE2', true)).toBe('MNLD-110PL-AUE2')
     expect(sinonimoAGuardar('010337', 'MNLD-110PL-AUE2', false)).toBe('MNLD-110')
     expect(sinonimoAGuardar('010685', 'ABC-123', true)).toBe('ABC-123')
+  })
+})
+
+describe('codigoRecortadoACodSinoni: los 15 de CPA15.COD_SINONI (2026-11-18)', () => {
+  it('recorta a 15 lo impreso mas largo', () => {
+    expect(codigoRecortadoACodSinoni('010003', 'CUBQU110BASEAZUL')).toBe('CUBQU110BASEAZU')
+    expect(codigoRecortadoACodSinoni('010685', ' ABCDEFGHIJKLMNOPQ ')).toBe('ABCDEFGHIJKLMNO')
+  })
+
+  it('lo que entra entero no se recorta', () => {
+    expect(codigoRecortadoACodSinoni('010003', 'CUBQU110BASEAZ')).toBeNull()
+  })
+
+  it('IMSA, con regla propia de 8, no recorta a 15', () => {
+    expect(codigoRecortadoACodSinoni('010337', 'MNLD-110PL-AUE2-2026')).toBeNull()
   })
 })
