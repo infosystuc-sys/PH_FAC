@@ -7,6 +7,14 @@ Desde el 18/11/2026 el circuito es:
 
 `docs/informes/` **no va al repo** (está en `.gitignore`). Tiene CSV y consultas con datos reales de Tango, y queda solo en la PC de desarrollo. Los scripts que haya que correr en producción (por ejemplo `diagnostico_produccion.sql`) se pasan a mano.
 
+## La instalación de producción (informe del 18/11/2026)
+
+- Equipo `SERVIDORT`, carpeta `C:\APP\PH_FAC`. Es un clon del repo (`origin` por SSH), en el commit `083664d`, que ya está en la historia de `origin/master`: se actualiza con `git pull --ff-only`, sin la sección "Primera vez".
+- Base `SERVIDORT\AXSQLEXPRESS` / `PUNTO_HOGAR_1`. PDF en `C:\APP\PH_FAC\storage` (`PHF_STORAGE_DIR`). Carpeta escaneada `\\Servidort\comprobantes`.
+- Se arranca a mano con `iniciar-app.bat`, puerto 3013. No hay tarea programada ni servicio.
+- Tiene cambios locales en `.env.local.example` y 2 stashes con trabajo incompleto: no hacer `reset --hard`, `clean` ni `stash drop`.
+- El equipo se usa también para otros desarrollos (`C:\Retail-local`). Quedan 14,9 GB libres en C:.
+
 ## Dónde están los datos de producción
 
 Ninguno de estos lugares lo toca el repo: `git clone` y `git pull` no los crean ni los pisan.
