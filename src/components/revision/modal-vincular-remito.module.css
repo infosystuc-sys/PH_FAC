@@ -1,0 +1,69 @@
+/* Mismo armado que modal-eliminar: overlay, caja y acciones. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(14, 18, 32, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.caja {
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  background: var(--superficie);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+}
+
+.titulo {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.subtitulo {
+  font-size: 13px;
+  color: var(--texto-3);
+  margin: 0 0 16px;
+  line-height: 1.55;
+}
+
+.remitos {
+  border: 1px solid var(--borde);
+  border-radius: var(--radius);
+  padding: 11px 13px;
+  margin: 0 0 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.7;
+  list-style: none;
+}
+
+.acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.acciones button {
+  height: var(--field-h);
+  padding: 0 15px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+}
+
+.cancelar {
+  background: var(--fondo-app);
+  border: 1px solid var(--borde) !important;
+  color: var(--text-muted);
+}
+
+.confirmar {
+  background: var(--primary);
+  color: var(--text-inverse);
+}

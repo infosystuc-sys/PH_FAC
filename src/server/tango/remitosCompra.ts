@@ -71,9 +71,15 @@ import { actualizarEstadoStkEn, marcarModificacionOcEn } from './estadoCircuito'
  *   contadores de recepción de `CPA36` / `STA19.CANT_PEND`;
  * - `STA14.ESTADO_MOV = 'F'` si no le queda ningún renglón pendiente.
  *
- * Un renglón sin factura entra a stock sin vincularse a nada (ni factura ni
- * OC), y solo si el operador confirmó grabarlo sin comprobante de
- * referencia. Ver src/server/app/remitoFactura.ts.
+ * Un renglón sin factura va contra la orden de compra que tiene su artículo
+ * pendiente de recibir (2026-11-18, pedido del usuario), como Tango graba
+ * un remito contra OC antes de la factura: la OC en `STA20`, `CANT_PEND` =
+ * la cantidad, `CANT_FACTU` y los precios en 0 (los 131 renglones así de
+ * 2025 en adelante tienen el precio en 0), `CPA_OC_REMITO` y los contadores
+ * de recepción. La factura que llegue lo consume por ese renglón de OC. Sin
+ * factura ni OC entra a stock sin vincularse a nada, y solo si el operador
+ * confirmó grabarlo sin comprobante de referencia. Ver
+ * src/server/app/remitoFactura.ts.
  *
  * El 2026-11-17 se alineó el remito contra una factura con OC con lo que
  * grabó Tango 26.1 en el remito R0000100001704 (relevado con foto de la base
@@ -164,6 +170,12 @@ export type RenglonARegistrar = {
   cantidad: number
   /** El renglón de la factura que recibe (CPA46), o `null` sin referencia. */
   factura: { tcompInC: string; ncompInC: number; nRenglC: number } | null
+  /**
+   * Sin factura, el renglón de la orden de compra que recibe (2026-11-18): el
+   * remito queda contra la OC y pendiente de facturar. Con factura se ignora:
+   * la OC es la de la factura.
+   */
+  oc?: { nOrdenCo: string; nRenglOc: number; talonario: number | null } | null
 }
 
 export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promise<RegistroTango> {
@@ -230,14 +242,18 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
       factura: r.factura
         ? { tcompInC: r.factura.tcompInC, ncompInC: r.factura.ncompInC, nRenglC: r.factura.nRenglC }
         : null,
+      oc:
+        !r.factura && r.ocNOrdenCo && r.ocNRenglOc
+          ? { nOrdenCo: r.ocNOrdenCo, nRenglOc: r.ocNRenglOc, talonario: r.ocTalonario }
+          : null,
     })
   }
   if (renglones.length === 0) {
     throw new Error('El remito no tiene renglones para registrar: reprocesá el comprobante.')
   }
-  if (!sinReferenciaConfirmado && renglones.some((r) => !r.factura)) {
+  if (!sinReferenciaConfirmado && renglones.some((r) => !r.factura && !r.oc)) {
     throw new Error(
-      'Hay renglones sin factura de referencia: elegí la factura o confirmá grabarlos sin comprobante de referencia.',
+      'Hay renglones sin factura ni orden de compra de referencia: elegí la factura o confirmá grabarlos sin comprobante de referencia.',
     )
   }
 
@@ -266,11 +282,14 @@ export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promis
 /** Lo que dejó grabado un remito, para el historial. */
 export function describirRemitoGrabado(nComp: string, g: RemitoGrabado, renglones: RenglonARegistrar[]): string {
   const conFactura = renglones.filter((r) => r.factura).length
+  const soloOc = renglones.filter((r) => !r.factura && r.oc).length
+  const sinNada = renglones.length - conFactura - soloOc
   return (
     `remito ${nComp} (interno ${TCOMP_IN_S} ${g.ncompInS}) — ` +
     `${renglones.length} renglón(es) al depósito ${(g.depositos.length > 0 ? g.depositos : [DEPOSITO]).join(', ')}` +
     (conFactura > 0 ? `, ${conFactura} contra la factura ${g.facturas.join(', ')}` : '') +
-    (conFactura < renglones.length ? `, ${renglones.length - conFactura} sin comprobante de referencia` : '') +
+    (soloOc > 0 ? `, ${soloOc} contra la orden de compra sin factura (pendientes de facturar)` : '') +
+    (sinNada > 0 ? `, ${sinNada} sin comprobante de referencia` : '') +
     (g.ordenes.length > 0 ? `, orden de compra ${g.ordenes.map((o) => o.trim()).join(', ')}` : '') +
     (g.totalSeries > 0 ? `, ${g.totalSeries} número(s) de serie` : '')
   )
@@ -439,9 +458,13 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
     }
 
     // La orden: la de la factura, si la factura se imputo a una (decision
-    // del usuario, 2026-11-16). Sin factura, el remito no toca ninguna OC.
+    // del usuario, 2026-11-16). Sin factura, la que se le asigno al renglon
+    // (2026-11-18): el remito queda contra la OC, pendiente de facturar.
     // Releida dentro de la transaccion por los contadores.
-    const ocRef = factura?.oc ? { nOrdenCo: factura.oc.nOrdenCo, nRenglOc: factura.oc.nRenglOc } : null
+    const ocSinFactura = !factura && r.oc ? r.oc : null
+    const ocRef = factura?.oc
+      ? { nOrdenCo: factura.oc.nOrdenCo, nRenglOc: factura.oc.nRenglOc, talonario: factura.oc.talonario ?? null }
+      : ocSinFactura
     let oc: {
       nOrdenCo: string
       nRenglOc: number
@@ -459,7 +482,7 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
       // dos talonarios pueden compartir numero de orden.
       const fila = await tx.request()
         .input('oc', sql.VarChar(14), ocRef.nOrdenCo).input('r', sql.Int, ocRef.nRenglOc)
-        .input('tal', sql.SmallInt, factura?.oc?.talonario ?? null)
+        .input('tal', sql.SmallInt, ocRef.talonario ?? null)
         .query(`
           SELECT LTRIM(RTRIM(r.COD_ARTICU)) AS COD_ARTICU, LTRIM(RTRIM(ISNULL(r.COD_DEPOSI,''))) AS COD_DEPOSI,
                  ISNULL(r.CAN_PEDIDA,0) AS CAN_PEDIDA, ISNULL(r.CAN_RECIBI,0) AS CAN_RECIBI,
@@ -476,9 +499,25 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
       if (fila.recordset.length > 1) {
         throw new Error(`La orden de compra ${ocRef.nOrdenCo.trim()} existe en más de un talonario.`)
       }
-      // Lo que se recibe ya lo controla FALTA_REM de la factura: la orden
-      // no frena el remito (la factura ya se registro contra ella). Los
-      // contadores no bajan de 0 (ver contadoresOc).
+      // Con factura, lo que se recibe ya lo controla FALTA_REM: la orden no
+      // frena el remito (la factura ya se registro contra ella). Los
+      // contadores no bajan de 0 (ver contadoresOc). Sin factura (2026-11-18)
+      // la orden es lo unico que hay: tiene que ser del articulo y tenerlo
+      // pendiente de recibir, como en los remitos contra OC de antes del
+      // 2026-11-16.
+      if (ocSinFactura) {
+        if (normalizarCodigo(String(f.COD_ARTICU)) !== normalizarCodigo(r.codArticu)) {
+          throw new Error(
+            `El renglón ${ocRef.nRenglOc} de la orden ${ocRef.nOrdenCo.trim()} es del artículo ${f.COD_ARTICU}, no de ${r.codArticu}.`,
+          )
+        }
+        if (r.cantidad - Number(f.CAN_PENDIE) > 0.00005) {
+          throw new Error(
+            `El artículo ${r.codArticu} recibe ${r.cantidad} y la orden ${ocRef.nOrdenCo.trim()} ` +
+              `tiene ${Number(f.CAN_PENDIE)} pendiente(s) de recibir.`,
+          )
+        }
+      }
       oc = {
         nOrdenCo: ocRef.nOrdenCo,
         nRenglOc: ocRef.nRenglOc,

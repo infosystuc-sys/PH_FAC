@@ -44,6 +44,7 @@ import { analizaCampo, esFacturaDeArticulos, tipoFacturaODefault, vaContraOc } f
 import { cargarAprendidosEn } from './aprendizajeImpuestos'
 import { revisarSeriesEn } from './series'
 import { validarFacturasRemito } from '@/lib/remitoFactura'
+import { remitosAVincularEn, validarRemitosAVincular } from './remitosDeFactura'
 import { remitoSinReferenciaEn } from './remitoFactura'
 
 type Ejecutor = { request(): sql.Request }
@@ -241,6 +242,14 @@ export type ResultadoListoParaRegistrar = {
   /** Que la observación entre entera en CPA04.LEYENDA, que es varchar(30). */
   leyenda: ResultadoValidacion
   /**
+   * La factura de artículos cuya OC ya tiene un remito sin facturar
+   * (2026-11-18): avisa a qué remito se va a vincular, o bloquea si las
+   * cantidades no coinciden. `null` si la OC no tiene remito.
+   */
+  remitos: ResultadoValidacion | null
+  /** Los remitos a los que se vincula al registrar, para pedir confirmación. */
+  remitosAVincular: string[]
+  /**
    * El neto que implican las líneas de IVA, para ofrecérselo al operador de
    * un clic cuando `netoIva` no cierra. `null` si no hay ninguna línea que
    * permita deducirlo.
@@ -357,6 +366,7 @@ export async function validarListoParaRegistrarEn(
             factura: r.factura
               ? { nComp: r.factura.nComp, faltaRem: r.factura.faltaRem === null ? null : Number(r.factura.faltaRem) }
               : null,
+            oc: r.ocNOrdenCo,
           })),
           await remitoSinReferenciaEn(e, id),
         )
@@ -505,6 +515,12 @@ export async function validarListoParaRegistrarEn(
             (totalSeries > 0 ? ` Con ${totalSeries} número(s) de serie.` : ''),
         }
 
+  // La OC que ya tiene remito (2026-11-18): a que remito se vincula la
+  // factura al registrar y si las cantidades cierran. Ver remitosDeFactura.ts.
+  const vinculosRemito = await remitosAVincularEn(e, detalle)
+  const remitos = validarRemitosAVincular(vinculosRemito)
+  const remitosAVincular = [...new Set(vinculosRemito.flatMap((v) => v.remitos))]
+
   const bloqueante = [
     condCompra,
     percepcionIibb,
@@ -520,6 +536,7 @@ export async function validarListoParaRegistrarEn(
     renglonesNeto,
     ...(renglonesRemito ? [renglonesRemito] : []),
     ...(stock ? [stock] : []),
+    ...(remitos ? [remitos] : []),
   ].some((v) => v.estado === 'error')
 
   return {
@@ -541,6 +558,8 @@ export async function validarListoParaRegistrarEn(
     preciosOc,
     codigosRepetidos,
     leyenda,
+    remitos,
+    remitosAVincular,
     netoSegunIva,
     bloqueante,
   }

@@ -147,6 +147,7 @@ export default async function RevisionPage({
         bloqueanteRegistro={listoParaRegistrar?.bloqueante ?? false}
         tangoNComp={encabezado.tangoNComp}
         sinImportes={tipoFacturaValor === 'remito'}
+        remitosAVincular={listoParaRegistrar?.remitosAVincular ?? []}
         anteriorHref={anteriorHref}
         siguienteHref={siguienteHref}
       />

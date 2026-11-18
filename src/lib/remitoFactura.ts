@@ -138,6 +138,8 @@ export type RenglonRemitoParaValidar = {
   codArticu: string
   cantidad: number
   factura: { nComp: string | null; faltaRem: number | null } | null
+  /** La orden de compra de un renglón sin factura (2026-11-18), o `null`. */
+  oc?: string | null
 }
 
 /**
@@ -145,9 +147,11 @@ export type RenglonRemitoParaValidar = {
  *
  * - Un renglón que recibe más de lo que su factura tiene sin remito,
  *   bloquea: Tango dejaría `FALTA_REM` negativo.
- * - Renglones sin factura: bloquean hasta que el operador confirme que se
- *   graban sin comprobante de referencia (pedido del usuario). Confirmado,
- *   queda como advertencia, a la vista.
+ * - Un renglón sin factura pero con orden de compra (2026-11-18) se graba
+ *   contra la orden y queda pendiente de facturar: no pide confirmación.
+ * - Renglones sin factura ni orden: bloquean hasta que el operador confirme
+ *   que se graban sin comprobante de referencia (pedido del usuario).
+ *   Confirmado, queda como advertencia, a la vista.
  */
 export function validarFacturasRemito(
   renglones: RenglonRemitoParaValidar[],
@@ -172,28 +176,39 @@ export function validarFacturasRemito(
     }
   }
 
-  const sinFactura = renglones.filter((r) => !r.factura)
-  const facturas = [...new Set(renglones.map((r) => r.factura?.nComp).filter((x): x is string => !!x))]
-  const contra =
-    facturas.length === 0
-      ? ''
-      : `${renglones.length - sinFactura.length} renglón(es) contra ${facturas.length === 1 ? 'la factura' : 'las facturas'} ${facturas.join(', ')}`
+  const conFactura = renglones.filter((r) => r.factura)
+  const conOc = renglones.filter((r) => !r.factura && r.oc)
+  const sinNada = renglones.filter((r) => !r.factura && !r.oc)
+  const facturas = [...new Set(conFactura.map((r) => r.factura!.nComp).filter((x): x is string => !!x))]
+  const ordenes = [...new Set(conOc.map((r) => r.oc!.trim()))]
+  const partes = [
+    ...(conFactura.length > 0
+      ? [`${conFactura.length} renglón(es) contra ${facturas.length === 1 ? 'la factura' : 'las facturas'} ${facturas.join(', ')}`]
+      : []),
+    ...(conOc.length > 0
+      ? [
+          `${conOc.length} renglón(es) contra ${ordenes.length === 1 ? 'la orden de compra' : 'las órdenes de compra'} ` +
+            `${ordenes.join(', ')}, pendiente(s) de facturar: se vinculan a la factura cuando llegue`,
+        ]
+      : []),
+  ]
+  const contra = partes.join('; ')
 
-  if (sinFactura.length === 0) return { estado: 'ok', mensaje: `${contra}.` }
+  if (sinNada.length === 0) return { estado: 'ok', mensaje: `${contra}.` }
 
-  const todos = sinFactura.length === renglones.length
+  const todos = sinNada.length === renglones.length
   if (!sinReferenciaConfirmado) {
     return {
       estado: 'error',
       mensaje: todos
-        ? 'El remito no tiene ninguna factura de referencia. Elegí una o confirmá grabarlo sin comprobante de referencia.'
-        : `${contra}; ${sinFactura.length} sin factura. Elegí una o confirmá grabarlos sin comprobante de referencia.`,
+        ? 'El remito no tiene ninguna factura ni orden de compra de referencia. Elegí una factura o confirmá grabarlo sin comprobante de referencia.'
+        : `${contra}; ${sinNada.length} sin factura ni orden de compra. Elegí una factura o confirmá grabarlos sin comprobante de referencia.`,
     }
   }
   return {
     estado: 'advertencia',
     mensaje: todos
       ? 'Se graba sin comprobante de referencia: no se vincula a ninguna factura ni orden de compra.'
-      : `${contra}; ${sinFactura.length} se graban sin comprobante de referencia.`,
+      : `${contra}; ${sinNada.length} se graban sin comprobante de referencia.`,
   }
 }

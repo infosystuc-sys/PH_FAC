@@ -237,37 +237,17 @@ describe('registrarComprobanteEn: la factura consume el remito de su orden', () 
     })
   }, 180000)
 
-  it('si el remito cubre menos que la factura, el resto queda en FALTA_REM y el remito en Facturado', async () => {
+  it('si el remito cubre distinto que la factura, no registra: las cantidades no coinciden (2026-11-18)', async () => {
+    // Hasta el 2026-11-18 la factura de 2 consumia el remito de 1 y dejaba el
+    // resto en FALTA_REM. Desde ese dia (pedido del usuario) la factura cuya
+    // OC ya tiene remito se registra solo si las cantidades de factura y
+    // remito coinciden; si no, bloquea con el detalle. Ver remitosDeFactura.ts.
     await conRollback(async (tx) => {
       const oc = await renglonOcParaRemitoYFactura(tx)
       expect(oc).not.toBeNull()
 
-      const remito = await registrarRemito(tx, oc, 1)
-      const factura = await registrarFactura(tx, oc, 2)
-
-      const link = await tx.request()
-        .input('c', sql.VarChar(8), String(factura.ncompInC).padStart(8, ' '))
-        .query(`SELECT CANTIDAD FROM CPA48 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@c`)
-      expect(link.recordset).toHaveLength(1)
-      expect(Number(link.recordset[0].CANTIDAD)).toBe(1)
-
-      const cpa46 = await tx.request().input('n', sql.Float, factura.ncompInC)
-        .query(`SELECT CANTIDAD, FALTA_REM FROM CPA46 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
-      expect(Number(cpa46.recordset[0].CANTIDAD)).toBe(2)
-      expect(Number(cpa46.recordset[0].FALTA_REM)).toBe(1)
-
-      // El caso de referencia de Tango (OC 0000100001701, factura 17774):
-      // CPA_OC_FACTURA lleva 2, CPA48 y CPA_OC_REMITO_FACTURA llevan 1.
-      const orf = await orfDe(tx, factura.ncompInC)
-      expect(orf).toHaveLength(1)
-      expect(Number(orf[0].CANTIDAD)).toBe(1)
-      const ocf = await tx.request().input('n', sql.Float, factura.ncompInC)
-        .query(`SELECT CANTIDAD FROM CPA_OC_FACTURA WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
-      expect(Number(ocf.recordset[0].CANTIDAD)).toBe(2)
-
-      const cab = await tx.request().input('n', sql.Float, remito.ncompInC)
-        .query(`SELECT ESTADO_MOV FROM STA14 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S = RIGHT('00000000' + CAST(CAST(@n AS bigint) AS varchar(8)), 8)`)
-      expect(cab.recordset[0].ESTADO_MOV).toBe('F')
+      await registrarRemito(tx, oc, 1)
+      await expect(registrarFactura(tx, oc, 2)).rejects.toThrow(/las cantidades no coinciden/)
     })
   }, 180000)
 
@@ -323,11 +303,12 @@ describe('faltaRemDesalineadosEn / corregirFaltaRemEn', () => {
       const oc = await renglonOcParaRemitoYFactura(tx)
       expect(oc).not.toBeNull()
 
-      // Una factura de 2 con 1 recibido: lo correcto es FALTA_REM = 1. Se
-      // simula lo que dejaba la app antes del 2026-11-03 y Tango despues
-      // (0 menos lo recibido).
+      // Una factura de 1 con 1 recibido: lo correcto es FALTA_REM = 0. Se
+      // simula un FALTA_REM corrido (el que dejaba la app antes del
+      // 2026-11-03: lo facturado menos lo recibido, de mas). Desde el
+      // 2026-11-18 factura y remito tienen que coincidir para registrar.
       await registrarRemito(tx, oc, 1)
-      const factura = await registrarFactura(tx, oc, 2)
+      const factura = await registrarFactura(tx, oc, 1)
       expect(await faltaRemDesalineadosEn(tx, factura.ncompInC)).toEqual([])
 
       await tx.request().input('n', sql.Float, factura.ncompInC)
@@ -335,13 +316,13 @@ describe('faltaRemDesalineadosEn / corregirFaltaRemEn', () => {
 
       const mal = await faltaRemDesalineadosEn(tx, factura.ncompInC)
       expect(mal).toHaveLength(1)
-      expect(mal[0]).toMatchObject({ nRenglC: 1, cantidad: 2, cubierto: 1, faltaRemActual: -1, faltaRemCorrecto: 1 })
+      expect(mal[0]).toMatchObject({ nRenglC: 1, cantidad: 1, cubierto: 1, faltaRemActual: -1, faltaRemCorrecto: 0 })
 
       await corregirFaltaRemEn(tx, factura.ncompInC, mal[0])
       expect(await faltaRemDesalineadosEn(tx, factura.ncompInC)).toEqual([])
       const cpa46 = await tx.request().input('n', sql.Float, factura.ncompInC)
         .query(`SELECT FALTA_REM FROM CPA46 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
-      expect(Number(cpa46.recordset[0].FALTA_REM)).toBe(1)
+      expect(Number(cpa46.recordset[0].FALTA_REM)).toBe(0)
     })
   }, 180000)
 

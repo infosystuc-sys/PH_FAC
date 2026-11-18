@@ -11,6 +11,7 @@ import { ModalObservacion } from './modal-observacion'
 import { ModalAsiento } from './modal-asiento'
 import { ModalCuotas } from './modal-cuotas'
 import { ModalEliminar } from '@/components/modal-eliminar'
+import { ModalVincularRemito } from './modal-vincular-remito'
 import { useAtajos } from './atajos'
 import styles from './barra-acciones.module.css'
 
@@ -91,6 +92,7 @@ export function BarraAcciones({
   bloqueanteRegistro,
   tangoNComp,
   sinImportes = false,
+  remitosAVincular = [],
   anteriorHref,
   siguienteHref,
 }: {
@@ -105,6 +107,11 @@ export function BarraAcciones({
   tangoNComp: string | null
   /** Un remito: sin asiento ni cuotas que previsualizar. */
   sinImportes?: boolean
+  /**
+   * La factura cuya OC ya tiene remito (2026-11-18): los remitos a los que se
+   * vincula al registrar. Si hay alguno, registrar pide confirmación.
+   */
+  remitosAVincular?: string[]
   anteriorHref: string | null
   siguienteHref: string | null
 }) {
@@ -112,6 +119,7 @@ export function BarraAcciones({
   const [modalEliminar, setModalEliminar] = useState(false)
   const [modalAsiento, setModalAsiento] = useState(false)
   const [modalCuotas, setModalCuotas] = useState(false)
+  const [modalRemito, setModalRemito] = useState(false)
   const [pendiente, arrancar] = useTransition()
   const router = useRouter()
   const toast = useToast()
@@ -135,6 +143,16 @@ export function BarraAcciones({
   }
 
   function registrar() {
+    if (!puedeRegistrar || pendiente) return
+    // Antes de vincularla al remito que ya llegó, el ok del operador.
+    if (remitosAVincular.length > 0) {
+      setModalRemito(true)
+      return
+    }
+    registrarYa()
+  }
+
+  function registrarYa() {
     if (!puedeRegistrar || pendiente) return
     arrancar(async () => {
       try {
@@ -219,6 +237,15 @@ export function BarraAcciones({
       <ModalObservacion id={id} abierto={modalAbierto} onCerrar={() => setModalAbierto(false)} />
       <ModalAsiento id={id} abierto={modalAsiento} onCerrar={() => setModalAsiento(false)} />
       <ModalCuotas id={id} abierto={modalCuotas} onCerrar={() => setModalCuotas(false)} />
+      <ModalVincularRemito
+        abierto={modalRemito}
+        remitos={remitosAVincular}
+        onCancelar={() => setModalRemito(false)}
+        onConfirmar={() => {
+          setModalRemito(false)
+          registrarYa()
+        }}
+      />
       <ModalEliminar
         id={id}
         abierto={modalEliminar}

@@ -125,6 +125,17 @@ async function remitoDePrueba(
   return { id, renglonId: d.renglones[0].id }
 }
 
+/**
+ * Un renglon sin factura va contra la orden que tenga su articulo pendiente
+ * de recibir (2026-11-18). Para probar el caso sin ninguna referencia, se le
+ * saca la que se le haya propuesto.
+ */
+async function sinOc(tx: sql.Transaction, renglonId: number) {
+  await tx.request().input('id', sql.Int, renglonId).query(`
+    UPDATE PHF_RENGLON SET OC_N_ORDEN_CO = NULL, OC_TALONARIO = NULL, OC_N_RENGL_OC = NULL, OC_PENDIENTE = NULL
+    WHERE ID = @id`)
+}
+
 async function vincularA(
   tx: sql.Transaction,
   id: number,
@@ -153,12 +164,13 @@ describe('registrarComprobanteEn con un remito contra una factura (2026-11-16)',
 
       const { id, renglonId } = await remitoDePrueba(tx, { codProvee: f!.COD_PROVEE, codArticu: f!.COD_ARTICU }, 1, '87654321')
 
-      // Sin factura todavia: bloquea y el registro no avanza.
+      // Sin factura ni orden todavia: bloquea y el registro no avanza.
       await elegirFacturaRenglonEn(tx, id, renglonId, null)
+      await sinOc(tx, renglonId)
       let listo = await validarListoParaRegistrarEn(tx, id)
       expect(listo.ordenCompra.estado).toBe('error')
       expect(listo.ordenCompra.mensaje).toMatch(/sin comprobante de referencia/)
-      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/sin factura de referencia/)
+      await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/sin factura ni orden de compra de referencia/)
 
       await vincularA(tx, id, renglonId, f!)
       listo = await validarListoParaRegistrarEn(tx, id)
@@ -246,6 +258,7 @@ describe('registrarComprobanteEn con un remito contra una factura (2026-11-16)',
       if (!f) return
       const { id, renglonId } = await remitoDePrueba(tx, { codProvee: f.COD_PROVEE, codArticu: f.COD_ARTICU }, 1, '87654325')
       await elegirFacturaRenglonEn(tx, id, renglonId, null)
+      await sinOc(tx, renglonId)
       await marcarRemitoSinReferenciaEn(tx, id, true)
       const listo = await validarListoParaRegistrarEn(tx, id)
       expect(listo.ordenCompra.estado).toBe('advertencia')
@@ -280,6 +293,69 @@ describe('registrarComprobanteEn con un remito contra una factura (2026-11-16)',
       expect(listo.ordenCompra.estado).toBe('error')
       expect(listo.ordenCompra.mensaje).toMatch(/le faltan recibir/)
       await expect(registrarComprobanteEn(tx, id)).rejects.toThrow(/le faltan recibir/)
+    })
+  }, 150000)
+
+  it('sin factura, va contra la orden de compra y queda pendiente de facturar (2026-11-18)', async () => {
+    await conRollback(async (tx) => {
+      // Un renglon de OC real con algo pendiente de recibir, de un articulo
+      // que entra por remito sin series ni partidas.
+      const q = await tx.request().query(`
+        SELECT TOP 1 LTRIM(RTRIM(h.COD_PROVEE)) AS COD_PROVEE, LTRIM(RTRIM(r.COD_ARTICU)) AS COD_ARTICU
+        FROM CPA36 r
+        JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO AND h.TALONARIO = r.TALONARIO
+        JOIN STA11 a ON a.COD_ARTICU = r.COD_ARTICU
+        WHERE r.CAN_PENDIE >= 1 AND a.STOCK = 1 AND ISNULL(a.USA_SERIE, 0) = 0 AND ISNULL(a.USA_PARTID, 0) = 0
+          AND LTRIM(RTRIM(ISNULL(a.USA_ESC, 'N'))) <> 'B'
+        ORDER BY h.FEC_EMISIO DESC`)
+      const p = q.recordset[0]
+      expect(p).toBeDefined()
+
+      const { id, renglonId } = await remitoDePrueba(tx, { codProvee: p.COD_PROVEE, codArticu: p.COD_ARTICU }, 1, '87654329')
+      // Aunque el proveedor tenga una factura sin recibir, se prueba el caso
+      // sin factura: el renglon toma la orden.
+      await elegirFacturaRenglonEn(tx, id, renglonId, null)
+      const r = (await obtenerDetalleEn(tx, id)).renglones[0]
+      expect(r.factura).toBeNull()
+      expect(r.ocNOrdenCo).not.toBeNull()
+      const oc = { n: r.ocNOrdenCo!, renglon: r.ocNRenglOc!, tal: r.ocTalonario! }
+
+      const listo = await validarListoParaRegistrarEn(tx, id)
+      expect(listo.ordenCompra.estado).toBe('ok')
+      expect(listo.ordenCompra.mensaje).toMatch(/contra la orden de compra/)
+      expect(listo.bloqueante).toBe(false)
+
+      const antes = (await tx.request()
+        .input('oc', sql.VarChar(14), oc.n).input('r', sql.Int, oc.renglon).input('t', sql.SmallInt, oc.tal)
+        .query('SELECT CAN_RECIBI, CAN_PENDIE FROM CPA36 WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r AND TALONARIO=@t')).recordset[0]
+
+      const registro = await registrarComprobanteEn(tx, id)
+      const ncompInS = String(registro.ncompInC).padStart(8, '0')
+
+      const cab = (await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT ESTADO_MOV FROM STA14 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)).recordset[0]
+      expect(cab.ESTADO_MOV).toBe('P')
+      const ren = (await tx.request().input('n', sql.VarChar(8), ncompInS)
+        .query(`SELECT * FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n`)).recordset[0]
+      expect(ren.N_ORDEN_CO).toBe(oc.n)
+      expect(ren.N_RENGL_OC).toBe(oc.renglon)
+      expect(Number(ren.CANT_PEND)).toBe(1)
+      expect(Number(ren.CANT_FACTU)).toBe(0)
+      expect(Number(ren.CANT_OC)).toBe(1)
+      // Como Tango en los remitos contra OC sin factura: precio en 0.
+      expect(Number(ren.PRECIO_REM)).toBe(0)
+
+      const v = await tx.request().input('n', sql.VarChar(8), ncompInS).query(`
+        SELECT (SELECT COUNT(*) FROM CPA_OC_REMITO WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n) AS ocRem,
+               (SELECT COUNT(*) FROM CPA48 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n) AS cpa48`)
+      expect(v.recordset[0].ocRem).toBe(1)
+      expect(v.recordset[0].cpa48).toBe(0)
+
+      const despues = (await tx.request()
+        .input('oc', sql.VarChar(14), oc.n).input('r', sql.Int, oc.renglon).input('t', sql.SmallInt, oc.tal)
+        .query('SELECT CAN_RECIBI, CAN_PENDIE FROM CPA36 WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r AND TALONARIO=@t')).recordset[0]
+      expect(Number(despues.CAN_RECIBI)).toBeCloseTo(Number(antes.CAN_RECIBI) + 1, 4)
+      expect(Number(despues.CAN_PENDIE)).toBeCloseTo(Number(antes.CAN_PENDIE) - 1, 4)
     })
   }, 150000)
 

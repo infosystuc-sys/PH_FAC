@@ -120,6 +120,7 @@ export function erroresListoParaRegistrar(r: ResultadoListoParaRegistrar): strin
     r.condCompra, r.percepcionIibb, r.varios, r.formatoComp, r.fecha, r.tipoFactura,
     r.concepto, r.alicuotas, r.netoIva, r.ordenCompra, r.cantidadesOc, r.renglonesNeto,
     ...(r.stock ? [r.stock] : []),
+    ...(r.remitos ? [r.remitos] : []),
   ]
   return items.filter((v) => v.estado === 'error').map((v) => v.mensaje)
 }

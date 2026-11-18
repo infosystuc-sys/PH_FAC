@@ -96,6 +96,9 @@ export function ListoParaRegistrar({
     resultado.preciosOc,
     // La factura-remito: la entrada a stock y sus series (2026-11-17).
     ...(resultado.stock ? [resultado.stock] : []),
+    // La OC que ya tiene remito: a cuál se vincula y si las cantidades
+    // cierran (2026-11-18).
+    ...(resultado.remitos ? [resultado.remitos] : []),
       ]
 
   const visibles = ocultarOk ? items.filter((r) => r.estado !== 'ok') : items
