@@ -99,6 +99,10 @@ export function Filtros({ filtro, tipo, query, conteos, conteosTipo }: {
       <Link href="/conciliacion" className={styles.tab}>
         Conciliación ARCA
       </Link>
+      {/* El DNRPA de las motos, que llega después del remito (2026-11-18). */}
+      <Link href="/dnrpa" className={styles.tab}>
+        DNRPA
+      </Link>
 
       <div className={styles.buscador}>
         <span className={styles.lupa}>⌕</span>
