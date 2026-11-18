@@ -34,7 +34,11 @@ export const TIPOS_FACTURA: DefTipoFactura[] = [
     clave: 'articulos',
     label: 'Factura de artículos',
     plural: 'Artículos',
-    ayuda: 'Compra de mercadería con detalle de renglones, normalmente contra un remito.',
+    // Se imputa a la OC desde el 2026-09-06 (decision del usuario); el remito
+    // ya recibido contra esa OC lo consume al registrar.
+    ayuda:
+      'Compra de mercadería con detalle de renglones. Se imputa renglón por renglón a la ' +
+      'orden de compra y consume el remito que ya se haya recibido contra ella.',
   },
   {
     clave: 'tarjeta',
@@ -48,9 +52,12 @@ export const TIPOS_FACTURA: DefTipoFactura[] = [
     clave: 'remito',
     label: 'Remito de proveedor',
     plural: 'Remitos',
+    // Desde el 2026-11-16 el remito va contra la FACTURA ya registrada que
+    // recibe, no contra la OC (la hereda de la factura); entra al deposito del
+    // renglon de esa OC, o al 01 si no tiene (2026-11-17).
     ayuda:
-      'Entrada de mercadería sin importes. Se registra en Stock contra la orden de compra ' +
-      'y suma al depósito 01.',
+      'Entrada de mercadería sin importes. Se registra en Stock contra la factura de compra ' +
+      'ya registrada que recibe y entra al depósito de su orden de compra (01 si no tiene).',
   },
   {
     // 2026-11-17, pedido del usuario: el papel que es factura y remito a la
@@ -62,7 +69,7 @@ export const TIPOS_FACTURA: DefTipoFactura[] = [
     plural: 'Factura-remito',
     ayuda:
       'Factura de mercadería que es también el remito. Se imputa a la orden de compra como una ' +
-      'factura de artículos y al registrar entra además a stock (depósito 01) con el mismo número.',
+      'factura de artículos y al registrar entra además a stock con un remito del mismo número.',
   },
 ]
 
