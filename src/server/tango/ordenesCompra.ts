@@ -45,6 +45,8 @@ export type OrdenCompra = {
   estado: number
   descripcionEstado: string
   total: number
+  /** `CPA35.COND_COMPR`: la condición de compra pactada en la orden (0 si no tiene). */
+  condCompra: number
   renglones: RenglonOc[]
 }
 
@@ -84,6 +86,7 @@ const selectOc = async (criterio: CriterioOc) => {
     h.ESTADO                                            AS estado,
     ${conEstado ? "LTRIM(RTRIM(ISNULL(e.DESC_ESTADO_ORDEN_COMPRA, '')))" : "''"} AS descripcionEstado,
     ISNULL(h.TOTAL_CTE, 0)                              AS total,
+    ISNULL(h.COND_COMPR, 0)                             AS condCompra,
     r.N_RENGL_OC                                        AS nRenglOc,
     LTRIM(RTRIM(ISNULL(r.COD_ARTICU, '')))              AS codArticu,
     LTRIM(RTRIM(ISNULL(r.DESCRIPCION_ARTICULO, '')))    AS descripcion,
@@ -171,6 +174,7 @@ function agrupar(filas: Record<string, unknown>[]): OrdenCompra[] {
         estado: Number(f.estado),
         descripcionEstado: String(f.descripcionEstado),
         total: Number(f.total),
+        condCompra: Number(f.condCompra ?? 0),
         renglones: [],
       }
       ocs.push(actual)

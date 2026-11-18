@@ -3,7 +3,7 @@ import sql from 'mssql'
 import { conRollback } from '@/server/db/tx'
 import { getPool, cerrarPool } from '@/server/db/pool'
 import { insertarComprobantePrueba } from '@/server/app/comprobantes'
-import { obtenerDetalleEn } from '@/server/app/detalle'
+import { guardarCampoEn, obtenerDetalleEn } from '@/server/app/detalle'
 import {
   aprenderArticuloEn,
   marcarSinOcEn,
@@ -221,6 +221,25 @@ describe('agregarOcEn', () => {
 
       const d = await obtenerDetalleEn(tx, id)
       expect(d.auditoria.some((a) => a.texto.includes(oc.nOrdenCo.trim()))).toBe(true)
+    })
+  })
+
+  it('la factura toma la condicion de compra de la orden, aunque traiga otra (2026-11-18)', async () => {
+    const p = await unProveedorConOc()
+    const oc = p!.ocs.find((o) => o.condCompra > 0)
+    expect(oc).toBeDefined()
+
+    await conRollback(async (tx) => {
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      // Lo que deja la lectura cuando el proveedor tiene una condicion aprendida.
+      const otra = oc!.condCompra === 1 ? '2' : '1'
+      await guardarCampoEn(tx, id, 'condcompra', otra, { corregidoPorUsuario: false })
+      await renglonesPdf(tx, id, [{ codigo: primerRenglon(oc!).codArticu, cantidad: '1' }])
+      await agregarOcEn(tx, id, oc!.nOrdenCo, p!.codProvee)
+
+      const d = await obtenerDetalleEn(tx, id)
+      expect(d.campos.find((c) => c.clave === 'condcompra')?.valorFinal).toBe(String(oc!.condCompra))
+      expect(d.auditoria.some((a) => a.texto.includes(`código ${oc!.condCompra} (antes ${otra})`))).toBe(true)
     })
   })
 })

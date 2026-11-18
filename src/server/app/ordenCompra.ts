@@ -1,5 +1,5 @@
 import sql from 'mssql'
-import { auditarEn, obtenerDetalleEn } from './detalle'
+import { auditarEn, guardarCampoEn, obtenerDetalleEn } from './detalle'
 import { buscarOcPorNumero } from '@/server/tango/ordenesCompra'
 import { criterioOcDe } from '@/lib/tipoFactura'
 import { articulosPorSinonimo } from '@/server/tango/articulos'
@@ -276,6 +276,7 @@ export async function agregarOcEn(
       comprobanteId,
       `Orden de compra ${oc.nOrdenCo.trim()} imputada al renglón ${soloPdfOrden} de la factura`,
     )
+    await condicionDeLaOcEn(e, comprobanteId, oc, detalle, tipo)
     return { agregados, sinEmparejar }
   }
 
@@ -288,7 +289,38 @@ export async function agregarOcEn(
     comprobanteId,
     `Orden de compra ${oc.nOrdenCo.trim()} imputada — ${agregados} renglón(es)${nota}`,
   )
+  if (agregados > 0) await condicionDeLaOcEn(e, comprobanteId, oc, detalle, tipo)
   return { agregados, sinEmparejar }
+}
+
+/**
+ * Una factura imputada a una orden de compra lleva la condición de compra
+ * de la ORDEN (`CPA35.COND_COMPR`), no la que la app aprendió del texto
+ * impreso: decisión del usuario, 2026-11-18, al ver la factura de ZOZZOLI
+ * A0005900023698 grabada con la 12 (120 días) contra una OC con la 22
+ * (90-120-150). Se pone al imputar, para que la revisión la muestre y las
+ * cuotas ("Ver cuotas") salgan con ella; el operador la puede cambiar
+ * después. Un remito no tiene condición de compra.
+ */
+async function condicionDeLaOcEn(
+  e: Ejecutor,
+  comprobanteId: number,
+  oc: { nOrdenCo: string; condCompra: number },
+  detalle: Detalle,
+  tipo: string | null,
+): Promise<void> {
+  if (criterioOcDe(tipo) !== 'facturar') return
+  if (!Number.isInteger(oc.condCompra) || oc.condCompra <= 0) return
+  const actual = (detalle.campos.find((c) => c.clave === 'condcompra')?.valorFinal ?? '').trim()
+  const nueva = String(oc.condCompra)
+  if (actual === nueva) return
+  await guardarCampoEn(e, comprobanteId, 'condcompra', nueva, { corregidoPorUsuario: false })
+  await auditarEn(
+    e,
+    comprobanteId,
+    `Condición de compra de la orden ${oc.nOrdenCo.trim()}: código ${nueva}` +
+      (actual ? ` (antes ${actual})` : ''),
+  )
 }
 
 /** Saca una orden de compra del comprobante, con los renglones que trajo. */
