@@ -2,6 +2,16 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Circuito OC → factura → remito como Tango (2026-11-17, rama `fix/circuito-oc-factura-remito`)
+
+Pedido desde `D:\TGA_MOV\envio_app`: alinear la factura vinculada a la OC y el remito vinculado a esa factura con lo que grabó Tango Compras 26.1 (factura `A0000100001704` y remito `R0000100001704`, relevados con foto de la base y traza). Detalle punto por punto, efectos sobre lo que quedó fuera de alcance, diagnóstico de producción y propuesta de corrección (sin ejecutar) en `docs/informes/correccion_circuito_oc_factura_remito.md`.
+
+- Factura: saldo del proveedor (`CPA01`), la OC sigue Emitida al facturar (solo auditoría en `CPA35`), `ESTADO_STK` desde `FALTA_REM`, semáforo de numeración y `MAX` con los tipos de Tango, `READ COMMITTED` + `XACT_ABORT ON`, duplicado con bloqueo, "Listo para registrar" en el servidor, `STA_AUDITORIA_COSTO_COMPRA`, `STA12` sin pisar `ID_CPA01`/`MON_CTE` y con fecha de emisión, `CPA46.ID_MEDIDA_STOCK`, fecha vacía literal, `FECHA_INGRESO` sin hora, `FECHA_CONTABILIZACION` = ahora, talonario en `CPA36`.
+- Remito contra factura: `ESTADO_STK`, `CIERRE`/`REC_MAS_OC` al quedar sin pendiente, auditoría de `CPA35`, `STA19.FECHA_ACTUALIZACION_SALDO`, precio de la factura en `STA20`, depósito de la OC, descripciones de series vacías = la serie.
+- `SET XACT_ABORT` va por `.batch()`: por `.query()` (sp_executesql) se revierte. `conTransaccion`/`conRollback` lo fijan en OFF al empezar porque mssql no resetea la conexión.
+- R2 y R5 se midieron en la base de desarrollo (historia real de Tango); falta confirmarlos en producción con `docs/informes/diagnostico_produccion.sql`.
+- Tests: `tests/server/tango/circuitoOcFacturaRemito.test.ts` (circuito completo con valores exactos) y `registrarComprobanteNivel.test.ts`.
+
 ## Nuevo tipo: factura-remito de artículos (2026-11-17)
 
 Pedido del usuario: un ítem "Factura-Remito de Artículos" que se interpreta como factura y se vincula a una OC, y que al registrar graba como la factura de artículos y después como el remito, con el mismo número para los dos.
