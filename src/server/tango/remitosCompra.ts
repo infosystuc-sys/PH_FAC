@@ -1,5 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
+import { fijarXactAbort } from '../db/tx'
 import { obtenerDetalleEn, auditarEn } from '@/server/app/detalle'
 import { nComp as armarNComp, parsearFechaArg } from '@/lib/validaciones'
 import { parsearImporte } from '@/lib/formato'
@@ -12,6 +13,7 @@ import { renglonFacturaParaRemitoEn, proveedorDeFacturaEn } from './facturasPara
 import { ncompInCEnCpa48 } from './remitosFactura'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import type { CandidatoFactura } from '@/lib/remitoFactura'
+import { actualizarEstadoStkEn, marcarModificacionOcEn } from './estadoCircuito'
 
 /**
  * El alta de un REMITO DE PROVEEDOR en Tango: la entrada de mercadería que
@@ -72,10 +74,26 @@ import type { CandidatoFactura } from '@/lib/remitoFactura'
  * Un renglón sin factura entra a stock sin vincularse a nada (ni factura ni
  * OC), y solo si el operador confirmó grabarlo sin comprobante de
  * referencia. Ver src/server/app/remitoFactura.ts.
+ *
+ * El 2026-11-17 se alineó el remito contra una factura con OC con lo que
+ * grabó Tango 26.1 en el remito R0000100001704 (relevado con foto de la base
+ * y traza, D:\TGA_MOV\envio_app\informe_remito_tango.md):
+ *
+ * - `CPA04.ESTADO_STK` de la factura se recalcula (`'R'` si no le queda
+ *   nada sin remitir);
+ * - el renglón de la OC que queda sin pendiente de recibir lleva además
+ *   `CIERRE = 1` y `REC_MAS_OC = 'S'`;
+ * - la cabecera de la OC actualiza su auditoría de modificación;
+ * - `STA19.FECHA_ACTUALIZACION_SALDO` = ahora;
+ * - `STA20.PRECIO_REM`, `PLISTA_REM` y `PRECIO_REMITO_VENTAS` llevan el
+ *   precio del renglón de la factura (`CPA46.PRECIO_NET`); `PRECIO` sigue en 0;
+ * - el depósito es el del renglón de la OC (`CPA36.COD_DEPOSI`) en `STA20`,
+ *   `STA19` y las series; el 01 queda para lo que no tiene OC.
  */
 
 const TCOMP_IN_S = 'RP'
 const T_COMP = 'REM'
+/** El depósito de lo que entra sin orden de compra (decisión del usuario, 2026-10-25). */
 const DEPOSITO = '01'
 
 type Ejecutor = { request(): sql.Request }
@@ -93,6 +111,12 @@ export async function buscarRemitoEnSta14(
   codProvee: string,
   nComp: string,
   e?: Ejecutor,
+  /**
+   * Dentro del registro: con `UPDLOCK, HOLDLOCK`, para que nadie inserte el
+   * mismo remito hasta el commit (la transaccion corre en READ COMMITTED
+   * desde el 2026-11-17).
+   */
+  bloquear = false,
 ): Promise<{ ncompInS: string; nComp: string; fecha: Date | null } | null> {
   const ej = e ?? (await getPool())
   const r = await ej
@@ -101,7 +125,7 @@ export async function buscarRemitoEnSta14(
     .input('n', sql.VarChar(14), nComp)
     .query(`
       SELECT TOP 1 LTRIM(RTRIM(NCOMP_IN_S)) AS ncompInS, LTRIM(RTRIM(N_COMP)) AS nComp, FECHA_MOV AS fecha
-      FROM STA14
+      FROM STA14 ${bloquear ? 'WITH (UPDLOCK, HOLDLOCK)' : ''}
       WHERE TCOMP_IN_S = 'RP' AND LTRIM(RTRIM(COD_PRO_CL)) = @prov AND N_COMP = @n
     `)
   const f = r.recordset[0]
@@ -143,6 +167,11 @@ export type RenglonARegistrar = {
 }
 
 export async function registrarRemitoEn(tx: sql.Transaction, id: number): Promise<RegistroTango> {
+  // Mismo criterio que la factura (punto 6 de la revision contra Tango,
+  // 2026-11-17): XACT_ABORT ON y READ COMMITTED con bloqueos explicitos en
+  // lo que decide algo (ver grabarRemitoEn). Si llega desde
+  // registrarComprobanteEn ya esta en ON; se repite por si se llama sola.
+  await fijarXactAbort(tx, true)
   await tx.request().query(`EXEC sp_getapplock @Resource='PHF_registro_tango', @LockMode='Exclusive'`)
 
   // 1. Idempotencia, igual que la factura.
@@ -239,7 +268,7 @@ export function describirRemitoGrabado(nComp: string, g: RemitoGrabado, renglone
   const conFactura = renglones.filter((r) => r.factura).length
   return (
     `remito ${nComp} (interno ${TCOMP_IN_S} ${g.ncompInS}) — ` +
-    `${renglones.length} renglón(es) al depósito ${DEPOSITO}` +
+    `${renglones.length} renglón(es) al depósito ${(g.depositos.length > 0 ? g.depositos : [DEPOSITO]).join(', ')}` +
     (conFactura > 0 ? `, ${conFactura} contra la factura ${g.facturas.join(', ')}` : '') +
     (conFactura < renglones.length ? `, ${renglones.length - conFactura} sin comprobante de referencia` : '') +
     (g.ordenes.length > 0 ? `, orden de compra ${g.ordenes.map((o) => o.trim()).join(', ')}` : '') +
@@ -264,6 +293,8 @@ export type RemitoGrabado = {
   facturas: string[]
   ordenes: string[]
   totalSeries: number
+  /** Los depósitos a los que entró la mercadería. */
+  depositos: string[]
 }
 
 /**
@@ -278,7 +309,7 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
   const { codProvee, nComp, fecha, observacion, renglones } = datos
   const seriesGuardadas = datos.series
 
-  const duplicado = await buscarRemitoEnSta14(codProvee, nComp, tx)
+  const duplicado = await buscarRemitoEnSta14(codProvee, nComp, tx, true)
   if (duplicado) {
     throw new Error(`El remito ${nComp} de este proveedor ya está en Tango (interno ${duplicado.ncompInS}).`)
   }
@@ -287,7 +318,7 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
   // quedar por debajo de lo que ya existe (si alguien grabo un remito sin
   // avanzar el talonario, el siguiente no puede repetir su numero).
   const talonarios = await tx.request().query(`
-    SELECT TALONARIO, PROXIMO FROM CPA56 WITH (UPDLOCK) WHERE TIPO_COMP = 'R'`)
+    SELECT TALONARIO, PROXIMO FROM CPA56 WITH (UPDLOCK, ROWLOCK, HOLDLOCK) WHERE TIPO_COMP = 'R'`)
   if (talonarios.recordset.length !== 1) {
     throw new Error(
       `Se esperaba un solo talonario de remitos de proveedor en Tango (CPA56, tipo R) y hay ` +
@@ -336,14 +367,25 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
       SELECT ID_STA14 FROM @ids;`)
   const idSta14 = Number(cabecera.recordset[0].ID_STA14)
 
-  const deposito = await tx.request().input('dep', sql.VarChar(2), DEPOSITO)
-    .query(`SELECT ID_STA22 FROM STA22 WHERE COD_SUCURS = @dep`)
-  const idSta22: number | null = deposito.recordset[0]?.ID_STA22 ?? null
+  // El ID_STA22 de cada deposito, para la fila de STA19 que se crea si el
+  // articulo nunca tuvo saldo ahi.
+  const idsSta22 = new Map<string, number | null>()
+  async function idSta22De(dep: string): Promise<number | null> {
+    if (!idsSta22.has(dep)) {
+      const d = await tx.request().input('dep', sql.VarChar(2), dep)
+        .query(`SELECT ID_STA22 FROM STA22 WHERE COD_SUCURS = @dep`)
+      idsSta22.set(dep, d.recordset[0]?.ID_STA22 ?? null)
+    }
+    return idsSta22.get(dep) ?? null
+  }
 
   let totalSeries = 0
 
-  const ocsAfectadas = new Set<string>()
+  // Las OC tocadas, por talonario + numero, y las facturas recibidas.
+  const ocsAfectadas = new Map<string, { nOrdenCo: string; talonario: number }>()
   const facturasTocadas = new Set<string>()
+  const facturasARecalcular = new Map<string, { tcompInC: string; ncompInC: number }>()
+  const depositos = new Set<string>()
   let nRenglS = 0
   for (const r of renglones) {
     nRenglS += 1
@@ -413,19 +455,26 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
       estado: number
     } | null = null
     if (ocRef) {
+      // Con el talonario de la OC que guardo la factura (CPA_OC_FACTURA):
+      // dos talonarios pueden compartir numero de orden.
       const fila = await tx.request()
         .input('oc', sql.VarChar(14), ocRef.nOrdenCo).input('r', sql.Int, ocRef.nRenglOc)
+        .input('tal', sql.SmallInt, factura?.oc?.talonario ?? null)
         .query(`
           SELECT LTRIM(RTRIM(r.COD_ARTICU)) AS COD_ARTICU, LTRIM(RTRIM(ISNULL(r.COD_DEPOSI,''))) AS COD_DEPOSI,
                  ISNULL(r.CAN_PEDIDA,0) AS CAN_PEDIDA, ISNULL(r.CAN_RECIBI,0) AS CAN_RECIBI,
                  ISNULL(r.CAN_PENDIE,0) AS CAN_PENDIE, ISNULL(r.CANTIDAD_CERRADA,0) AS CANTIDAD_CERRADA,
                  ISNULL(r.CANTIDAD_FACTURADA,0) AS CANTIDAD_FACTURADA, ISNULL(r.ESTADO,0) AS ESTADO,
                  h.TALONARIO
-          FROM CPA36 r WITH (UPDLOCK) JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
-          WHERE r.N_ORDEN_CO=@oc AND r.N_RENGL_OC=@r`)
+          FROM CPA36 r WITH (UPDLOCK, ROWLOCK)
+          JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO AND h.TALONARIO = r.TALONARIO
+          WHERE r.N_ORDEN_CO=@oc AND r.N_RENGL_OC=@r AND (@tal IS NULL OR r.TALONARIO = @tal)`)
       const f = fila.recordset[0]
       if (!f) {
         throw new Error(`El renglón ${ocRef.nRenglOc} de la orden de compra ${ocRef.nOrdenCo.trim()} ya no existe.`)
+      }
+      if (fila.recordset.length > 1) {
+        throw new Error(`La orden de compra ${ocRef.nOrdenCo.trim()} existe en más de un talonario.`)
       }
       // Lo que se recibe ya lo controla FALTA_REM de la factura: la orden
       // no frena el remito (la factura ya se registro contra ella). Los
@@ -444,6 +493,20 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
       }
     }
 
+    // El deposito del renglon de la OC, como lo usa Tango en STA20, STA19 y
+    // las series (2026-11-17). El 01 solo si no hay OC o la OC no tiene
+    // deposito.
+    const dep = oc?.deposito || DEPOSITO
+    depositos.add(dep)
+
+    // El precio del renglon: el que cobro la factura (CPA46.PRECIO_NET), en
+    // las tres columnas de precio del remito, como Tango (2026-11-17). PRECIO
+    // queda en 0, igual que en Tango. Sin factura, en 0 como siempre. Medido
+    // en los remitos de Tango vinculados a una factura cuyo precio difiere
+    // del de la OC: PRECIO_REM es el de la factura en 2.925, el de la OC en
+    // 8 (base de desarrollo, 2026-11-17).
+    const precioRem = factura?.precioNet ?? 0
+
     // 6. STA20. Contra una factura, el renglon nace facturado: CANT_PEND en 0
     // y CANT_FACTU = la cantidad, como en 5.683 y 5.525 de los 5.685
     // renglones que Tango grabo despues de su factura (2025 en adelante).
@@ -451,7 +514,8 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
       .input('ncompInS', sql.VarChar(8), ncompInS)
       .input('nRenglS', sql.Int, nRenglS)
       .input('art', sql.VarChar(15), r.codArticu)
-      .input('dep', sql.VarChar(2), DEPOSITO)
+      .input('dep', sql.VarChar(2), dep)
+      .input('precioRem', sql.Decimal(22, 7), precioRem)
       .input('cant', sql.Decimal(18, 4), r.cantidad)
       .input('pend', sql.Decimal(18, 4), factura ? 0 : r.cantidad)
       .input('factu', sql.Decimal(18, 4), factura ? r.cantidad : 0)
@@ -474,32 +538,36 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
         ) VALUES (
           'RP', @ncompInS, @nRenglS, @art, @dep, 'E', @fecha,
           @cant, @pend, @factu, 0, @cantOc, 1, 1,
-          @oc, @nRenglOc, @talonarioOc, 0, 0, 0,
-          0, 'P',
+          @oc, @nRenglOc, @talonarioOc, 0, @precioRem, @precioRem,
+          @precioRem, 'P',
           @medidaStock, @medidaVentas, @idSta11, @idSta14
         )`)
 
     // 6b. Los numeros de serie: STA07 (historial del renglon) y STA06 (en
     // stock), al mismo deposito que el renglon. Ver series.ts.
     if (series.length > 0) {
-      await grabarSeriesRemitoEn(tx, { ncompInS, nRenglS, codArticu: r.codArticu, deposito: DEPOSITO, series })
+      await grabarSeriesRemitoEn(tx, { ncompInS, nRenglS, codArticu: r.codArticu, deposito: dep, series })
       totalSeries += series.length
     }
 
     // 7. STA19: el saldo del deposito sube. Si el articulo nunca tuvo saldo
-    // en el 01 la fila no existe y se crea.
+    // en ese deposito la fila no existe y se crea. FECHA_ACTUALIZACION_SALDO
+    // con fecha y hora, como Tango (2026-11-17); el trigger
+    // TR_STA19_FECHA_ACTUALIZACION_SALDO la estampa igual ante un cambio de
+    // stock, pero no ante uno de pendiente (ver la baja de CANT_PEND).
     await tx.request()
       .input('art', sql.VarChar(15), r.codArticu)
-      .input('dep', sql.VarChar(2), DEPOSITO)
+      .input('dep', sql.VarChar(2), dep)
       .input('cant', sql.Decimal(18, 4), r.cantidad)
       .input('idSta11', sql.Int, a.ID_STA11 ?? null)
-      .input('idSta22', sql.Int, idSta22)
+      .input('idSta22', sql.Int, await idSta22De(dep))
       .query(`
-        UPDATE STA19 SET CANT_STOCK = ISNULL(CANT_STOCK, 0) + @cant
+        UPDATE STA19 SET CANT_STOCK = ISNULL(CANT_STOCK, 0) + @cant, FECHA_ACTUALIZACION_SALDO = GETDATE()
         WHERE COD_ARTICU = @art AND COD_DEPOSI = @dep;
         IF @@ROWCOUNT = 0
-          INSERT INTO STA19 (COD_ARTICU, COD_DEPOSI, CANT_STOCK, CANT_COMP, CANT_PEND, ID_STA11, ID_STA22)
-          VALUES (@art, @dep, @cant, 0, 0, @idSta11, @idSta22);`)
+          INSERT INTO STA19 (COD_ARTICU, COD_DEPOSI, CANT_STOCK, CANT_COMP, CANT_PEND, ID_STA11, ID_STA22,
+                             FECHA_ACTUALIZACION_SALDO)
+          VALUES (@art, @dep, @cant, 0, 0, @idSta11, @idSta22, GETDATE());`)
 
     if (factura) {
       // 7a. El vinculo factura <-> remito en CPA48, una fila por renglon con
@@ -529,6 +597,10 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
         throw new Error(`A la factura ${factura.nComp} ya no le faltan recibir ${r.cantidad} de ${r.codArticu}.`)
       }
       facturasTocadas.add(factura.nComp)
+      facturasARecalcular.set(`${factura.tcompInC}|${factura.ncompInC}`, {
+        tcompInC: factura.tcompInC,
+        ncompInC: factura.ncompInC,
+      })
     }
 
     if (oc) {
@@ -582,9 +654,17 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
 
       // 8. Los contadores de la orden y lo pendiente de recibir del deposito
       // de la orden.
+      //
+      // Un renglon que queda sin nada pendiente de recibir lleva ademas
+      // CIERRE = 1 y REC_MAS_OC = 'S', como lo dejo Tango en el remito
+      // relevado el 17/11/2026 (2026-11-17). En la base, de los renglones de
+      // OC con algo recibido y CAN_PENDIE = 0, 6.423 de 6.533 (98,3 %) tienen
+      // esos dos valores. Con pendiente no se tocan: el remito parcial no
+      // esta relevado.
       const n = contadoresOc(oc, r.cantidad)
       await tx.request()
         .input('oc', sql.VarChar(14), oc.nOrdenCo).input('r', sql.Int, oc.nRenglOc)
+        .input('talonario', sql.SmallInt, oc.talonario)
         .input('recibida', sql.Decimal(18, 4), n.recibida)
         .input('pend', sql.Decimal(18, 4), n.pendienteRecibir)
         .input('pfr', sql.Decimal(18, 4), n.pendienteFacturarRecibida)
@@ -593,34 +673,49 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
           UPDATE CPA36
           SET CAN_RECIBI = @recibida, CAN_PENDIE = @pend,
               PENDIENTE_FACTURAR_RECIBIDA = @pfr, PENDIENTE_RECIBIR_FACTURADA = @prf,
+              CIERRE = CASE WHEN @pend = 0 THEN 1 ELSE CIERRE END,
+              REC_MAS_OC = CASE WHEN @pend = 0 THEN 'S' ELSE REC_MAS_OC END,
               ESTADO = CASE WHEN @pend = 0 AND ESTADO IN (1, 2, 3, 9) THEN 10 ELSE ESTADO END
-          WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
+          WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r AND TALONARIO=@talonario`)
 
       const baja = Math.min(r.cantidad, oc.pendiente)
       await tx.request()
         .input('art', sql.VarChar(15), r.codArticu)
-        .input('dep', sql.VarChar(2), oc.deposito)
+        .input('dep', sql.VarChar(2), dep)
         .input('baja', sql.Decimal(18, 4), baja)
         .query(`
           UPDATE STA19
-          SET CANT_PEND = CASE WHEN ISNULL(CANT_PEND, 0) - @baja < 0 THEN 0 ELSE ISNULL(CANT_PEND, 0) - @baja END
+          SET CANT_PEND = CASE WHEN ISNULL(CANT_PEND, 0) - @baja < 0 THEN 0 ELSE ISNULL(CANT_PEND, 0) - @baja END,
+              FECHA_ACTUALIZACION_SALDO = GETDATE()
           WHERE COD_ARTICU = @art AND COD_DEPOSI = @dep`)
 
-      ocsAfectadas.add(oc.nOrdenCo)
+      ocsAfectadas.set(`${oc.talonario}|${oc.nOrdenCo}`, { nOrdenCo: oc.nOrdenCo, talonario: oc.talonario })
     }
+  }
+
+  // 8b. La factura recibida: 'R' si ya no le queda nada sin remitir, 'P' si
+  // le queda (2026-11-17, como Tango: el remito total la paso de 'P' a 'R').
+  for (const f of facturasARecalcular.values()) {
+    await actualizarEstadoStkEn(tx, f.tcompInC, f.ncompInC)
   }
 
   // 9. Una orden sin nada pendiente de recibir pasa a Cumplida (estado 10).
   // Mismo conjunto de estados de origen que usa la factura: no se tocan las
-  // anuladas ni las ya cerradas.
-  for (const oc of ocsAfectadas) {
-    const pend = await tx.request().input('oc', sql.VarChar(14), oc).query(`
-      SELECT SUM(ISNULL(CAN_PENDIE, 0)) AS pend FROM CPA36 WHERE N_ORDEN_CO=@oc`)
+  // anuladas ni las ya cerradas. Y, pase o no, la cabecera actualiza su
+  // auditoria de modificacion, como Tango (2026-11-17).
+  for (const oc of ocsAfectadas.values()) {
+    const pend = await tx.request()
+      .input('oc', sql.VarChar(14), oc.nOrdenCo).input('talonario', sql.SmallInt, oc.talonario)
+      .query(`
+        SELECT SUM(ISNULL(CAN_PENDIE, 0)) AS pend FROM CPA36 WHERE N_ORDEN_CO=@oc AND TALONARIO=@talonario`)
     if (Number(pend.recordset[0].pend) <= 0) {
-      await tx.request().input('oc', sql.VarChar(14), oc).query(`
-        UPDATE CPA35 SET ESTADO=10, ID_ESTADO_ORDEN_COMPRA=10
-        WHERE N_ORDEN_CO=@oc AND ESTADO IN (1, 2, 3, 9)`)
+      await tx.request()
+        .input('oc', sql.VarChar(14), oc.nOrdenCo).input('talonario', sql.SmallInt, oc.talonario)
+        .query(`
+          UPDATE CPA35 SET ESTADO=10, ID_ESTADO_ORDEN_COMPRA=10
+          WHERE N_ORDEN_CO=@oc AND TALONARIO=@talonario AND ESTADO IN (1, 2, 3, 9)`)
     }
+    await marcarModificacionOcEn(tx, oc)
   }
 
   // 9b. Un remito sin ningun renglon pendiente de facturar nace facturado
@@ -640,7 +735,8 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
     numero,
     ncompInS,
     facturas: [...facturasTocadas],
-    ordenes: [...ocsAfectadas],
+    ordenes: [...ocsAfectadas.values()].map((o) => o.nOrdenCo),
     totalSeries,
+    depositos: [...depositos],
   }
 }

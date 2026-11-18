@@ -22,7 +22,24 @@ import type { Serie } from '@/lib/series'
  * `FILLER`, `COMENTARIO` y `N_PARTIDA` van en `''` cuando no hay dato, nunca
  * en NULL; `COD_DEPOSI` es el depósito del renglón; `DESC1`, `DESC2` y
  * `COMENTARIO` son texto libre del operador. Ningún trigger las toca.
+ *
+ * Cuando el operador no carga descripción, Tango repite la serie: en el
+ * remito R0000100001704 relevado el 17/11/2026 (11 series cargadas solo con
+ * el número) `DESC1`, `DESC2` y `COMENTARIO` quedaron iguales a `N_SERIE`.
+ * Desde ese día la app hace lo mismo con `DESC1` y `DESC2` vacíos. Lo que
+ * el operador sí cargó (en IMSA y NEWSAN, el motor y el color, decisión del
+ * usuario del 2026-11-05 y 2026-11-16) se graba tal cual. `COMENTARIO`
+ * nunca llega vacío: es el DNRPA, obligatorio.
  */
+
+/** Lo que va a `DESC1`/`DESC2`/`COMENTARIO`: lo cargado, o la serie si está vacío. */
+export function descripcionesSerie(s: Serie): { desc1: string; desc2: string; comentario: string } {
+  return {
+    desc1: s.desc1 || s.nSerie,
+    desc2: s.desc2 || s.nSerie,
+    comentario: s.comentario || s.nSerie,
+  }
+}
 
 type Ejecutor = { request(): sql.Request }
 
@@ -85,12 +102,13 @@ export async function grabarSeriesRemitoEn(
     )
   }
   for (const s of r.series) {
+    const d = descripcionesSerie(s)
     await tx.request()
       .input('art', sql.VarChar(15), r.codArticu)
-      .input('desc1', sql.VarChar(25), s.desc1)
-      .input('desc2', sql.VarChar(25), s.desc2)
+      .input('desc1', sql.VarChar(25), d.desc1.slice(0, 25))
+      .input('desc2', sql.VarChar(25), d.desc2.slice(0, 25))
       .input('serie', sql.VarChar(30), s.nSerie)
-      .input('comentario', sql.VarChar(25), s.comentario)
+      .input('comentario', sql.VarChar(25), d.comentario.slice(0, 25))
       .input('dep', sql.VarChar(2), r.deposito)
       .input('ncompInS', sql.VarChar(8), r.ncompInS)
       .input('nRenglS', sql.Int, r.nRenglS)

@@ -89,6 +89,7 @@ export async function renglonFacturaParaRemitoEn(
     .query<Record<string, unknown>>(`
       SELECT LTRIM(RTRIM(c.N_COMP)) AS nComp, c.FECHA_EMIS AS fechaEmision, LTRIM(RTRIM(c.COD_PROVEE)) AS codProvee,
              LTRIM(RTRIM(d.COD_ARTICU)) AS codArticu, d.CANTIDAD AS cantidad, d.FALTA_REM AS faltaRem,
+             d.PRECIO_NET AS precioNet,
              o.TALONARIO_OC AS talonarioOc, o.N_ORDEN_CO AS nOrdenCo, o.N_RENGL_OC AS nRenglOc,
              o.CANTIDAD - ISNULL((
                SELECT SUM(t.CANTIDAD) FROM CPA_OC_REMITO_FACTURA t
@@ -115,6 +116,7 @@ export async function renglonFacturaParaRemitoEn(
     codArticu: String(x.codArticu),
     cantidad: Number(x.cantidad),
     faltaRem: Number(x.faltaRem),
+    precioNet: Number(x.precioNet ?? 0),
     oc: x.nOrdenCo
       ? {
           talonario: Number(x.talonarioOc) || 0,

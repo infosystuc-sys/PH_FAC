@@ -26,6 +26,12 @@ export type CandidatoFactura = {
   cantidad: number
   /** Lo que el renglón tiene sin remito (CPA46.FALTA_REM). */
   faltaRem: number
+  /**
+   * Lo que la factura cobró por unidad (CPA46.PRECIO_NET). Solo lo trae la
+   * relectura con bloqueo del registro: va al precio del renglón del remito
+   * (STA20.PRECIO_REM).
+   */
+  precioNet?: number
   /** El renglón de OC al que se imputó (CPA_OC_FACTURA), si se imputó. */
   oc: { talonario: number; nOrdenCo: string; nRenglOc: number; cantidad: number } | null
 }
