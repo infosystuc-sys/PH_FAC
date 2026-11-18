@@ -73,8 +73,15 @@ export function RenglonesFactura({
   baseSegunImpuestos,
   soloLectura = false,
   esRemito = false,
+  avisoRemito = null,
   version = 0,
 }: {
+  /**
+   * La OC imputada ya tiene un remito sin facturar (2026-11-18): a cuál se
+   * vincula la factura, o por qué no cierran las cantidades. Se muestra acá,
+   * al lado de la OC, porque es donde el operador la imputa.
+   */
+  avisoRemito?: { estado: 'ok' | 'advertencia' | 'error'; mensaje: string } | null
   /**
    * Un remito de proveedor (2026-10-25): la misma tabla, pero contra lo
    * pendiente de RECIBIR de cada orden y sin importes -- un remito no cobra,
@@ -294,6 +301,11 @@ export function RenglonesFactura({
         {errorCarga && (
           <p className={`${styles.avisoTabla} ${styles.avisoError}`}>
             No se pudieron buscar las órdenes de compra: {errorCarga}
+          </p>
+        )}
+        {!esRemito && avisoRemito && (
+          <p className={`${styles.avisoTabla} ${avisoRemito.estado === 'error' ? styles.avisoError : ''}`}>
+            {avisoRemito.mensaje}
           </p>
         )}
         {!errorCarga && sinPendiente.length > 0 && (

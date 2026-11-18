@@ -109,7 +109,7 @@ export function BarraAcciones({
   sinImportes?: boolean
   /**
    * La factura cuya OC ya tiene remito (2026-11-18): los remitos a los que se
-   * vincula al registrar. Si hay alguno, registrar pide confirmación.
+   * vincula al registrar. Si hay alguno, "Confirmar datos" pide el ok.
    */
   remitosAVincular?: string[]
   anteriorHref: string | null
@@ -131,6 +131,18 @@ export function BarraAcciones({
 
   function confirmar() {
     if (!puedeConfirmar || pendiente) return
+    // La OC ya tiene el remito: el ok del operador para vincularla antes de
+    // dar los datos por buenos (2026-11-18). Es el paso que sigue a imputar
+    // la OC; registrar despues no vuelve a preguntar.
+    if (remitosAVincular.length > 0) {
+      setModalRemito(true)
+      return
+    }
+    confirmarYa()
+  }
+
+  function confirmarYa() {
+    if (!puedeConfirmar || pendiente) return
     arrancar(async () => {
       try {
         await confirmarComprobante(id)
@@ -143,16 +155,6 @@ export function BarraAcciones({
   }
 
   function registrar() {
-    if (!puedeRegistrar || pendiente) return
-    // Antes de vincularla al remito que ya llegó, el ok del operador.
-    if (remitosAVincular.length > 0) {
-      setModalRemito(true)
-      return
-    }
-    registrarYa()
-  }
-
-  function registrarYa() {
     if (!puedeRegistrar || pendiente) return
     arrancar(async () => {
       try {
@@ -243,7 +245,7 @@ export function BarraAcciones({
         onCancelar={() => setModalRemito(false)}
         onConfirmar={() => {
           setModalRemito(false)
-          registrarYa()
+          confirmarYa()
         }}
       />
       <ModalEliminar

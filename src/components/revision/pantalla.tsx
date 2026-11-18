@@ -332,6 +332,7 @@ export function Pantalla({
             // las mismas lineas que valida el panel: es la evidencia con la
             // que se decide si los subtotales son netos o brutos.
             baseSegunImpuestos={listoParaRegistrar?.netoSegunIva ?? null}
+            avisoRemito={listoParaRegistrar?.remitos ?? null}
             soloLectura={soloLectura}
             version={auditoria.length}
           />

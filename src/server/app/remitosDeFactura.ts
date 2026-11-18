@@ -120,6 +120,6 @@ export function validarRemitosAVincular(vinculos: RemitoAVincular[]): ResultadoV
     estado: 'advertencia',
     mensaje:
       `Al registrar, la factura se vincula al ${remitos.length === 1 ? 'remito' : 'los remitos'} ${remitos.join(', ')} ` +
-      `(${vinculos.length} renglón(es) de la orden de compra, cantidades coincidentes). Se pide confirmación al registrar.`,
+      `(${vinculos.length} renglón(es) de la orden de compra, cantidades coincidentes). Se pide el ok al confirmar los datos.`,
   }
 }

@@ -3,11 +3,11 @@
 import styles from './modal-vincular-remito.module.css'
 
 /**
- * La confirmación antes de registrar una factura cuya orden de compra ya
+ * La confirmación, al confirmar los datos, de una factura cuya orden de compra ya
  * tiene el remito (2026-11-18, pedido del usuario: "mostrás un aviso de que
  * vas a vincular al remito ... y continuás si te dan el ok"). Las cantidades
- * ya se controlaron en "Listo para registrar": si no coincidieran, el botón
- * de registrar ni estaría habilitado.
+ * ya se controlaron en "Listo para registrar": si no coincidieran, la factura
+ * no se podría registrar.
  */
 export function ModalVincularRemito({
   abierto,
@@ -43,7 +43,7 @@ export function ModalVincularRemito({
             Cancelar
           </button>
           <button type="button" className={styles.confirmar} onClick={onConfirmar} autoFocus>
-            Vincular y registrar
+            Vincular y confirmar
           </button>
         </div>
       </div>
