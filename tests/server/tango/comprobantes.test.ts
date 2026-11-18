@@ -628,6 +628,83 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
     })
   }, 90000)
 
+  it('un renglon sin OC de un articulo con stock queda pendiente de remitir; un cargo sin stock no', async () => {
+    // 2026-11-18, punto 4 de la revision contra Tango: en la factura sin OC
+    // Tango grabo FALTA_REM = cantidad. Con 0 la factura quedaba 'R' y no
+    // aparecia como pendiente de remito.
+    await conRollback(async (tx) => {
+      const oc = await unRenglonDeOcPendiente(tx)
+      expect(oc).toBeDefined()
+      const conStock = await tx.request().input('oc', sql.VarChar(15), String(oc.COD_ARTICU)).query(`
+        SELECT TOP 1 LTRIM(RTRIM(COD_ARTICU)) AS cod FROM STA11
+        WHERE STOCK = 1 AND LTRIM(RTRIM(COD_ARTICU)) <> @oc ORDER BY COD_ARTICU`)
+      const sinStock = await tx.request().query(`
+        SELECT TOP 1 LTRIM(RTRIM(COD_ARTICU)) AS cod FROM STA11 WHERE STOCK = 0 ORDER BY COD_ARTICU`)
+      const artStock = String(conStock.recordset[0].cod)
+      const artSinStock = String(sinStock.recordset[0].cod)
+      const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
+      await guardarCampoEn(tx, id, 'tipo', 'FAC A')
+      await guardarCampoEn(tx, id, 'ptovta', '0088')
+      await guardarCampoEn(tx, id, 'nro', '00054326')
+      await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
+      await guardarCampoEn(tx, id, 'codprovee', String(oc.COD_PROVEE))
+      await guardarCampoEn(tx, id, 'condcompra', String(condicion.recordset[0].COD_CONDIC))
+      await guardarCampoEn(tx, id, 'tipoFactura', 'articulos')
+      await guardarCampoEn(tx, id, 'neto', '1.500,00')
+      await guardarCampoEn(tx, id, 'total', '1.500,00')
+
+      // 1. Contra la OC.
+      const renglonId = await insertarRenglonPrueba(tx, id, {
+        codigo: String(oc.COD_ARTICU), descripcion: 'x', cantidad: '1',
+        precioUnitario: '1000', importe: '1000',
+      })
+      await tx.request()
+        .input('id', sql.Int, renglonId)
+        .input('oc', sql.VarChar(14), String(oc.N_ORDEN_CO))
+        .input('tal', sql.Int, Number(oc.TALONARIO))
+        .input('r', sql.Int, Number(oc.N_RENGL_OC))
+        .input('p', sql.Decimal(19, 4), Number(oc.PENDIENTE_FACTURAR))
+        .query(`UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, OC_PENDIENTE=@p, PDF_ORDEN=1 WHERE ID=@id`)
+      await insertarRenglonPdfPrueba(tx, id, 1, String(oc.COD_ARTICU), '1', '1000', '1000')
+
+      // 2. Mercaderia sin OC (articulo con stock) y 3. cargo sin stock: los
+      // dos marcados SIN_OC por el operador, como los deja la revision.
+      const sinOc = [
+        { orden: 2, art: artStock, desc: 'MERCADERIA SIN ORDEN PRUEBA', cant: '2', precio: '200', importe: '400' },
+        { orden: 3, art: artSinStock, desc: 'GASTOS PRUEBA SIN STOCK', cant: '1', precio: '100', importe: '100' },
+      ]
+      for (const s of sinOc) {
+        const rid = await insertarRenglonPrueba(tx, id, {
+          codigo: s.art, descripcion: s.desc, cantidad: s.cant, precioUnitario: s.precio, importe: s.importe,
+        })
+        await tx.request().input('id', sql.Int, rid).input('o', sql.Int, s.orden)
+          .query(`UPDATE PHF_RENGLON SET PDF_ORDEN=@o WHERE ID=@id`)
+        await insertarRenglonPdfPrueba(tx, id, s.orden, '', s.cant, s.precio, s.importe)
+        await tx.request().input('id', sql.Int, id).input('o', sql.Int, s.orden).input('d', sql.NVarChar(200), s.desc)
+          .query(`UPDATE PHF_RENGLON_PDF SET DESCRIPCION = @d WHERE COMPROBANTE_ID = @id AND ORDEN = @o`)
+        await aprenderArticuloEn(tx, String(oc.COD_PROVEE), s.desc, s.art, true)
+      }
+
+      const registro = await registrarComprobanteEn(tx, id)
+
+      const cpa46 = await tx.request()
+        .input('t', sql.VarChar(2), 'FP').input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT N_RENGL_C, LTRIM(RTRIM(COD_ARTICU)) AS art, CANTIDAD, FALTA_REM
+                FROM CPA46 WHERE TCOMP_IN_C=@t AND NCOMP_IN_C=@n ORDER BY N_RENGL_C`)
+      expect(cpa46.recordset).toHaveLength(3)
+      expect(cpa46.recordset[1].art).toBe(artStock)
+      expect(Number(cpa46.recordset[1].FALTA_REM)).toBe(2)
+      expect(cpa46.recordset[2].art).toBe(artSinStock)
+      expect(Number(cpa46.recordset[2].FALTA_REM)).toBe(0)
+
+      const c04 = await tx.request().input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT ESTADO_STK FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      expect(c04.recordset[0].ESTADO_STK).toBe('P')
+    })
+  }, 90000)
+
   it('actualiza el precio de ultima compra del articulo en STA12', async () => {
     // Tango lo hace al registrar una factura y esta app no lo hacia: al
     // 2026-09-22 habia 32 articulos desactualizados. Pedido del usuario.

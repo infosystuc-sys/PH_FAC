@@ -984,6 +984,15 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // se cae al mas usado en las ordenes --medido sobre CPA36, el "01"
   // concentra 7.680 de 7.711 renglones--, porque CPA46.COD_DEPOSI es parte
   // de la clave con la que Stock ubica el renglon y no puede quedar vacio.
+  //
+  // FALTA_REM (2026-11-18, punto 4 de la revision contra Tango): si el
+  // articulo lleva stock (STA11.STOCK) es mercaderia sin OC y queda toda
+  // pendiente de remitir, como la graba Tango en la factura sin OC (00259 y
+  // 100005, FALTA_REM = cantidad). Hasta ese dia iba en 0: la factura quedaba
+  // 'R' y no aparecia como pendiente de remito. Los cargos de verdad
+  // (gestion de compra, fletes) estan vinculados a articulos sin stock --al
+  // 2026-11-18 todos los SIN_OC de PHF_ARTICULO_PROVEEDOR van al 107056
+  // "GASTOS AD. FACTURADOS"-- y siguen en 0: no hay mercaderia que recibir.
   const renglonesCargo = detalle.renglones.filter((r) => !r.ocNOrdenCo && !r.ocNRenglOc)
   if (renglonesCargo.length > 0) {
     if (!descuento.ok) throw new Error(describirDescuento(descuento))
@@ -1016,11 +1025,22 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       }
       nRenglC += 1
 
+      const art = await tx.request().input('art', sql.VarChar(15), codArticu)
+        .query<{ STOCK: boolean | null }>('SELECT STOCK FROM STA11 WHERE COD_ARTICU = @art')
+      const llevaStock = Boolean(art.recordset[0]?.STOCK)
+      const faltaRem = llevaStock ? cantidad : 0
+      // En la factura-remito, la mercaderia sin OC entra con el mismo remito
+      // que la de la orden: si no, la factura quedaria pendiente de remitir.
+      if (esFacturaRemito && llevaStock) {
+        paraRemito.push({ renglonId: renglon.id, codArticu, cantidad, factura: { tcompInC, ncompInC, nRenglC } })
+      }
+
       await tx.request()
         .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
         .input('nRenglC', sql.Int, nRenglC).input('codArticu', sql.VarChar(20), codArticu)
         .input('codDeposi', sql.VarChar(10), codDeposiCargo)
         .input('cantidad', sql.Decimal(18, 4), cantidad)
+        .input('faltaRem', sql.Decimal(18, 4), faltaRem)
         .input('precioNet', sql.Decimal(18, 4), neto.precioNeto)
         .input('impNetoP', sql.Decimal(18, 2), neto.importeNeto)
         .input('fechaMov', sql.DateTime, fechaEmision)
@@ -1033,7 +1053,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
             IMPORTE_IMPUESTOS_COSTOS, ID_STA11
           ) VALUES (
             @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
-            @precioNet, @precioNet, @impNetoP, @fechaMov, 1, 0,
+            @precioNet, @precioNet, @impNetoP, @fechaMov, 1, @faltaRem,
             0, '', '', 0, @impNetoP,
             0, 0, 'P', 0,
             0, NULL
@@ -1088,8 +1108,9 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // suelto contra una factura (remitosCompra.ts): STA14/STA20, STA19, CPA48,
   // FALTA_REM en 0, la OC heredada (CPA_OC_REMITO, CPA_OC_REMITO_FACTURA,
   // CPA36) y las series. Los articulos que no llevan stock (un servicio
-  // imputado a la orden) quedan solo en la factura. Los cargos sin OC
-  // tampoco entran: no son mercaderia.
+  // imputado a la orden) quedan solo en la factura. De los renglones sin OC
+  // entran los de articulos con stock (mercaderia, 2026-11-18), sin OC
+  // heredada; los cargos sin stock no.
   let remitoGrabado: string | null = null
   if (esFacturaRemito) {
     const conStock: RenglonARegistrar[] = []

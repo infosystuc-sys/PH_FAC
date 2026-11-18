@@ -10,6 +10,7 @@ import {
 import { guardarCampoEn, obtenerDetalleEn } from '@/server/app/detalle'
 import { registrarComprobanteEn } from '@/server/tango/comprobantes'
 import { ncompInCEnCpa48 } from '@/server/tango/remitosFactura'
+import { aprenderArticuloEn } from '@/server/app/articulosProveedor'
 
 afterAll(async () => {
   await cerrarPool()
@@ -136,6 +137,61 @@ describe('registrarComprobanteEn con una factura-remito de artículos (2026-11-1
 
       const d = await obtenerDetalleEn(tx, id)
       expect(d.auditoria.some((a) => a.texto.startsWith('Registrado en Tango con la factura: remito'))).toBe(true)
+    })
+  })
+
+  it('la mercadería sin OC entra con el mismo remito y la factura queda remitida', async () => {
+    // 2026-11-18: un renglón sin OC de un artículo con stock nace con
+    // FALTA_REM = cantidad; en la factura-remito lo recibe su propio remito.
+    await conRollback(async (tx) => {
+      const oc = await renglonOc(tx)
+      expect(oc).not.toBeNull()
+      const otro = await tx.request().input('oc', sql.VarChar(15), String(oc.COD_ARTICU)).query(`
+        SELECT TOP 1 LTRIM(RTRIM(COD_ARTICU)) AS cod FROM STA11 a
+        WHERE a.STOCK = 1 AND ISNULL(a.USA_SERIE, 0) = 0 AND ISNULL(a.USA_PARTID, 0) = 0
+          AND LTRIM(RTRIM(ISNULL(a.USA_ESC, 'N'))) <> 'B' AND LTRIM(RTRIM(a.COD_ARTICU)) <> @oc
+        ORDER BY a.COD_ARTICU`)
+      const artSinOc = String(otro.recordset[0].cod)
+
+      const id = await facturaRemitoDePrueba(tx, oc, 2)
+      await guardarCampoEn(tx, id, 'neto', '1.300,00')
+      await guardarCampoEn(tx, id, 'total', '1.300,00')
+      const desc = 'MERCADERIA SIN ORDEN PRUEBA FR'
+      const rid = await insertarRenglonPrueba(tx, id, {
+        codigo: artSinOc, descripcion: desc, cantidad: '3', precioUnitario: '100', importe: '300',
+      })
+      await tx.request().input('id', sql.Int, rid).query(`UPDATE PHF_RENGLON SET PDF_ORDEN=2 WHERE ID=@id`)
+      await insertarRenglonPdfPrueba(tx, id, 2, '', '3', '100', '300')
+      await tx.request().input('id', sql.Int, id).input('d', sql.NVarChar(200), desc)
+        .query(`UPDATE PHF_RENGLON_PDF SET DESCRIPCION = @d WHERE COMPROBANTE_ID = @id AND ORDEN = 2`)
+      await aprenderArticuloEn(tx, String(oc.COD_PROVEE), desc, artSinOc, true)
+
+      const registro = await registrarComprobanteEn(tx, id)
+
+      const fac = await tx.request().input('n', sql.Float, registro.ncompInC).query(`
+        SELECT N_RENGL_C, LTRIM(RTRIM(COD_ARTICU)) AS art, FALTA_REM
+        FROM CPA46 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n ORDER BY N_RENGL_C`)
+      expect(fac.recordset).toHaveLength(2)
+      expect(fac.recordset[1].art).toBe(artSinOc)
+      expect(fac.recordset.map((x) => Number(x.FALTA_REM))).toEqual([0, 0])
+      const c04 = await tx.request().input('n', sql.Float, registro.ncompInC)
+        .query(`SELECT ESTADO_STK FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      expect(c04.recordset[0].ESTADO_STK).toBe('R')
+
+      // El remito: los dos renglones; el sin OC, sin orden heredada.
+      const cab = await tx.request()
+        .input('nc', sql.VarChar(14), `R${PTOVTA.padStart(5, '0')}${NRO}`).input('p', sql.VarChar(6), oc.COD_PROVEE)
+        .query(`SELECT NCOMP_IN_S FROM STA14 WHERE TCOMP_IN_S='RP' AND N_COMP=@nc AND LTRIM(RTRIM(COD_PRO_CL))=@p`)
+      const ren = await tx.request().input('n', sql.VarChar(8), String(cab.recordset[0].NCOMP_IN_S)).query(`
+        SELECT LTRIM(RTRIM(COD_ARTICU)) AS art, CANTIDAD, LTRIM(RTRIM(N_ORDEN_CO)) AS oc
+        FROM STA20 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n ORDER BY N_RENGL_S`)
+      expect(ren.recordset).toHaveLength(2)
+      expect(ren.recordset[1].art).toBe(artSinOc)
+      expect(Number(ren.recordset[1].CANTIDAD)).toBe(3)
+      expect(ren.recordset[1].oc).toBe('')
+      const cpa48 = await tx.request().input('n', sql.VarChar(8), ncompInCEnCpa48(registro.ncompInC))
+        .query(`SELECT N_RENGL_C, CANTIDAD FROM CPA48 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n ORDER BY N_RENGL_C`)
+      expect(cpa48.recordset.map((x) => [Number(x.N_RENGL_C), Number(x.CANTIDAD)])).toEqual([[1, 2], [2, 3]])
     })
   })
 
