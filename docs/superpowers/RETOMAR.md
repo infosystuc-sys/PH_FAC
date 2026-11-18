@@ -1,5 +1,7 @@
 # Estado del proyecto
 
+> **18/11/2026: leer primero [`CONTINUAR_2026-11-18.md`](CONTINUAR_2026-11-18.md).** Todo quedó mergeado en `master` (`ac46ad9`), sin push ni deploy. Ahí están los pasos para pasar a producción (incluido `pnpm migrate`) y los pendientes. Esta página todavía no tiene lo del 18/11.
+
 **Actualizado: 2026-11-17** (rama `fix/circuito-oc-factura-remito`, sin mergear). Esto es lo que hay que saber para retomar. El detalle de cada funcionalidad (cómo se construyó, cómo se verificó, por qué se decidió lo que se decidió) está en la bitácora, [`HISTORIAL.md`](HISTORIAL.md). Si algo de la bitácora contradice esta página, gana esta página.
 
 **Al terminar una sesión:** actualizá esta página (estado, pendientes, decisiones nuevas) y agregá el detalle en `HISTORIAL.md`, arriba de todo y con fecha. Esta página tiene que seguir entrando en una lectura.
