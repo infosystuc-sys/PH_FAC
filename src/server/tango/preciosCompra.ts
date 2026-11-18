@@ -85,6 +85,9 @@ export type PrecioUltimaCompra = {
  *   FECHA_COMPROBANTE                 emision (`fecha`)
  *   COD_PROVEE, T_COMP, N_COMP        de la factura
  *   TCOMP_IN_S, NCOMP_IN_S, N_RENGL_S vacios (2 y 8 espacios, como Tango) y 0
+ *   COD_ARTICU, TIPO_MOVIMIENTO, USUARIO_INGRESO y TERMINAL_INGRESO van
+ *   rellenos con espacios a la derecha hasta el largo de la columna (15, 60,
+ *   150 y 255), como los graba Tango: son varchar, no se rellenan solos.
  *   TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C la factura y SU renglon (Tango repite
  *                                     el ultimo renglon en todas las filas
  *                                     de la factura sin OC; aca va el propio)
@@ -150,7 +153,7 @@ export async function actualizarPrecioUltimaCompraEn(
     .input('tcompInC', sql.VarChar(2), a?.tcompInC ?? '')
     .input('ncompInC', sql.Float, a?.ncompInC ?? 0)
     .input('nRenglC', sql.Int, a?.nRenglC ?? 0)
-    .input('usuario', sql.VarChar(120), (a?.usuario ?? '').slice(0, 120))
+    .input('usuario', sql.VarChar(150), (a?.usuario ?? '').slice(0, 150))
     .input('hora', sql.VarChar(6), a?.hora ?? '')
     .input('terminal', sql.VarChar(255), a?.terminal ?? '')
     .input('hoy', sql.DateTime, hoy)
@@ -195,11 +198,11 @@ export async function actualizarPrecioUltimaCompraEn(
         ) VALUES (
           @fecha, @prov, @tComp, @nComp,
           '  ', '        ', 0, @tcompInC, @ncompInC, @nRenglC,
-          0, @monCte, @monCte, @cotizacion, @art,
+          0, @monCte, @monCte, @cotizacion, LEFT(@art + REPLICATE(' ', 15), 15),
           @antUL, @antUE, @precio, @precioExt,
           0, 0, 0, 0,
-          @antRep, @precio, 1, 1, @tipoMov,
-          @hoy, @hora, @usuario, @terminal
+          @antRep, @precio, 1, 1, LEFT(@tipoMov + REPLICATE(' ', 60), 60),
+          @hoy, @hora, LEFT(@usuario + REPLICATE(' ', 150), 150), LEFT(@terminal + REPLICATE(' ', 255), 255)
         );
     `)
 }

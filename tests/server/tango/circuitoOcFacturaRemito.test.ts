@@ -296,7 +296,12 @@ describe('circuito OC -> factura -> remito, como Tango (2026-11-17)', () => {
                PRECIO_REP_ANTERIOR, PRECIO_REP_ACTUAL, ACT_PREC_U, ACT_REPOSI, TIPO_MOVIMIENTO,
                CONVERT(varchar(23), FECHA_INGRESO, 121) AS FECHA_INGRESO, HORA_INGRESO,
                USUARIO_INGRESO, TERMINAL_INGRESO,
-               CONVERT(varchar(23), FECHA_COMPROBANTE, 121) AS FECHA_COMPROBANTE_TXT
+               CONVERT(varchar(23), FECHA_COMPROBANTE, 121) AS FECHA_COMPROBANTE_TXT,
+               DATALENGTH(COD_ARTICU) AS LARGO_COD_ARTICU, DATALENGTH(TIPO_MOVIMIENTO) AS LARGO_TIPO_MOVIMIENTO,
+               DATALENGTH(USUARIO_INGRESO) AS LARGO_USUARIO, DATALENGTH(TERMINAL_INGRESO) AS LARGO_TERMINAL,
+               DATALENGTH(TCOMP_IN_S) AS LARGO_TCOMP_IN_S, DATALENGTH(NCOMP_IN_S) AS LARGO_NCOMP_IN_S,
+               RTRIM(TIPO_MOVIMIENTO) AS TIPO_MOVIMIENTO_SIN_RELLENO, RTRIM(USUARIO_INGRESO) AS USUARIO_SIN_RELLENO,
+               RTRIM(TERMINAL_INGRESO) AS TERMINAL_SIN_RELLENO
         FROM STA_AUDITORIA_COSTO_COMPRA WHERE TCOMP_IN_C = 'FP' AND NCOMP_IN_C = @n`)
       expect(aud.recordset).toHaveLength(1)
       const a = aud.recordset[0]
@@ -305,10 +310,17 @@ describe('circuito OC -> factura -> remito, como Tango (2026-11-17)', () => {
         TCOMP_IN_S: '  ', NCOMP_IN_S: '        ', N_RENGL_S: 0,
         TCOMP_IN_C: 'FP', N_RENGL_C: 1, NRO_SUCURS: 0, MON_CTE: true, MON_CTE_UC: true,
         COD_ARTICU: o.codArticu, ACT_PREC_U: true, ACT_REPOSI: true,
-        TIPO_MOVIMIENTO: TIPO_MOVIMIENTO_AUDITORIA, FECHA_INGRESO: `${hoyTexto} 00:00:00.000`,
-        USUARIO_INGRESO: usuarioActual().slice(0, 120), TERMINAL_INGRESO: TERMINAL_APP,
+        TIPO_MOVIMIENTO_SIN_RELLENO: TIPO_MOVIMIENTO_AUDITORIA, FECHA_INGRESO: `${hoyTexto} 00:00:00.000`,
+        USUARIO_SIN_RELLENO: usuarioActual().slice(0, 150), TERMINAL_SIN_RELLENO: TERMINAL_APP,
         FECHA_COMPROBANTE_TXT: '2026-06-01 00:00:00.000',
       })
+      // Rellenos con espacios hasta el largo de la columna, como Tango (los
+      // cuatro son varchar): medido en la fila de la factura A0000100001704.
+      expect(a).toMatchObject({
+        LARGO_COD_ARTICU: 15, LARGO_TIPO_MOVIMIENTO: 60, LARGO_USUARIO: 150, LARGO_TERMINAL: 255,
+        LARGO_TCOMP_IN_S: 2, LARGO_NCOMP_IN_S: 8,
+      })
+      expect(a.TIPO_MOVIMIENTO).toBe(TIPO_MOVIMIENTO_AUDITORIA.padEnd(60, ' '))
       expect(TIPO_MOVIMIENTO_AUDITORIA).toBe('Compras\\Comprobantes\\Factura sobre remito')
       expect(Number(a.NCOMP_IN_C)).toBe(n)
       expect(Number(a.COTIZACION)).toBe(1)
