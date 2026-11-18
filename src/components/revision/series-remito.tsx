@@ -250,7 +250,7 @@ export function SeriesRemito({
                 DNRPA propuesto a partir del que guardaste: revisalo y guardá este renglón.
               </p>
             )}
-            {r.origen === 'leidas' && !sucia && (
+            {r.origen === 'leidas' && !sucia && !soloLectura && (
               <p className={styles.aviso}>
                 Leídas del comprobante. Revisalas contra el PDF. El DNRPA es opcional: se puede cargar después.
               </p>

@@ -451,6 +451,11 @@ describe('registrarComprobanteEn con un remito de artículos con número de seri
         ['PHF-TEST-C1', '162FMJ T0000001', 'NE', 'PHF-TEST-C1'],
         ['PHF-TEST-C2', '162FMJ T0000002', 'NE', 'PHF-TEST-C2'],
       ])
+
+      // Ya registrado, las series en stock son las de este remito: no es un
+      // problema (2026-11-18).
+      const despues = await revisarSeriesEn(tx, id, (await obtenerDetalleEn(tx, id)).renglones)
+      expect(despues[0].problema).toBeNull()
     })
   }, 150000)
 

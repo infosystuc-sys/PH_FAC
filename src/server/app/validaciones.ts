@@ -120,7 +120,16 @@ export async function validarComprobanteEn(
 
   const esRemito = valores.tipoFactura === 'remito'
 
-  if (codProveeParaDuplicado) {
+  // Ya registrado, lo que se encuentra en Tango con ese numero es el mismo
+  // comprobante: avisarlo como duplicado era un falso problema (2026-11-18,
+  // factura A0004100034573 y remito R0005100029925).
+  const registrado = await e.request().input('id', sql.Int, id)
+    .query<{ n: string | null }>(`SELECT TANGO_N_COMP AS n FROM PHF_COMPROBANTE WHERE ID = @id AND ESTADO = 'registrado'`)
+  const yaRegistradoComo = registrado.recordset[0] ? registrado.recordset[0].n ?? '' : null
+
+  if (yaRegistradoComo !== null) {
+    // Sin chequeo: el registro ya controlo los duplicados antes de grabar.
+  } else if (codProveeParaDuplicado) {
     // Un remito no lleva letra: su numero se arma siempre con R y se busca en
     // Stock (STA14), no en Compras.
     const letra = esRemito ? 'R' : letraComprobante(valores.tipo ?? '')
@@ -172,9 +181,12 @@ export async function validarComprobanteEn(
     duplicadoNoVerificado = 'No se pudo verificar duplicados: falta resolver el proveedor.'
   }
 
-  const duplicado: ResultadoValidacion = duplicadoNoVerificado
-    ? { estado: 'advertencia', mensaje: duplicadoNoVerificado }
-    : validarDuplicado(hayDuplicado, referenciaDuplicado)
+  const duplicado: ResultadoValidacion =
+    yaRegistradoComo !== null
+      ? { estado: 'ok', mensaje: `Registrado en Tango${yaRegistradoComo ? ` como ${yaRegistradoComo}` : ''}.` }
+      : duplicadoNoVerificado
+        ? { estado: 'advertencia', mensaje: duplicadoNoVerificado }
+        : validarDuplicado(hayDuplicado, referenciaDuplicado)
   const tipoFactura = tipoFacturaODefault(valores.tipoFactura)
   const totales = validarTotales(valores, tipoFactura)
   const cae = analizaCampo(tipoFactura, 'cae')

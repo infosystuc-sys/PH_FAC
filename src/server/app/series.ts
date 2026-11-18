@@ -237,6 +237,10 @@ async function coloresPropuestos(
  * sin repetir), mira dos cosas que solo se ven con el remito entero o con
  * Tango: la misma serie del mismo artículo en dos renglones, y una serie
  * que Tango ya tiene en stock (STA06), que el registro rechazaría.
+ *
+ * Esto último solo antes de registrar: una vez registrado, las series en
+ * stock son las que entraron con este mismo remito, y avisarlas como
+ * repetidas era un falso problema (2026-11-18, remito R0005100029925).
  */
 export async function revisarSeriesEn(
   e: Ejecutor,
@@ -253,6 +257,10 @@ export async function revisarSeriesEn(
     renglones.filter((r) => conSerie.has(codigoDe(r))),
     contextoColor,
   )
+
+  const estado = await e.request().input('id', sql.Int, comprobanteId)
+    .query<{ ESTADO: string }>('SELECT ESTADO FROM PHF_COMPROBANTE WHERE ID = @id')
+  const yaRegistrado = estado.recordset[0]?.ESTADO === 'registrado'
 
   const resultado: RenglonConSerie[] = []
   const vistas = new Map<string, number>()
@@ -272,7 +280,7 @@ export async function revisarSeriesEn(
         vistas.set(clave, r.id)
       }
     }
-    if (!problema) {
+    if (!problema && !yaRegistrado) {
       const enStock = await seriesYaEnStock(codArticu, series.filter((x) => x.nSerie !== '').map((x) => x.nSerie), e)
       if (enStock.length > 0) {
         problema =

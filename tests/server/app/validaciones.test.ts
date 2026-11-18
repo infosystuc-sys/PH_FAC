@@ -112,6 +112,38 @@ describe('validarComprobanteEn', () => {
     })
   })
 
+  it('un comprobante ya registrado no es duplicado de si mismo (2026-11-18)', async () => {
+    await conRollback(async (tx) => {
+      const existente = await tx.request().query(`
+        SELECT TOP 1 c.COD_PROVEE, c.N_COMP, p.N_CUIT
+        FROM CPA04 c JOIN CPA01 p ON p.COD_PROVEE = c.COD_PROVEE
+        WHERE c.T_COMP = 'FAC' AND p.N_CUIT IS NOT NULL AND p.N_CUIT <> ''
+          AND p.N_CUIT NOT IN (
+            SELECT N_CUIT FROM CPA01
+            WHERE N_CUIT IS NOT NULL AND N_CUIT <> ''
+            GROUP BY N_CUIT HAVING COUNT(*) > 1
+          )
+        ORDER BY c.NCOMP_IN_C DESC
+      `)
+      const fila = existente.recordset[0]
+      const nComp = String(fila.N_COMP).trim()
+
+      const id = await insertarComprobantePrueba(tx, { estado: 'leido' })
+      await guardarCampoEn(tx, id, 'cuit', String(fila.N_CUIT))
+      await guardarCampoEn(tx, id, 'tipo', `FAC ${nComp[0]}`)
+      await guardarCampoEn(tx, id, 'ptovta', nComp.slice(1, 6))
+      await guardarCampoEn(tx, id, 'nro', nComp.slice(6))
+      await guardarCampoEn(tx, id, 'total', '100,00')
+      // Lo que deja el registro: la factura de Tango con ese numero es esta.
+      await tx.request().input('id', sql.Int, id).input('n', sql.VarChar(14), nComp)
+        .query(`UPDATE PHF_COMPROBANTE SET ESTADO = 'registrado', TANGO_N_COMP = @n WHERE ID = @id`)
+
+      const v = await validarComprobanteEn(tx, id)
+      expect(v.duplicado.estado).toBe('ok')
+      expect(v.duplicado.mensaje).toContain(nComp)
+    })
+  })
+
   it('duplicado en error si ya existe otro PHF_COMPROBANTE con el mismo proveedor+tipo+ptovta+numero', async () => {
     await conRollback(async (tx) => {
       const otro = await insertarComprobantePrueba(tx, {
