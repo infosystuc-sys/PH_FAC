@@ -4,11 +4,11 @@ Documento de traspaso. Lo escribió la sesión del 18/11/2026, que se cortó por
 
 ## Dónde está todo
 
-- **Código:** `D:\app\ph_fac`, rama `master`, commit `ac46ad9`. Tiene todo lo hecho.
+- **Código:** `D:\app\ph_fac`, rama `master`. Tiene todo lo hecho. **Los hashes cambiaron el 18/11** al sacar `docs/informes` de la historia: el merge del DNRPA, que era `ac46ad9`, ahora es `efcfc8f`. El respaldo con los hashes viejos está en la rama local `respaldo-antes-de-quitar-informes`.
   - Se mergeó `fix/circuito-oc-factura-remito` (merge directo) y `feat/importar-dnrpa` (con commit de merge).
   - Las dos ramas siguen existiendo, ya mergeadas.
   - Las carpetas auxiliares `PH_FAC_master` y `PH_FAC_dnrpa` se borraron.
-- **Push:** no se hizo. El `master` local está **33 commits adelante de `origin/master`**.
+- **Push:** hecho el 18/11 a `infosystuc-sys/PH_FAC` (`origin/master` = `master`), sin `docs/informes`. Para actualizar producción desde el repo: [`ACTUALIZAR_PRODUCCION.md`](ACTUALIZAR_PRODUCCION.md).
 - **Deploy:** no se hizo.
 - **Verificado sobre `master`:**
   - typecheck sin errores;
@@ -16,7 +16,7 @@ Documento de traspaso. Lo escribió la sesión del 18/11/2026, que se cortó por
   - `pnpm build` compila.
   - En el medio la suite falló 2 veces sin motivo y pasó al repetirla: es contención con la base cuando hay apps corriendo.
 - **App de prueba:** `D:\app\PH_FAC_2026-11-17`, puerto **3013**.
-  - Corre `master` (`ac46ad9`), compilada, apuntando a la base de **desarrollo** (`DESKTOP-OLHNIK3\AXSQLSERVER` / `PUNTO_HOGAR_1`).
+  - Corre `master` (`ac46ad9`, hoy `efcfc8f`), compilada, apuntando a la base de **desarrollo** (`DESKTOP-OLHNIK3\AXSQLSERVER` / `PUNTO_HOGAR_1`).
   - La compilación anterior, que era la de producción (`da19035`), quedó en `.next-da19035` dentro de esa carpeta.
   - La app de la rama del puerto 3014 está apagada.
 - **Producción hoy:** commit `da19035`.
@@ -52,7 +52,7 @@ Lo del 18/11, todo por pedido del usuario:
 ## Pasos para pasar a producción
 
 1. **Probar en el 3013** lo que haga falta. Es la versión que va a producción, contra la base de desarrollo.
-2. **Push** de `master` a `origin`, si corresponde. Lo decide el usuario.
+2. **Push** de `master` a `origin`: hecho el 18/11. En el servidor se baja con `git pull` (ver `ACTUALIZAR_PRODUCCION.md`).
 3. **Migrar la base de producción antes de arrancar la versión nueva:** `pnpm migrate`, desde una carpeta con el `.env.local` de producción.
    - Agrega columnas a las tablas `PHF_`. Entre otras: `REMITO_SIN_REFERENCIA` y `ARCHIVO_ORIGEN` en `PHF_COMPROBANTE`, `FAC_*` en `PHF_RENGLON` y `COMENTARIO` en la tabla de series del PDF.
    - Es idempotente.
