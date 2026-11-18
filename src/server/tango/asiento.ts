@@ -10,6 +10,7 @@ import { conceptoDelComprobante } from './conceptos'
 import { cargarAprendidosEn } from '@/server/app/aprendizajeImpuestos'
 import { terminalActual } from '@/lib/usuario'
 import { esFacturaDeArticulos } from '@/lib/tipoFactura'
+import { importesSegunCondicionIva } from '@/lib/condicionIva'
 
 /**
  * Simula el asiento contable que Tango generaria al registrar un
@@ -234,6 +235,68 @@ function cuentaFinal(renglon: RenglonModelo, override: CuentaContable | null): C
 }
 
 /**
+ * Las lineas de un subtotal (SB gravado o EX exento). Con renglones de
+ * articulos y un renglon de modelo que admite reemplazo, el importe de
+ * cabecera se prorratea entre las cuentas distintas que resolvieron los
+ * renglones, en vez de sumar IMPORTE_IA directo: la suma de renglones puede
+ * no coincidir centavo a centavo con el importe (la tarjeta de renglones ya
+ * expone y tolera esa diferencia -- ver "Subtotal renglones" en
+ * renglones.tsx). Si el asiento usara la suma de renglones, "balanceado"
+ * terminaria comparando dos cosas distintas y diria "no cierra" para una
+ * factura que esta bien. El ultimo grupo absorbe el resto del redondeo para
+ * que la suma sea exacta. Sin grupos, una sola linea con la cuenta final.
+ */
+function lineasDeSubtotal(
+  renglon: RenglonModelo,
+  importe: number,
+  grupos: { cuenta: CuentaContable; importe: number }[],
+  cuentaSubtotal: CuentaContable | null,
+): LineaAsiento[] {
+  if (renglon.reemplazaCuenta && grupos.length > 0) {
+    const sumaGrupos = grupos.reduce((acc, g) => acc + g.importe, 0)
+    let acumulado = 0
+    return grupos.map((g, i) => {
+      const esUltimo = i === grupos.length - 1
+      const parte = esUltimo
+        ? Math.round((importe - acumulado) * 100) / 100
+        : Math.round((importe * (g.importe / sumaGrupos)) * 100) / 100
+      acumulado = Math.round((acumulado + parte) * 100) / 100
+      return {
+        idCuenta: g.cuenta.idCuenta,
+        codCuenta: g.cuenta.codCuenta,
+        descCuenta: g.cuenta.descCuenta,
+        leyenda: renglon.leyenda,
+        debe: parte,
+        haber: 0,
+        editaCuenta: renglon.reemplazaCuenta,
+      }
+    })
+  }
+  const cuenta = cuentaFinal(renglon, cuentaSubtotal)
+  return [{
+    idCuenta: cuenta.idCuenta,
+    codCuenta: cuenta.codCuenta,
+    descCuenta: cuenta.descCuenta,
+    leyenda: renglon.leyenda,
+    debe: importe,
+    haber: 0,
+    editaCuenta: renglon.reemplazaCuenta,
+  }]
+}
+
+/**
+ * La condicion de IVA del proveedor (`CPA01.COND_IVA`), la misma que
+ * `registrarComprobanteEn` graba en `CPA04.CAT_IVA`. `null` si no existe.
+ */
+async function condicionIvaDelProveedorEn(e: Ejecutor, codProvee: string): Promise<string | null> {
+  const r = await e.request()
+    .input('cod', sql.VarChar(6), codProvee)
+    .query<{ condIva: string }>(`
+      SELECT LTRIM(RTRIM(ISNULL(COND_IVA, ''))) AS condIva FROM CPA01 WHERE COD_PROVEE = @cod`)
+  return r.recordset[0]?.condIva ?? null
+}
+
+/**
  * Arma la vista previa completa. No bloquea por datos faltantes o
  * codigos sin resolver -- a diferencia de `registrarComprobanteEn`, que
  * tiene que ser estricto porque escribe en Tango, esto es una vista
@@ -270,8 +333,19 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
   // --- Subtotal gravado (SB) y exento (EX): la cuenta se puede reemplazar. ---
   const sb = modelo.get('SB')
   const ex = modelo.get('EX')
-  const neto = parsearImporte(valores.neto)
-  const exento = parsearImporte(valores.exento)
+  // Gravado y exento como se graban en CPA04 (N3, 2026-11-18): la misma
+  // funcion que registrarComprobanteEn, con la condicion de IVA del
+  // proveedor y si alguna alicuota registra IVA. Ver condicionIva.ts.
+  const alicuotasIva = await listarAlicuotasIva()
+  const hayIva = resolverAlicuotas(valores, alicuotasIva, aprendidosIva).some(
+    (l) => l.estado === 'registra' && l.importe > 0,
+  )
+  const { neto, exento, todoExento } = importesSegunCondicionIva(
+    codProvee ? await condicionIvaDelProveedorEn(e, codProvee) : null,
+    parsearImporte(valores.neto),
+    parsearImporte(valores.exento),
+    hayIva,
+  )
 
   let cuentaSubtotal: CuentaContable | null = null
   let gruposArticulo: { cuenta: CuentaContable; importe: number }[] = []
@@ -287,66 +361,22 @@ export async function previsualizarAsientoEn(e: Ejecutor, comprobanteId: number)
   }
 
   if (sb && neto > 0) {
-    if (sb.reemplazaCuenta && gruposArticulo.length > 0) {
-      // Se prorratea el neto de cabecera entre las cuentas distintas que
-      // resolvieron los renglones, en vez de sumar IMPORTE_IA directo: la
-      // suma de renglones puede no coincidir centavo a centavo con el neto
-      // (la tarjeta de renglones ya expone y tolera esa diferencia -- ver
-      // "Subtotal renglones" en renglones.tsx). Si el asiento usara la
-      // suma de renglones, "balanceado" terminaria comparando dos cosas
-      // distintas y diria "no cierra" para una factura que esta bien. El
-      // ultimo grupo absorbe el resto del redondeo para que la suma sea
-      // exacta.
-      const sumaGrupos = gruposArticulo.reduce((acc, g) => acc + g.importe, 0)
-      let acumulado = 0
-      gruposArticulo.forEach((g, i) => {
-        const esUltimo = i === gruposArticulo.length - 1
-        const parte = esUltimo
-          ? Math.round((neto - acumulado) * 100) / 100
-          : Math.round((neto * (g.importe / sumaGrupos)) * 100) / 100
-        acumulado = Math.round((acumulado + parte) * 100) / 100
-        lineas.push({
-          idCuenta: g.cuenta.idCuenta,
-          codCuenta: g.cuenta.codCuenta,
-          descCuenta: g.cuenta.descCuenta,
-          leyenda: sb.leyenda,
-          debe: parte,
-          haber: 0,
-          editaCuenta: sb.reemplazaCuenta,
-        })
-      })
-    } else {
-      const cuenta = cuentaFinal(sb, cuentaSubtotal)
-      lineas.push({
-        idCuenta: cuenta.idCuenta,
-        codCuenta: cuenta.codCuenta,
-        descCuenta: cuenta.descCuenta,
-        leyenda: sb.leyenda,
-        debe: neto,
-        haber: 0,
-        editaCuenta: sb.reemplazaCuenta,
-      })
-    }
+    lineas.push(...lineasDeSubtotal(sb, neto, gruposArticulo, cuentaSubtotal))
   }
   if (ex && exento > 0) {
-    const cuenta = cuentaFinal(ex, cuentaSubtotal)
-    lineas.push({
-      idCuenta: cuenta.idCuenta,
-      codCuenta: cuenta.codCuenta,
-      descCuenta: cuenta.descCuenta,
-      leyenda: ex.leyenda,
-      debe: exento,
-      haber: 0,
-      editaCuenta: ex.reemplazaCuenta,
-    })
+    // El exento de siempre (una parte de la factura) va a una sola cuenta,
+    // como hasta ahora. El de una factura que paso entera a exento por la
+    // condicion de IVA del proveedor (N3) es lo que hubiera sido el neto
+    // gravado: se reparte entre las cuentas de los articulos igual que el.
+    lineas.push(...lineasDeSubtotal(ex, exento, todoExento ? gruposArticulo : [], cuentaSubtotal))
   }
 
   // --- IVA, percepciones IIBB, impuestos varios: cuenta fija del modelo. ---
-  const [alicuotas, codigosImpuesto] = await Promise.all([listarAlicuotasIva(), listarCodigosImpuesto()])
+  const codigosImpuesto = await listarCodigosImpuesto()
   const genericas = new Map<string, number>()
   let lineasOmitidas = 0
 
-  for (const l of resolverAlicuotas(valores, alicuotas, aprendidosIva)) {
+  for (const l of resolverAlicuotas(valores, alicuotasIva, aprendidosIva)) {
     if (l.estado === 'registra' && l.alicuota) {
       const cod = String(l.alicuota.codigo)
       genericas.set(cod, Math.round(((genericas.get(cod) ?? 0) + l.importe) * 100) / 100)

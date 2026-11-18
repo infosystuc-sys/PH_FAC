@@ -10,6 +10,7 @@ import {
   netoQueImplicaElIva,
 } from '@/lib/validaciones'
 import { parsearImporte, totalImputado } from '@/lib/formato'
+import { importesSegunCondicionIva, clasificacionSiapDelExento } from '@/lib/condicionIva'
 import { resolverAlicuotas, resolverCodigoIva } from '@/lib/alicuotas'
 import { resolverPercepciones, resolverVarios } from '@/lib/percepciones'
 import { listarCondicionesCompra } from './condicionesCompra'
@@ -368,8 +369,8 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     ? parsearFechaArg((campoFechaContable.valorFinal ?? '').trim())
     : null
   const fechaContable = contableCorregida ?? fechaContableDe(fechaEmision, await cierreContable())
-  const neto = parsearImporte(valores.neto)
-  const exento = parsearImporte(valores.exento)
+  const netoLeido = parsearImporte(valores.neto)
+  const exentoLeido = parsearImporte(valores.exento)
   // En una liquidacion de tarjeta el total impreso en el resumen sale por
   // diferencia (arrastra saldo anterior, pagos, intereses que la app no
   // captura): no es el total del comprobante. Se graba subtotal + IVA +
@@ -397,6 +398,16 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         `No entran los códigos ${sobran}: unificá líneas antes de registrar.`,
     )
   }
+  // Gravado y exento como los graba Tango segun la condicion de IVA del
+  // proveedor (N3, 2026-11-18): un monotributista, un exento o un consumidor
+  // final que factura sin IVA va todo exento. Ver condicionIva.ts.
+  const { neto, exento, todoExento } = importesSegunCondicionIva(
+    proveedor.condIva,
+    netoLeido,
+    exentoLeido,
+    alicuotas.some((a) => a.importe > 0),
+  )
+
   while (alicuotas.length < 5) alicuotas.push({ codigo: 0, porcentaje: 0, importe: 0 })
 
   // 2. Numero interno.
@@ -629,6 +640,21 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
 
   }
 
+  // 5b. CPA63, la fila del exento (N3 y N4, 2026-11-18): al 0% por el
+  // importe exento, con la clasificacion de la condicion de IVA del
+  // proveedor (C9 monotributista, C7 exento o consumidor final, SIN el
+  // resto). Tango la graba en toda factura con exento, tenga o no IVA; sin
+  // ella el Libro IVA Digital no informa el exento. Ver condicionIva.ts.
+  if (exento > 0) {
+    await tx.request()
+      .input('tcompInC', sql.VarChar(2), tcompInC).input('ncompInC', sql.Float, ncompInC)
+      .input('clasSiap', sql.VarChar(3), clasificacionSiapDelExento(proveedor.condIva))
+      .input('importe', sql.Decimal(18, 2), exento)
+      .query(`
+        INSERT INTO CPA63 (TCOMP_IN_C, NCOMP_IN_C, CLAS_SIAP, IMPORTE, PORC_ALICU, FILLER)
+        VALUES (@tcompInC, @ncompInC, @clasSiap, @importe, 0, '')`)
+  }
+
   // 6. CPA54 (vencimientos), uno por cuota de la condicion de compra --
   // ver cuotas.ts, mismo patron de preview+escritura que el asiento.
   await escribirCuotasEn(tx, id, codProvee, tComp, nComprobante, idCpa04)
@@ -832,6 +858,9 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       .input('precioPan', sql.Decimal(18, 4), precioLista)
       .input('bonif', sql.Decimal(9, 4), bonificacion)
       .input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
+      // Exento o gravado segun la condicion de IVA del proveedor (N3).
+      .input('impExento', sql.Decimal(18, 2), todoExento ? importeNetoRenglon : 0)
+      .input('impGravado', sql.Decimal(18, 2), todoExento ? 0 : importeNetoRenglon)
       .input('fechaMov', sql.DateTime, fechaEmision).input('idSta11', sql.Int, null)
       .input('faltaRem', sql.Decimal(18, 4), remitos.faltaRem)
       // ID_MEDIDA_STOCK es la unidad de stock del articulo (STA11), como la
@@ -849,7 +878,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         ) VALUES (
           @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
           @precioNet, @precioPan, @impNetoP, @fechaMov, 1, @faltaRem,
-          @bonif, '', '', 0, @impNetoP,
+          @bonif, '', '', @impExento, @impGravado,
           0, 0, 'P', 0,
           0, NULL, (SELECT ID_MEDIDA_STOCK FROM STA11 WHERE COD_ARTICU = @codArticu)
         )`)
@@ -1043,6 +1072,8 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         .input('faltaRem', sql.Decimal(18, 4), faltaRem)
         .input('precioNet', sql.Decimal(18, 4), neto.precioNeto)
         .input('impNetoP', sql.Decimal(18, 2), neto.importeNeto)
+        .input('impExento', sql.Decimal(18, 2), todoExento ? neto.importeNeto : 0)
+        .input('impGravado', sql.Decimal(18, 2), todoExento ? 0 : neto.importeNeto)
         .input('fechaMov', sql.DateTime, fechaEmision)
         .query(`
           INSERT INTO CPA46 (
@@ -1054,7 +1085,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
           ) VALUES (
             @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
             @precioNet, @precioNet, @impNetoP, @fechaMov, 1, @faltaRem,
-            0, '', '', 0, @impNetoP,
+            0, '', '', @impExento, @impGravado,
             0, 0, 'P', 0,
             0, NULL
           )`)

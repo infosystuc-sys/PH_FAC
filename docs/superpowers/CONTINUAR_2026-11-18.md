@@ -77,7 +77,19 @@ Lo del 18/11, todo por pedido del usuario:
 - **Libro IVA (hallazgos N3 y N4 de `resultado_conceptos_2026-11-18.md`):**
   - Factura C de monotributista: Tango la graba exenta, con `CPA63` al 0% `C9`.
   - Factura de RI solo exenta: Tango agrega `CPA63` al 0% `SIN`.
-  - La app no hace ninguna de las dos. Están sin corregir.
+  - **Corregidos el 18/11 en `master`, sin pasar a producción** (detalle en `HISTORIAL.md`, "IVA según la condición del proveedor"). La regla es más amplia: también exentos y consumidores finales (`C7`), y la fila al 0% va en toda factura con exento.
+  - Pendiente: decidir si se corrigen hacia atrás las que la app ya grabó. Para contarlas en producción (solo lectura):
+    ```sql
+    SELECT 'N3' AS caso, COUNT(*) AS facturas, SUM(c.IMPORTE_TO) AS total
+    FROM CPA04 c
+    WHERE c.TERMINAL_INGRESO = 'PHF-WEB' AND c.T_COMP = 'FAC' AND c.CAT_IVA IN ('RS','RSS','EX','CF')
+      AND c.IMPORTE_NE > 0 AND c.IMP_IVA1 + c.IMP_IVA2 + c.IMP_IVA3 + c.IMP_IVA4 + c.IMP_IVA5 = 0
+    UNION ALL
+    SELECT 'N4', COUNT(*), SUM(c.IMPORTE_TO)
+    FROM CPA04 c
+    WHERE c.TERMINAL_INGRESO = 'PHF-WEB' AND c.T_COMP = 'FAC' AND c.IMPORTE_EX > 0
+      AND NOT EXISTS (SELECT 1 FROM CPA63 x WHERE x.TCOMP_IN_C = c.TCOMP_IN_C AND x.NCOMP_IN_C = c.NCOMP_IN_C AND x.PORC_ALICU = 0);
+    ```
 - **Otros hallazgos sin corregir:**
   - N1: `CPA04.TIPO_COMPR` (`C` conceptos, `A` artículos).
   - N2: `ESTADO_STK` vacío en conceptos.

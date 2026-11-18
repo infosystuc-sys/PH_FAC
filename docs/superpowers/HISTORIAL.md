@@ -2,6 +2,16 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## IVA según la condición del proveedor: N3 y N4 (2026-11-18)
+
+Pedido del usuario, con los criterios propuestos. Hallazgos de `docs/informes/pruebas_desarrollo/resultado_conceptos_2026-11-18.md` (solo en la PC de desarrollo). Patrón medido sobre todas las facturas cargadas desde Tango en la base de desarrollo; las cifras están en `src/lib/condicionIva.ts`.
+
+- **N3:** si el proveedor no discrimina IVA (`CPA01.COND_IVA` = `RS`/`RSS` monotributista, `EX` exento, `CF` consumidor final) y la factura no trae IVA, todo el importe va como **exento**: `CPA04.IMPORTE_EX`/`SUBT_EXENT`, `CPA47.IMPORTE_EXENTO` y `CPA46.IMPORTE_EXENTO` por renglón, y nada como gravado. Antes iba todo como gravado. Una factura de esos proveedores con IVA discriminado no se reclasifica. Se decide por la condición de IVA y no por la letra: Tango tiene facturas de esas condiciones con letras C, T, B y M.
+- **N4:** toda factura con exento lleva en `CPA63` una fila al 0% por el importe exento, tenga o no IVA (Tango: 33 de 34 RI solo exentas, 175 de 191 RI con IVA y parte exenta). Clasificación: `C9` monotributista, `C7` exento o consumidor final, `SIN` el resto. Antes no se grababa.
+- La regla vive en `src/lib/condicionIva.ts` y la usan `registrarComprobanteEn` y `previsualizarAsientoEn`, para que la vista previa del asiento y lo grabado coincidan. Lo que ve y corrige el operador (`neto`, `exento`) no cambia: se reclasifica al grabar. En el asiento, las líneas de subtotal gravado y exento del modelo 1 van a la misma cuenta (14003, reemplazable por la del concepto o del artículo), así que el asiento no cambia de cuentas. El exento de una factura que pasó entera a exento se reparte entre las cuentas de los artículos, igual que el gravado (`lineasDeSubtotal`).
+- **No se corrigieron hacia atrás** las facturas que la app ya grabó así. La consulta para contarlas en producción está en la conversación del 18/11 y en `CONTINUAR_2026-11-18.md`.
+- Tests: `tests/lib/condicionIva.test.ts` y `tests/server/tango/condicionIva.test.ts` (monotributista, exento, RI solo exenta, RI mixta y artículos de monotributista). Los 5 de integración fallan con el código anterior. Suite: 1102 pasan.
+
 ## Push a GitHub y pase a producción desde el repo (2026-11-18)
 
 Pedido del usuario: que la PC de desarrollo (`INFOSYS01`) suba al repo `infosystuc-sys/PH_FAC` y que producción se actualice desde ahí.
