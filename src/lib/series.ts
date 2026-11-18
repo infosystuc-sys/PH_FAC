@@ -7,8 +7,9 @@
  * los 1.444 renglones `RP` que Tango ya grabó, `DESC1` y `DESC2` vienen
  * siempre cargados (en las motos, el número de motor y el color) y
  * `COMENTARIO` en 1.044 (el número de certificado); `N_SERIE` es parte de
- * la clave única de las dos tablas. `N_SERIE` y el DNRPA (`COMENTARIO`) son
- * obligatorios (el DNRPA desde el 2026-11-05, decisión del usuario).
+ * la clave única de las dos tablas. `N_SERIE` es obligatorio. El DNRPA
+ * (`COMENTARIO`) fue obligatorio del 2026-11-05 al 2026-11-18; desde ahí es
+ * opcional (decisión del usuario: se carga después, en Tango).
  *
  * Los largos son los de esas columnas en Tango.
  */
@@ -61,14 +62,7 @@ export function problemaSeries(codArticu: string, cantidad: number, series: Seri
     if (vistas.has(s.nSerie)) return `La serie ${s.nSerie} del artículo ${codArticu} está repetida.`
     vistas.add(s.nSerie)
   }
-  // El DNRPA (va a COMENTARIO) es obligatorio: decision del usuario,
-  // 2026-11-05. No sale del papel, lo carga el operador.
-  const sinDnrpa = cargadas.filter((s) => s.comentario === '')
-  if (sinDnrpa.length > 0) {
-    return (
-      `Falta el DNRPA de ${sinDnrpa.length} serie(s) del artículo ${codArticu}` +
-      (sinDnrpa.length === 1 ? ` (${sinDnrpa[0].nSerie}).` : '.')
-    )
-  }
+  // El DNRPA (va a COMENTARIO) no se exige desde el 2026-11-18, decision del
+  // usuario: el remito se registra sin el y se carga despues.
   return null
 }

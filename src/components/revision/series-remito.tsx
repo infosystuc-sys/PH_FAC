@@ -252,7 +252,7 @@ export function SeriesRemito({
             )}
             {r.origen === 'leidas' && !sucia && (
               <p className={styles.aviso}>
-                Leídas del comprobante. Revisalas contra el PDF, cargá el DNRPA y guardá.
+                Leídas del comprobante. Revisalas contra el PDF. El DNRPA es opcional: se puede cargar después.
               </p>
             )}
             <div className={styles.pie}>

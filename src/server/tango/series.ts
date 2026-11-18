@@ -28,8 +28,9 @@ import type { Serie } from '@/lib/series'
  * el número) `DESC1`, `DESC2` y `COMENTARIO` quedaron iguales a `N_SERIE`.
  * Desde ese día la app hace lo mismo con `DESC1` y `DESC2` vacíos. Lo que
  * el operador sí cargó (en IMSA y NEWSAN, el motor y el color, decisión del
- * usuario del 2026-11-05 y 2026-11-16) se graba tal cual. `COMENTARIO`
- * nunca llega vacío: es el DNRPA, obligatorio.
+ * usuario del 2026-11-05 y 2026-11-16) se graba tal cual. `COMENTARIO` es
+ * el DNRPA, opcional desde el 2026-11-18 (se carga después): si falta, lleva
+ * la serie, igual que hace Tango.
  */
 
 /** Lo que va a `DESC1`/`DESC2`/`COMENTARIO`: lo cargado, o la serie si está vacío. */

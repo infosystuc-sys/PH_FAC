@@ -414,11 +414,11 @@ describe('registrarComprobanteEn con un remito de artículos con número de seri
     })
   }, 150000)
 
-  it('con las series leídas del PDF (IMSA) pide el DNRPA y registra después de cargarlo', async () => {
+  it('con las series leídas del PDF (IMSA) registra sin el DNRPA (2026-11-18)', async () => {
     await conRollback(async (tx) => {
       const art = await articuloConSerie(tx)
       expect(art).not.toBeNull()
-      const { id, renglonId } = await remitoConSerie(tx, art!, '87654334')
+      const { id } = await remitoConSerie(tx, art!, '87654334')
       // Lo que deja la cola despues de la lectura de series de IMSA: el
       // renglon del PDF 1 trae dos unidades, y el color sale del codigo.
       const n = await guardarSeriesPdfEn(
@@ -434,27 +434,22 @@ describe('registrarComprobanteEn con un remito de artículos con número de seri
       )
       expect(n).toBe(2)
 
-      // Leidas, pero sin el DNRPA, que no sale del papel: bloquea.
+      // Leidas y sin el DNRPA, que no sale del papel: ya no bloquea, se
+      // carga despues en Tango.
       const revision = await revisarSeriesEn(tx, id, (await obtenerDetalleEn(tx, id)).renglones)
       expect(revision).toHaveLength(1)
       expect(revision[0].origen).toBe('leidas')
-      expect(revision[0].problema).toMatch(/Falta el DNRPA de 2 serie/)
-      expect((await validarListoParaRegistrarEn(tx, id)).bloqueante).toBe(true)
+      expect(revision[0].problema).toBeNull()
+      expect((await validarListoParaRegistrarEn(tx, id)).bloqueante).toBe(false)
 
-      // El operador guarda lo leido con el DNRPA y ahi se registra.
-      await guardarSeriesEn(
-        tx,
-        id,
-        renglonId,
-        revision[0].series.map((s, i) => ({ ...s, comentario: `DNRPA-${i + 1}` })),
-      )
+      // Sin DNRPA, COMENTARIO lleva la serie, como hace Tango.
       const registro = await registrarComprobanteEn(tx, id)
       const h = await tx.request()
         .input('n', sql.VarChar(8), String(registro.ncompInC).padStart(8, '0'))
         .query(`SELECT * FROM STA07 WHERE TCOMP_IN_S='RP' AND NCOMP_IN_S=@n ORDER BY N_SERIE`)
       expect(h.recordset.map((x) => [x.N_SERIE, x.DESC1, x.DESC2, x.COMENTARIO])).toEqual([
-        ['PHF-TEST-C1', '162FMJ T0000001', 'NE', 'DNRPA-1'],
-        ['PHF-TEST-C2', '162FMJ T0000002', 'NE', 'DNRPA-2'],
+        ['PHF-TEST-C1', '162FMJ T0000001', 'NE', 'PHF-TEST-C1'],
+        ['PHF-TEST-C2', '162FMJ T0000002', 'NE', 'PHF-TEST-C2'],
       ])
     })
   }, 150000)

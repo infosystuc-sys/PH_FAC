@@ -26,11 +26,9 @@ describe('problemaSeries', () => {
     expect(problemaSeries('100063', 1.5, [s('S1111')])).toMatch(/entera/)
   })
 
-  it('exige el DNRPA de cada serie', () => {
-    expect(problemaSeries('100063', 2, [s('S1111'), s('S2222', '')])).toBe(
-      'Falta el DNRPA de 1 serie(s) del artículo 100063 (S2222).',
-    )
-    expect(problemaSeries('100063', 2, [s('S1111', ''), s('S2222', '')])).toMatch(/DNRPA de 2 serie/)
+  it('no exige el DNRPA: se carga despues (2026-11-18)', () => {
+    expect(problemaSeries('100063', 2, [s('S1111'), s('S2222', '')])).toBeNull()
+    expect(problemaSeries('100063', 2, [s('S1111', ''), s('S2222', '')])).toBeNull()
   })
 
   it('respeta el largo de STA06.N_SERIE', () => {
