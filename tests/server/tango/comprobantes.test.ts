@@ -13,6 +13,7 @@ import {
 } from '@/server/tango/comprobantes'
 import { COD_CONCEPTO_TARJETA } from '@/server/tango/conceptos'
 import { aprenderImpuestoEn } from '@/server/app/aprendizajeImpuestos'
+import { aprenderArticuloEn } from '@/server/app/articulosProveedor'
 import { terminalActual } from '@/lib/usuario'
 import { fechaContableDe } from '@/lib/fechaContable'
 import { cierreContable } from '@/server/tango/parametros'
@@ -88,7 +89,11 @@ describe('registrarComprobanteEn', () => {
         SELECT TOP 1 COD_PROVEE, N_CUIT FROM CPA01
         WHERE N_CUIT IS NOT NULL AND LEN(REPLACE(REPLACE(N_CUIT,'-',''),' ','')) = 11
         ORDER BY COD_PROVEE`)
-      const codProvee = String(prov.recordset[0].COD_PROVEE).trim()
+      // Desde el 2026-11-17 el registro vuelve a correr "Listo para
+      // registrar" (punto 8): sin tipo de factura no registra. Va como
+      // factura de conceptos de 010151 (AMX/Claro), el proveedor con
+      // concepto configurado en Tango.
+      const codProvee = '010151'
       const cuit = String(prov.recordset[0].N_CUIT)
 
       const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
@@ -101,6 +106,7 @@ describe('registrarComprobanteEn', () => {
       await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
       await guardarCampoEn(tx, id, 'cuit', cuit)
       await guardarCampoEn(tx, id, 'codprovee', codProvee)
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
       await guardarCampoEn(tx, id, 'condcompra', condCompra)
       await guardarCampoEn(tx, id, 'moneda', 'ARS')
       await guardarCampoEn(tx, id, 'cotizacion', '1')
@@ -109,6 +115,7 @@ describe('registrarComprobanteEn', () => {
       await guardarCampoEn(tx, id, 'impiva1', '2.100,00')
       await guardarCampoEn(tx, id, 'total', '12.100,00')
 
+      const antesDeRegistrar = Date.now()
       const registro = await registrarComprobanteEn(tx, id)
 
       expect(registro.tComp).toBe('FAC')
@@ -170,15 +177,13 @@ describe('registrarComprobanteEn', () => {
       expect(asientoHeader.recordset[0].CONTABILIZADO).toBe('S')
       expect(asientoHeader.recordset[0].USUARIO_CONTABILIZACION).toBe('PHF_WEB')
       expect(asientoHeader.recordset[0].TERMINAL_CONTABILIZACION).toBe(terminalActual())
-      // La fecha del asiento es la CONTABLE, la misma que va a
-      // CPA04.FECHA_CONT -- decision del usuario, 2026-09-07. Con esta
-      // factura del 01/06/2026 no es la de emision: cae dentro del periodo
-      // que Tango tiene cerrado, asi que se corre al primer periodo abierto.
+      // FECHA_CONTABILIZACION es el momento del registro, sin milisegundos,
+      // como la manda Tango (punto 15 de la revision contra Tango,
+      // 2026-11-17). Del 2026-09-07 a esa fecha era la fecha contable.
       const fechaContab = new Date(asientoHeader.recordset[0].FECHA_CONTABILIZACION)
-      const esperadaAsiento = fechaContableDe(new Date(2026, 5, 1), await cierreContable())
-      expect(fechaContab.getFullYear()).toBe(esperadaAsiento.getFullYear())
-      expect(fechaContab.getMonth()).toBe(esperadaAsiento.getMonth())
-      expect(fechaContab.getDate()).toBe(esperadaAsiento.getDate())
+      expect(fechaContab.getMilliseconds()).toBe(0)
+      expect(fechaContab.getTime()).toBeGreaterThanOrEqual(Math.floor(antesDeRegistrar / 1000) * 1000)
+      expect(fechaContab.getTime()).toBeLessThanOrEqual(Date.now())
       expect(asientoHeader.recordset[0].TRANSFERIDO_CN).toBe('N')
 
       const asientoLineas = await tx.request()
@@ -196,7 +201,11 @@ describe('registrarComprobanteEn', () => {
           { dh: l.D_H, importe: Number(l.IMPORTE_RENGLON_BASE_CP) },
         ]),
       )
-      expect(porCuenta.get('14003')).toEqual({ dh: 'D', importe: 10000 })
+      // El subtotal va a la cuenta del concepto del proveedor (es una
+      // factura de conceptos desde el 2026-11-17, ver arriba).
+      const compras = [...porCuenta.entries()].filter(([c]) => c !== '13405' && c !== '20002')
+      expect(compras).toHaveLength(1)
+      expect(compras[0][1]).toEqual({ dh: 'D', importe: 10000 })
       expect(porCuenta.get('13405')).toEqual({ dh: 'D', importe: 2100 })
       expect(porCuenta.get('20002')).toEqual({ dh: 'H', importe: 12100 })
     })
@@ -213,7 +222,11 @@ describe('registrarComprobanteEn', () => {
         SELECT TOP 1 COD_PROVEE, N_CUIT FROM CPA01
         WHERE N_CUIT IS NOT NULL AND LEN(REPLACE(REPLACE(N_CUIT,'-',''),' ','')) = 11
         ORDER BY COD_PROVEE`)
-      const codProvee = String(prov.recordset[0].COD_PROVEE).trim()
+      // Desde el 2026-11-17 el registro vuelve a correr "Listo para
+      // registrar" (punto 8): sin tipo de factura no registra. Va como
+      // factura de conceptos de 010151 (AMX/Claro), el proveedor con
+      // concepto configurado en Tango.
+      const codProvee = '010151'
       const cuit = String(prov.recordset[0].N_CUIT)
 
       const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
@@ -231,6 +244,7 @@ describe('registrarComprobanteEn', () => {
       await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
       await guardarCampoEn(tx, id, 'cuit', cuit)
       await guardarCampoEn(tx, id, 'codprovee', codProvee)
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
       await guardarCampoEn(tx, id, 'condcompra', condCompra)
       await guardarCampoEn(tx, id, 'neto', '10.000,00')
       await guardarCampoEn(tx, id, 'porciva1', '5')
@@ -302,7 +316,11 @@ describe('registrarComprobanteEn', () => {
         SELECT TOP 1 COD_PROVEE, N_CUIT FROM CPA01
         WHERE N_CUIT IS NOT NULL AND LEN(REPLACE(REPLACE(N_CUIT,'-',''),' ','')) = 11
         ORDER BY COD_PROVEE`)
-      const codProvee = String(prov.recordset[0].COD_PROVEE).trim()
+      // Desde el 2026-11-17 el registro vuelve a correr "Listo para
+      // registrar" (punto 8): sin tipo de factura no registra. Va como
+      // factura de conceptos de 010151 (AMX/Claro), el proveedor con
+      // concepto configurado en Tango.
+      const codProvee = '010151'
       const cuit = String(prov.recordset[0].N_CUIT)
 
       const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
@@ -315,6 +333,7 @@ describe('registrarComprobanteEn', () => {
       await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
       await guardarCampoEn(tx, id, 'cuit', cuit)
       await guardarCampoEn(tx, id, 'codprovee', codProvee)
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
       await guardarCampoEn(tx, id, 'condcompra', condCompra)
       await guardarCampoEn(tx, id, 'neto', '10.000,00')
       // porciva1 nunca se completa: sin dato, no vacio a proposito.
@@ -340,7 +359,11 @@ describe('registrarComprobanteEn', () => {
         SELECT TOP 1 COD_PROVEE, N_CUIT FROM CPA01
         WHERE N_CUIT IS NOT NULL AND LEN(REPLACE(REPLACE(N_CUIT,'-',''),' ','')) = 11
         ORDER BY COD_PROVEE`)
-      const codProvee = String(prov.recordset[0].COD_PROVEE).trim()
+      // Desde el 2026-11-17 el registro vuelve a correr "Listo para
+      // registrar" (punto 8): sin tipo de factura no registra. Va como
+      // factura de conceptos de 010151 (AMX/Claro), el proveedor con
+      // concepto configurado en Tango.
+      const codProvee = '010151'
 
       const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
       const condCompra = String(condicion.recordset[0].COD_CONDIC)
@@ -351,6 +374,7 @@ describe('registrarComprobanteEn', () => {
       await guardarCampoEn(tx, id, 'nro', '00099999')
       await guardarCampoEn(tx, id, 'fecha', '01/06/2026')
       await guardarCampoEn(tx, id, 'codprovee', codProvee)
+      await guardarCampoEn(tx, id, 'tipoFactura', 'conceptos')
       await guardarCampoEn(tx, id, 'condcompra', condCompra)
       await guardarCampoEn(tx, id, 'neto', '1.000,00')
       await guardarCampoEn(tx, id, 'total', '1.000,00')
@@ -559,7 +583,8 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
         .input('oc', sql.VarChar(14), String(oc.N_ORDEN_CO))
         .input('tal', sql.Int, Number(oc.TALONARIO))
         .input('r', sql.Int, Number(oc.N_RENGL_OC))
-        .query(`UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, PDF_ORDEN=1 WHERE ID=@id`)
+        .input('p', sql.Decimal(19, 4), Number(oc.PENDIENTE_FACTURAR))
+        .query(`UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, OC_PENDIENTE=@p, PDF_ORDEN=1 WHERE ID=@id`)
       await insertarRenglonPdfPrueba(tx, id, 1, String(oc.COD_ARTICU), '1', '1000', '1000')
 
       // Y el CARGO: mismo articulo a proposito --es el caso dificil-- pero
@@ -572,6 +597,13 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
       await tx.request().input('id', sql.Int, cargoId)
         .query(`UPDATE PHF_RENGLON SET PDF_ORDEN=2 WHERE ID=@id`)
       await insertarRenglonPdfPrueba(tx, id, 2, '', '1', '100', '100')
+      // Como lo deja la revision cuando el operador lo marca como cargo: la
+      // descripcion aprendida con SIN_OC. Sin eso, "Listo para registrar"
+      // (que el registro vuelve a correr desde el 2026-11-17) lo coteja
+      // contra la orden y bloquea.
+      await tx.request().input('id', sql.Int, id)
+        .query(`UPDATE PHF_RENGLON_PDF SET DESCRIPCION = 'GESTION DE COMPRA 1%' WHERE COMPROBANTE_ID = @id AND ORDEN = 2`)
+      await aprenderArticuloEn(tx, String(oc.COD_PROVEE), 'GESTION DE COMPRA 1%', String(oc.COD_ARTICU), true)
 
       const registro = await registrarComprobanteEn(tx, id)
 
@@ -606,7 +638,7 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
       const condicion = await tx.request().query(`SELECT TOP 1 COD_CONDIC FROM CONDICION_COMPRA ORDER BY COD_CONDIC`)
 
       const antes = await tx.request().input('a', sql.VarChar(20), articulo)
-        .query(`SELECT ID_STA12, PRECIO_U_L, FECHA_ULC FROM STA12 WHERE COD_ARTICU = @a`)
+        .query(`SELECT ID_STA12, PRECIO_U_L, FECHA_ULC, ID_CPA01, MON_CTE, MON_CTE_UC FROM STA12 WHERE COD_ARTICU = @a`)
 
       const id = await insertarComprobantePrueba(tx, { estado: 'confirmado' })
       await guardarCampoEn(tx, id, 'tipo', 'FAC A')
@@ -628,7 +660,8 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
         .input('oc', sql.VarChar(14), String(oc.N_ORDEN_CO))
         .input('tal', sql.Int, Number(oc.TALONARIO))
         .input('r', sql.Int, Number(oc.N_RENGL_OC))
-        .query(`UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, PDF_ORDEN=1 WHERE ID=@id`)
+        .input('p', sql.Decimal(19, 4), Number(oc.PENDIENTE_FACTURAR))
+        .query(`UPDATE PHF_RENGLON SET OC_N_ORDEN_CO=@oc, OC_TALONARIO=@tal, OC_N_RENGL_OC=@r, OC_PENDIENTE=@p, PDF_ORDEN=1 WHERE ID=@id`)
       await insertarRenglonPdfPrueba(tx, id, 1, articulo, '1', '1000', '1000')
 
       const registro = await registrarComprobanteEn(tx, id)
@@ -651,17 +684,29 @@ describe('registrarComprobanteEn con orden de compra imputada', () => {
       // por el usuario): los dos precios van juntos.
       expect(Number(f.PRECIO_REP)).toBe(1000)
       expect(String(f.COD_PROV_U).trim()).toBe(String(oc.COD_PROVEE).trim())
-      expect(f.MON_CTE).toBe(true)
-      expect(f.MON_CTE_UC).toBe(true)
+      // ID_CPA01, MON_CTE y MON_CTE_UC no se pisan en una fila que ya
+      // existia (punto 10 de la revision contra Tango, 2026-11-17): Tango
+      // cambio COD_PROV_U y dejo el ID_CPA01 que tenia.
+      if (antes.recordset.length > 0) {
+        expect(f.ID_CPA01).toBe(antes.recordset[0].ID_CPA01)
+        expect(f.MON_CTE).toBe(antes.recordset[0].MON_CTE)
+        expect(f.MON_CTE_UC).toBe(antes.recordset[0].MON_CTE_UC)
+      } else {
+        expect(f.MON_CTE).toBe(true)
+        expect(f.MON_CTE_UC).toBe(true)
+      }
 
-      // La fecha es la CONTABLE del comprobante, no la de emision: la
-      // factura es del 01/06/2026 y el cierre de Tango la corre.
+      // La fecha es la de EMISION (01/06/2026), no la contable, como la pone
+      // Tango (punto 10, 2026-11-17). Si la base tiene ese periodo cerrado
+      // las dos difieren; el test del circuito completo
+      // (circuitoOcFacturaRemito.test.ts) lo fuerza con un cierre.
       const cpa04 = await tx.request()
         .input('n', sql.Float, registro.ncompInC)
-        .query(`SELECT FECHA_CONT FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
-      const contable = new Date(cpa04.recordset[0].FECHA_CONT)
-      expect(new Date(f.FECHA_ULC).getTime()).toBe(contable.getTime())
-      expect(new Date(f.FECHA_REPOS).getTime()).toBe(contable.getTime())
+        .query(`SELECT FECHA_EMIS, FECHA_CONT FROM CPA04 WHERE TCOMP_IN_C='FP' AND NCOMP_IN_C=@n`)
+      const emision = new Date(2026, 5, 1)
+      expect(new Date(cpa04.recordset[0].FECHA_EMIS).getTime()).toBe(emision.getTime())
+      expect(new Date(f.FECHA_ULC).getTime()).toBe(emision.getTime())
+      expect(new Date(f.FECHA_REPOS).getTime()).toBe(emision.getTime())
 
       // El costo de stock no se toca: lo maneja otro proceso de Tango.
       expect(Number(f.PRECIO_S_L)).toBe(0)

@@ -1,6 +1,6 @@
 import sql from 'mssql'
 import { getPool } from '../db/pool'
-import { conTransaccion } from '../db/tx'
+import { conTransaccion, fijarXactAbort } from '../db/tx'
 import { obtenerDetalleEn, auditarEn } from '@/server/app/detalle'
 import {
   nComp as armarNComp,
@@ -33,6 +33,8 @@ import {
 } from './remitosCompra'
 import { seriesEfectivasEn } from '@/server/app/series'
 import { planificarRemitosEn, consumirRemitosEn, contadoresAlFacturar } from './remitosFactura'
+import { actualizarEstadoStkEn, marcarModificacionOcEn, TERMINAL_APP } from './estadoCircuito'
+import { validarListoParaRegistrarEn, type ResultadoListoParaRegistrar } from '@/server/app/validaciones'
 
 export type ComprobanteCpa04 = {
   nComp: string
@@ -104,8 +106,23 @@ export async function mapearAlicuotaIva(
 
 export type RegistroTango = { ncompInC: number; tComp: string; nComp: string }
 
-// Sentinel que usa Tango para "sin fecha" en varias columnas de fecha legacy.
-const SIN_FECHA = new Date('1800-01-01T03:53:48.000Z')
+// La fecha "vacia" de Tango (1800-01-01) va como literal en el SQL,
+// `CONVERT(datetime, '18000101', 112)`, y no como un Date de JavaScript:
+// `new Date('1800-01-01T03:53:48Z')` daba 00:00 solo con el servidor en la
+// zona de Buenos Aires (punto 14 de la revision contra Tango, 2026-11-17).
+
+/**
+ * Los mensajes de lo que bloquea en "Listo para registrar", para cortar el
+ * registro con el mismo motivo que muestra la pantalla.
+ */
+export function erroresListoParaRegistrar(r: ResultadoListoParaRegistrar): string[] {
+  const items = [
+    r.condCompra, r.percepcionIibb, r.varios, r.formatoComp, r.fecha, r.tipoFactura,
+    r.concepto, r.alicuotas, r.netoIva, r.ordenCompra, r.cantidadesOc, r.renglonesNeto,
+    ...(r.stock ? [r.stock] : []),
+  ]
+  return items.filter((v) => v.estado === 'error').map((v) => v.mensaje)
+}
 
 /**
  * Lo que se imprime en `CPA04.LEYENDA`.
@@ -190,6 +207,13 @@ function agruparPorCodigo<T extends { codigo: number | string; importe: number }
 }
 
 export async function registrarComprobanteEn(tx: sql.Transaction, id: number): Promise<RegistroTango> {
+  // XACT_ABORT ON: un error de SQL o un timeout aborta la transaccion entera
+  // en el servidor, sin dejarla abierta con sus bloqueos hasta el rollback
+  // (punto 6 de la revision contra Tango, 2026-11-17). El applock solo ordena
+  // a las instancias de la app entre si; contra Tango ordena el semaforo de
+  // PROXIMO_NUMERO, mas abajo. Con fijarXactAbort (`.batch()`): por
+  // `.query()` el SET se revertiria al terminar el sp_executesql.
+  await fijarXactAbort(tx, true)
   await tx.request().query(`EXEC sp_getapplock @Resource='PHF_registro_tango', @LockMode='Exclusive'`)
 
   // 1. Idempotencia.
@@ -211,11 +235,41 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // con sus propias tablas. Ver remitosCompra.ts.
   if (valores.tipoFactura === 'remito') return registrarRemitoEn(tx, id)
 
+  // El semaforo de numeracion de Tango (punto 5 de la revision contra
+  // Tango, 2026-11-17). Antes del MAX + 1 de NCOMP_IN_C, Tango toma esta
+  // fila con bloqueo de actualizacion y la retiene hasta el commit (la fila
+  // vale 0 y no se actualiza: es solo un semaforo). Tomarlo aca, antes de
+  // cualquier otra lectura con bloqueo, ordena a la app y a los usuarios de
+  // Tango que graban comprobantes a la vez, y en el mismo orden que Tango
+  // (primero esto, despues el proveedor, STA12, la OC), asi que no se pueden
+  // trabar entre si. Se busca por tabla y campo, no por el ID (6 en esta
+  // base), que puede variar entre bases.
+  const semaforo = await tx.request().query(`
+    SELECT ID_PROXIMO_NUMERO FROM PROXIMO_NUMERO WITH (UPDLOCK, ROWLOCK, HOLDLOCK)
+    WHERE TABLA = 'CPA10' AND CAMPO = 'PROX_N_INT'`)
+  if (semaforo.recordset.length !== 1) {
+    throw new Error(
+      `No se encontró el contador de comprobantes de Compras en Tango (PROXIMO_NUMERO CPA10/PROX_N_INT): ` +
+        `hay ${semaforo.recordset.length} filas. No se registra.`,
+    )
+  }
+
+  // Lo mismo que bloquea el boton en la pantalla, vuelto a correr aca,
+  // dentro de la transaccion (punto 8 de la revision contra Tango): la
+  // accion de servidor se puede llamar sin pasar por el boton, y no todas
+  // esas validaciones se repiten mas abajo (el formato del numero, el cotejo
+  // contra la OC, las series de la factura-remito).
+  const errores = erroresListoParaRegistrar(await validarListoParaRegistrarEn(tx, id, detalle))
+  if (errores.length > 0) {
+    throw new Error(`El comprobante no está listo para registrar: ${errores.join(' ')}`)
+  }
+
   const codProvee = (valores.codprovee ?? '').trim()
+  // Con bloqueo: el saldo de esta fila se actualiza mas abajo (CPA01.SALDO_CC).
   const proveedorRow = await tx.request().input('cod', sql.VarChar(6), codProvee).query(`
     SELECT LTRIM(RTRIM(ISNULL(NOM_PROVEE,''))) AS razon, LTRIM(RTRIM(ISNULL(N_CUIT,''))) AS cuit,
            LTRIM(RTRIM(ISNULL(COND_IVA,''))) AS condIva
-    FROM CPA01 WHERE COD_PROVEE=@cod`)
+    FROM CPA01 WITH (UPDLOCK, ROWLOCK) WHERE COD_PROVEE=@cod`)
   if (proveedorRow.recordset.length === 0) {
     throw new Error(`El proveedor ${codProvee} ya no existe en Tango.`)
   }
@@ -245,6 +299,22 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // "String or binary data would be truncated" que encontro el test de integracion.
   const tComp = 'FAC'
   const tcompInC = 'FP'
+
+  // El duplicado, controlado dentro de la transaccion y con bloqueo (punto 7
+  // de la revision contra Tango): la pantalla lo controla al importar y al
+  // confirmar, pero entre eso y este momento alguien pudo cargarla desde
+  // Tango. CPA04 no tiene indice unico por proveedor y numero (IX_0 es
+  // COD_PROVEE, T_COMP, N_COMP, no unico): el HOLDLOCK sobre ese rango
+  // impide que otro la inserte hasta el commit.
+  const duplicada = await tx.request()
+    .input('cp', sql.VarChar(6), codProvee)
+    .input('nc', sql.VarChar(LARGO_N_COMP), nComprobante.slice(0, LARGO_N_COMP))
+    .query(`
+      SELECT TOP 1 ID_CPA04 FROM CPA04 WITH (UPDLOCK, HOLDLOCK)
+      WHERE COD_PROVEE = @cp AND T_COMP = 'FAC' AND N_COMP = @nc`)
+  if (duplicada.recordset.length > 0) {
+    throw new Error(`La factura ${nComprobante} de este proveedor ya existe en Tango.`)
+  }
 
   const codCondCompra = Number(valores.condcompra)
   const condiciones = await listarCondicionesCompra()
@@ -347,9 +417,14 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // Se mira tambien ASIENTO_COMPROBANTE_CP porque es la tabla que impone la
   // unicidad: si alguna vez tuviera un numero que CPA04 no tiene, es ese el
   // que hay que saltar.
+  //
+  // Desde el 2026-11-17 el filtro es la lista de tipos de Tango
+  // (`TCOMP_IN_C IN ('FS','FP','DP','CP')`, de la traza) y no `<> 'OP'`: asi
+  // la app y Tango numeran igual aunque aparezca otro tipo. El MAX corre
+  // despues del semaforo de PROXIMO_NUMERO, que lo serializa contra Tango.
   const maxR = await tx.request().query(`
     SELECT MAX(mx) AS mx FROM (
-      SELECT ISNULL(MAX(NCOMP_IN_C), 0) AS mx FROM CPA04 WHERE TCOMP_IN_C <> 'OP'
+      SELECT ISNULL(MAX(NCOMP_IN_C), 0) AS mx FROM CPA04 WHERE TCOMP_IN_C IN ('FS', 'FP', 'DP', 'CP')
       UNION ALL
       SELECT ISNULL(MAX(NCOMP_IN_C), 0) FROM ASIENTO_COMPROBANTE_CP
     ) series
@@ -357,7 +432,10 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   const ncompInC = Number(maxR.recordset[0].mx) + 1
 
   const horaAhora = horaActual()
+  // CPA04.FECHA_INGRESO va sin hora, como la manda Tango (punto 15): la hora
+  // ya esta en HORA_INGRESO.
   const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
 
   // Ninguna tabla CTA* (el espejo de Tango Central: CTA05/CTA06/CTA07,
   // CTA_COMPROBANTE_COMPRAS_CLASIFICACION_IVA) se escribe desde esta app --
@@ -400,7 +478,6 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     .input('hora', sql.VarChar(10), horaAhora)
     .input('usuarioIngreso', sql.VarChar(20), usuarioActual())
     .input('fechaIngreso', sql.DateTime, hoy)
-    .input('sinFecha', sql.DateTime, SIN_FECHA)
     .query<Record<string, unknown>>(`
       DECLARE @idsCpa04 TABLE (ID_CPA04 INT);
       INSERT INTO CPA04 (
@@ -435,14 +512,14 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       OUTPUT INSERTED.ID_CPA04 INTO @idsCpa04
       VALUES (
         @tcompInC, @ncompInC, 'FAC', @nComp, @tipoCompr, @codProvee, @catIva,
-        @condCompr, @cotizacion, @fechaEmis, @fechaCont, @sinFecha, @importeNe,
+        @condCompr, @cotizacion, @fechaEmis, @fechaCont, CONVERT(datetime, '18000101', 112), @importeNe,
         @importeNe, @importeEx, @importeEx, @importeTo, @leyenda, @monCte,
         @codIva1, @porcIva1, @impIva1, @codIva2, @porcIva2, @impIva2,
         @codIva3, @porcIva3, @impIva3, @codIva4, @porcIva4, @impIva4,
         @codIva5, @porcIva5, @impIva5, @importeTo,
         @hora, @horaIngreso, @usuarioIngreso, 'PHF-WEB', @fechaIngreso,
-        @sinFecha, '', '', '',
-        @sinFecha, @sinFecha, NULL, NULL,
+        CONVERT(datetime, '18000101', 112), '', '', '',
+        CONVERT(datetime, '18000101', 112), CONVERT(datetime, '18000101', 112), NULL, NULL,
         '', 0, '', 'O', 'B', '', '', 0,
         0, 0, '', 'PEN', '', 'R', 0,
         0, 0, 0, 0, 0, 0, '',
@@ -464,6 +541,29 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       );
       SELECT ID_CPA04 FROM @idsCpa04;`)
   const idCpa04 = Number(cpa04Result.recordset[0].ID_CPA04)
+
+  // 3b. El saldo del proveedor (punto 1 de la revision contra Tango,
+  // 2026-11-17). Tango hace este UPDATE dentro de la transaccion de la
+  // factura, despues del INSERT de CPA04, y ningun trigger lo hace: sin
+  // esto la cuenta corriente del proveedor no veia la deuda. El saldo BAJA
+  // con el total y las unidades bajan con lo mismo que va a CPA04.UNIDADES
+  // (hoy el total: la cotizacion en unidades es el punto 13, fuera de esta
+  // correccion).
+  const saldo = await tx.request()
+    .input('codProvee', sql.VarChar(6), codProvee)
+    .input('importeTo', sql.Decimal(18, 2), total)
+    .input('unidades', sql.Decimal(18, 2), total)
+    .query<{ filas: number }>(`
+      DECLARE @filas int;
+      UPDATE CPA01 WITH (ROWLOCK)
+         SET SALDO_CC          = ISNULL(SALDO_CC, 0) - @importeTo,
+             SALDO_CC_UNIDADES = ISNULL(SALDO_CC_UNIDADES, 0) - @unidades
+       WHERE COD_PROVEE = @codProvee;
+      SET @filas = @@ROWCOUNT;
+      SELECT @filas AS filas;`)
+  if (saldo.recordset[0]?.filas !== 1) {
+    throw new Error(`No se pudo actualizar el saldo del proveedor ${codProvee} en Tango.`)
+  }
 
   // 4. CPA18 (percepciones de IIBB e impuestos varios). Una fila
   // por slot con importe, resueltas con las mismas funciones que usa el
@@ -565,7 +665,9 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // el vinculo va a CPA_OC_FACTURA en vez de CPA48, y los contadores que se
   // descuentan son los de CPA36 en vez de los de STA20.
   const renglonesConOc = detalle.renglones.filter((r) => r.ocNOrdenCo && r.ocNRenglOc)
-  const ocsAfectadas = new Set<string>()
+  // Las OC tocadas, por talonario + numero: al final se les actualiza la
+  // auditoria de modificacion (CPA35).
+  const ocsAfectadas = new Map<string, { nOrdenCo: string; talonario: number }>()
   // La factura-remito (2026-11-17, pedido del usuario): despues de la
   // factura se graba el remito con el mismo numero, recibiendo estos mismos
   // renglones. Por eso no consume remitos previos: la mercaderia de esta
@@ -616,8 +718,15 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
     // Se relee la OC de Tango en vez de confiar en lo que quedo congelado al
     // elegirla: entre que el operador la imputo y este momento, otra factura
     // pudo haber consumido parte de lo pendiente.
+    //
+    // Con bloqueo de actualizacion (punto 6): la transaccion ya no es
+    // SERIALIZABLE, y lo que se lee aca decide el tope y los contadores que
+    // se graban despues. Y con el TALONARIO en el join y, si el renglon lo
+    // guardo, en el filtro (punto 18): dos talonarios de OC pueden compartir
+    // numero.
     const ocRow = await tx.request()
       .input('oc', sql.VarChar(14), nOrdenCo).input('r', sql.Int, nRenglOc)
+      .input('tal', sql.SmallInt, renglon.ocTalonario)
       .query(`
         SELECT r.COD_ARTICU, r.COD_DEPOSI, r.PRECIO,
                ISNULL(r.CANTIDAD_FACTURADA, 0) AS CANTIDAD_FACTURADA,
@@ -625,10 +734,16 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
                ISNULL(r.PENDIENTE_RECIBIR_FACTURADA, 0) AS PENDIENTE_RECIBIR_FACTURADA,
                ISNULL(r.CAN_RECIBI, 0) AS CAN_RECIBI,
                h.NRO_SUCURS, h.TALONARIO
-        FROM CPA36 r JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO
-        WHERE r.N_ORDEN_CO=@oc AND r.N_RENGL_OC=@r`)
+        FROM CPA36 r WITH (UPDLOCK, ROWLOCK)
+        JOIN CPA35 h ON h.N_ORDEN_CO = r.N_ORDEN_CO AND h.TALONARIO = r.TALONARIO
+        WHERE r.N_ORDEN_CO=@oc AND r.N_RENGL_OC=@r AND (@tal IS NULL OR r.TALONARIO = @tal)`)
     if (ocRow.recordset.length === 0) {
       throw new Error(`El renglón ${nRenglOc} de la orden de compra ${nOrdenCo.trim()} ya no existe.`)
+    }
+    if (ocRow.recordset.length > 1) {
+      throw new Error(
+        `La orden de compra ${nOrdenCo.trim()} existe en más de un talonario: volvé a elegir la orden del renglón.`,
+      )
     }
     const sta = ocRow.recordset[0]
 
@@ -718,19 +833,24 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       .input('impNetoP', sql.Decimal(18, 2), importeNetoRenglon)
       .input('fechaMov', sql.DateTime, fechaEmision).input('idSta11', sql.Int, null)
       .input('faltaRem', sql.Decimal(18, 4), remitos.faltaRem)
+      // ID_MEDIDA_STOCK es la unidad de stock del articulo (STA11), como la
+      // manda Tango (punto 11). ID_MEDIDA_COMPRA e ID_MEDIDA_STOCK_2 quedan
+      // NULL, igual que en Tango. ID_CPA04 e ID_STA11 los completa el trigger
+      // de CPA46, que usa variables escalares: por eso el INSERT sigue siendo
+      // de un renglon por vez (punto 19).
       .query(`
         INSERT INTO CPA46 (
           TCOMP_IN_C, NCOMP_IN_C, N_RENGL_C, COD_ARTICU, COD_DEPOSI, CANTIDAD,
           PRECIO_NET, PRECIO_PAN, IMP_NETO_P, FECHA_MOV, EQUIVALENC, FALTA_REM,
           PORCE_DCTO, FILLER, COD_CLASIF, IMPORTE_EXENTO, IMPORTE_GRAVADO,
           CANTIDAD_2, FALTA_REM_2, UNIDAD_MEDIDA_SELECCIONADA, IMPORTE_FLETE,
-          IMPORTE_IMPUESTOS_COSTOS, ID_STA11
+          IMPORTE_IMPUESTOS_COSTOS, ID_STA11, ID_MEDIDA_STOCK
         ) VALUES (
           @tcompInC, @ncompInC, @nRenglC, @codArticu, @codDeposi, @cantidad,
           @precioNet, @precioPan, @impNetoP, @fechaMov, 1, @faltaRem,
           @bonif, '', '', 0, @impNetoP,
           0, 0, 'P', 0,
-          0, NULL
+          0, NULL, (SELECT ID_MEDIDA_STOCK FROM STA11 WHERE COD_ARTICU = @codArticu)
         )`)
 
     // El vinculo entre el renglon de la factura y el de la orden de compra.
@@ -799,6 +919,7 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
       .input('pend', sql.Decimal(18, 4), Math.max(0, pendiente - cantidad))
       .input('pfr', sql.Decimal(18, 4), contadores.pendienteFacturarRecibida)
       .input('prf', sql.Decimal(18, 4), contadores.pendienteRecibirFacturada)
+      .input('talonario', sql.SmallInt, Number(sta.TALONARIO) || 0)
       .query(`
         UPDATE CPA36
         SET CANTIDAD_FACTURADA = @facturada,
@@ -806,35 +927,38 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
             PENDIENTE_FACTURAR = @pend,
             PENDIENTE_FACTURAR_RECIBIDA = @pfr,
             PENDIENTE_RECIBIR_FACTURADA = @prf
-        WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r`)
+        WHERE N_ORDEN_CO=@oc AND N_RENGL_OC=@r AND TALONARIO=@talonario`)
 
     // El precio de ultima compra del articulo (STA12): lo que Tango
     // actualiza al registrar una factura, y que esta app no hacia --
-    // pedido del usuario, 2026-09-21. Ver preciosCompra.ts.
+    // pedido del usuario, 2026-09-21. Con la fecha de emision y la fila de
+    // auditoria de costo del renglon (puntos 9 y 10, 2026-11-17). Ver
+    // preciosCompra.ts.
     await actualizarPrecioUltimaCompraEn(tx, {
       codArticu,
       precioNeto,
       codProvee,
-      fechaContable,
+      fecha: fechaEmision,
       cotizacion,
       monCte: moneda === 'ARS',
+      auditoria: {
+        tComp, nComp: nComprobante, tcompInC, ncompInC, nRenglC,
+        usuario: usuarioActual(), hora: horaAhora, terminal: TERMINAL_APP,
+      },
     })
 
-    ocsAfectadas.add(nOrdenCo)
+    const talonarioOc = Number(sta.TALONARIO) || 0
+    ocsAfectadas.set(`${talonarioOc}|${nOrdenCo}`, { nOrdenCo, talonario: talonarioOc })
   }
 
-  // Una OC sin nada pendiente pasa a Cumplida (estado 10 de
-  // ESTADO_ORDEN_COMPRA). Mismo criterio que tenia el remito al quedar sin
-  // saldo. No se tocan las anuladas ni las ya cerradas: si la OC ya estaba
-  // en un estado terminal, facturarle el saldo no la "descierra".
-  for (const oc of ocsAfectadas) {
-    const pendiente = await tx.request().input('oc', sql.VarChar(14), oc).query(`
-      SELECT SUM(ISNULL(PENDIENTE_FACTURAR, 0)) AS pend FROM CPA36 WHERE N_ORDEN_CO=@oc`)
-    if (Number(pendiente.recordset[0].pend) <= 0) {
-      await tx.request().input('oc', sql.VarChar(14), oc).query(`
-        UPDATE CPA35 SET ESTADO=10, ID_ESTADO_ORDEN_COMPRA=10
-        WHERE N_ORDEN_CO=@oc AND ESTADO IN (1, 2, 3, 9)`)
-    }
+  // La OC NO pasa a Cumplida al facturarla (punto 2 de la revision contra
+  // Tango, 2026-11-17): Tango dejo en 3 (Emitida) una OC toda facturada y
+  // sin nada recibido, y la paso a 10 recien con el remito que recibio todo.
+  // La OC sigue esperando la mercaderia. Hasta ese dia la app la pasaba a 10
+  // cuando no le quedaba nada por facturar. Lo que si cambia Tango al
+  // facturar es la auditoria de modificacion de la cabecera, una vez por OC.
+  for (const oc of ocsAfectadas.values()) {
+    await marcarModificacionOcEn(tx, oc)
   }
 
   if (remitosConsumidos.length > 0) {
@@ -920,9 +1044,13 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
         codArticu,
         precioNeto: neto.precioNeto,
         codProvee,
-        fechaContable,
+        fecha: fechaEmision,
         cotizacion,
         monCte: moneda === 'ARS',
+        auditoria: {
+          tComp, nComp: nComprobante, tcompInC, ncompInC, nRenglC,
+          usuario: usuarioActual(), hora: horaAhora, terminal: TERMINAL_APP,
+        },
       })
     }
   }
@@ -938,7 +1066,20 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   // Con la fecha CONTABLE, no la de emision: el asiento tiene que caer en el
   // mismo periodo que la factura en CPA04, y si el comprobante se emitio
   // dentro de lo que Tango tiene cerrado ese periodo no es el de emision.
-  await escribirAsientoEn(tx, id, ncompInC, fechaContable)
+  //
+  // FECHA_CONTABILIZACION es el momento del registro, sin milisegundos, como
+  // la manda Tango (punto 15, 2026-11-17). El periodo del asiento lo da
+  // CPA04.FECHA_CONT, que sigue siendo la fecha contable.
+  const ahora = new Date()
+  ahora.setMilliseconds(0)
+  await escribirAsientoEn(tx, id, ncompInC, ahora)
+
+  // CPA04.ESTADO_STK: 'P' si algun renglon quedo con algo sin remitir, 'R'
+  // si no (punto 3 de la revision contra Tango). Va despues de todos los
+  // renglones (los de OC, con lo que consumieron de remitos previos, y los
+  // cargos). La factura-remito lo vuelve a calcular cuando su remito la
+  // recibe, mas abajo.
+  await actualizarEstadoStkEn(tx, tcompInC, ncompInC)
 
   // 8b. La factura-remito: el remito, con el mismo punto de venta y numero
   // ("R" en vez de la letra), recibiendo los renglones que la factura
@@ -991,6 +1132,26 @@ export async function registrarComprobanteEn(tx: sql.Transaction, id: number): P
   return { ncompInC, tComp, nComp: nComprobante }
 }
 
+/**
+ * READ COMMITTED, como Tango, desde el 2026-11-17 (punto 6 de la revision
+ * contra Tango). Hasta ese dia corria en SERIALIZABLE: cada lectura tomaba
+ * bloqueos de rango (CPA04, CPA36, STA20, STA12...) hasta el commit y podia
+ * frenar a los usuarios de Tango mientras duraba el registro. Ahora cada
+ * lectura que decide algo lleva su bloqueo explicito:
+ *
+ * - `PROXIMO_NUMERO` (semaforo de la numeracion), `UPDLOCK, ROWLOCK, HOLDLOCK`;
+ * - `CPA04` (control de duplicado), `UPDLOCK, HOLDLOCK`;
+ * - `CPA01` (proveedor, cuyo saldo se actualiza), `UPDLOCK, ROWLOCK`;
+ * - `CPA36` (renglon de la OC), `UPDLOCK, ROWLOCK`;
+ * - `STA12` (precio anterior para la auditoria), `UPDLOCK, ROWLOCK, HOLDLOCK`,
+ *   y el `MERGE STA12 WITH (HOLDLOCK)` como estaba;
+ * - remito (`grabarRemitoEn`): `CPA56` y el duplicado de `STA14` con
+ *   `UPDLOCK, HOLDLOCK`, `CPA46` y `CPA36` con `UPDLOCK`.
+ *
+ * Los saldos de remito que consume la factura (`saldosDeRemitoEn`) se leen
+ * sin bloqueo, pero el `UPDATE STA20` que los baja vuelve a exigir el saldo
+ * en su `WHERE`; lo mismo `CPA46.FALTA_REM` en el remito.
+ */
 export async function registrarComprobante(id: number): Promise<RegistroTango> {
-  return conTransaccion((tx) => registrarComprobanteEn(tx, id), sql.ISOLATION_LEVEL.SERIALIZABLE)
+  return conTransaccion((tx) => registrarComprobanteEn(tx, id), sql.ISOLATION_LEVEL.READ_COMMITTED)
 }

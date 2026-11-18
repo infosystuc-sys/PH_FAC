@@ -42,7 +42,7 @@ describe('actualizarPrecioUltimaCompraEn', () => {
         codArticu: art!,
         precioNeto: 1234.56,
         codProvee: prov,
-        fechaContable: new Date(2026, 8, 30),
+        fecha: new Date(2026, 8, 30),
         cotizacion: 1,
         monCte: true,
       })
@@ -77,7 +77,7 @@ describe('actualizarPrecioUltimaCompraEn', () => {
         codArticu: art!,
         precioNeto: 970,
         codProvee: prov,
-        fechaContable: new Date(2026, 8, 30),
+        fecha: new Date(2026, 8, 30),
         cotizacion: 0.97,
         monCte: true,
       })
@@ -97,7 +97,7 @@ describe('actualizarPrecioUltimaCompraEn', () => {
         codArticu: art!,
         precioNeto: 500,
         codProvee: prov,
-        fechaContable: new Date(2026, 8, 30),
+        fecha: new Date(2026, 8, 30),
         cotizacion: 0,
         monCte: true,
       })
@@ -122,7 +122,7 @@ describe('actualizarPrecioUltimaCompraEn', () => {
         codArticu: existente,
         precioNeto: 777.77,
         codProvee: prov,
-        fechaContable: new Date(2026, 8, 30),
+        fecha: new Date(2026, 8, 30),
         cotizacion: 1,
         monCte: true,
       })
@@ -141,11 +141,11 @@ describe('actualizarPrecioUltimaCompraEn', () => {
       const antes = await tx.request().query(`SELECT COUNT(*) AS n FROM STA12`)
       await actualizarPrecioUltimaCompraEn(tx, {
         codArticu: '  ', precioNeto: 100, codProvee: prov,
-        fechaContable: new Date(), cotizacion: 1, monCte: true,
+        fecha: new Date(), cotizacion: 1, monCte: true,
       })
       await actualizarPrecioUltimaCompraEn(tx, {
         codArticu: 'NO-EXISTE-ZZZ', precioNeto: 0, codProvee: prov,
-        fechaContable: new Date(), cotizacion: 1, monCte: true,
+        fecha: new Date(), cotizacion: 1, monCte: true,
       })
       const despues = await tx.request().query(`SELECT COUNT(*) AS n FROM STA12`)
       expect(Number(despues.recordset[0].n)).toBe(Number(antes.recordset[0].n))

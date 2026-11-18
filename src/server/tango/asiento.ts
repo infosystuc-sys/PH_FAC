@@ -443,11 +443,12 @@ export async function previsualizarAsiento(comprobanteId: number): Promise<Asien
  * queda en `'PHF_WEB'` y `TERMINAL_CONTABILIZACION` es el hostname real de
  * la PC que graba (`terminalActual()`, mismo patron que `usuarioActual()`).
  *
- * `FECHA_CONTABILIZACION` es la FECHA CONTABLE del comprobante, la misma
- * que va a `CPA04.FECHA_CONT` -- decision del usuario, 2026-09-07. No es la
- * de emision: si el comprobante se emitio dentro del periodo que Tango tiene
- * cerrado (`CPA10.CIERRE_CON`), el asiento fechado en emision caeria en un
- * mes cerrado. Tampoco es la de hoy. Ver `src/lib/fechaContable.ts`.
+ * `FECHA_CONTABILIZACION` es el momento en que se contabiliza: la fecha y
+ * hora del registro, sin milisegundos, que es lo que manda Tango (relevado
+ * el 17/11/2026, punto 15 de la revision contra Tango). El periodo contable
+ * del comprobante lo da `CPA04.FECHA_CONT`, no esta columna. Del 2026-09-07
+ * al 2026-11-17 la app grababa aca la fecha contable del comprobante; el
+ * llamador (`registrarComprobanteEn`) es el que decide que fecha manda.
  * `ASIENTO_ANULACION`/`TRANSFERIDO_CN` quedan en `'N'`: no es una anulacion,
  * y la transferencia a Contabilidad ("pasar a contabilidad") sigue siendo
  * un proceso propio de Tango que corre el usuario dentro del ERP.
@@ -477,7 +478,7 @@ export async function escribirAsientoEn(
   e: Ejecutor,
   comprobanteId: number,
   ncompInC: number,
-  fechaContable: Date,
+  fechaContabilizacion: Date,
 ): Promise<void> {
   const asiento = await previsualizarAsientoEn(e, comprobanteId)
   if (!asiento.balanceado) {
@@ -491,7 +492,7 @@ export async function escribirAsientoEn(
     .request()
     .input('ncompInC', sql.Float, ncompInC)
     .input('usuario', sql.VarChar(120), 'PHF_WEB')
-    .input('fechaContab', sql.DateTime, fechaContable)
+    .input('fechaContab', sql.DateTime, fechaContabilizacion)
     .input('terminal', sql.VarChar(255), terminalActual())
     .query<Record<string, unknown>>(`
       INSERT INTO ASIENTO_COMPROBANTE_CP

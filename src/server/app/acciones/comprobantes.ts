@@ -194,11 +194,13 @@ export async function confirmarComprobante(id: number): Promise<void> {
 
 /**
  * Wrapper delgado sobre la unica funcion de escritura del ERP
- * (src/server/tango/comprobantes.ts). El estado y las validaciones
- * bloqueantes se vuelven a chequear server-side dentro de la propia
- * transaccion de `registrarComprobanteTango` -- este wrapper solo agrega el
- * chequeo de estado (que sea `confirmado`) antes de intentarlo, para dar un
- * mensaje mas claro que dejar que la transaccion falle mas adentro.
+ * (src/server/tango/comprobantes.ts). Este wrapper solo controla el estado
+ * (que sea `confirmado`) antes de intentarlo, para dar un mensaje mas claro.
+ * Las validaciones de "Listo para registrar" las vuelve a correr
+ * `registrarComprobanteTango` dentro de su propia transaccion
+ * (`validarListoParaRegistrarEn`), y corta si alguna bloquea. Hasta el
+ * 2026-11-17 este comentario lo afirmaba pero no era cierto: solo las
+ * corria la pantalla (punto 8 de la revision contra Tango).
  */
 export async function registrarComprobante(id: number): Promise<void> {
   const pool = await getPool()

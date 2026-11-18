@@ -136,7 +136,7 @@ async function main() {
         codArticu: f.art,
         precioNeto: f.precio,
         codProvee: f.codProvee,
-        fechaContable: f.fechaCont,
+        fecha: f.fechaCont,
         cotizacion: f.cotizacion,
         monCte: f.monCte,
       })
