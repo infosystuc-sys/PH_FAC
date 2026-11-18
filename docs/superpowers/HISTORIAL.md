@@ -2,6 +2,15 @@
 
 > **Esto es la bitácora, no el estado actual.** El estado, los pendientes y las decisiones vigentes están en [`RETOMAR.md`](RETOMAR.md). Este archivo es el `RETOMAR.md` tal como estaba hasta el 2026-11-03, sin cambios: el detalle de cada funcionalidad, cómo se verificó y por qué se decidió lo que se decidió. Algunas cosas de acá ya no valen (por ejemplo, la sección "Lo que sigue" o los datos del servidor `SERVIDORT`); cuando algo de esta bitácora contradice a `RETOMAR.md`, gana `RETOMAR.md`.
 
+## Remito en producción: `STA19` sin `FECHA_ACTUALIZACION_SALDO` (2026-11-18)
+
+El usuario reportó un error en producción al grabar en `STA19`: el Tango de `SERVIDORT` es de una versión anterior al de desarrollo y su `STA19` no tiene `FECHA_ACTUALIZACION_SALDO` (estructura relevada en producción: 22 columnas, de `ID_STA19` a `ID_STA22`). La app la escribía desde el 2026-11-17 en el `UPDATE`/`INSERT` del saldo y en la baja de `CANT_PEND` (`grabarRemitoEn`, `src/server/tango/remitosCompra.ts`).
+
+- `grabarRemitoEn` pregunta una vez `tieneColumna('STA19', 'FECHA_ACTUALIZACION_SALDO')` y agrega la columna al SQL solo si existe (fragmento fijo, sin valores del usuario). En desarrollo se sigue grabando igual.
+- `circuitoOcFacturaRemito.test.ts` verifica la fecha solo donde existe la columna.
+- Verificado: los tests de remitos y del circuito pasan en desarrollo, y también con `tieneColumna` simulado en `false` para esa columna (21 tests). No se probó contra la base de producción.
+- No se relevaron las demás columnas que la app graba en tablas del ERP contra el esquema de producción (pendiente en `RETOMAR.md`).
+
 ## IVA según la condición del proveedor: N3 y N4 (2026-11-18)
 
 Pedido del usuario, con los criterios propuestos. Hallazgos de `docs/informes/pruebas_desarrollo/resultado_conceptos_2026-11-18.md` (solo en la PC de desarrollo). Patrón medido sobre todas las facturas cargadas desde Tango en la base de desarrollo; las cifras están en `src/lib/condicionIva.ts`.

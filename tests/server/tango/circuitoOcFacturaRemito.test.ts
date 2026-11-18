@@ -14,6 +14,7 @@ import { registrarComprobanteEn } from '@/server/tango/comprobantes'
 import { TIPO_MOVIMIENTO_AUDITORIA } from '@/server/tango/preciosCompra'
 import { TERMINAL_APP } from '@/server/tango/estadoCircuito'
 import { descripcionesSerie } from '@/server/tango/series'
+import { tieneColumna } from '@/server/tango/esquema'
 import { usuarioActual } from '@/lib/usuario'
 
 afterAll(async () => {
@@ -411,15 +412,19 @@ describe('circuito OC -> factura -> remito, como Tango (2026-11-17)', () => {
       }
       expect(PRECIO_FACTURA).not.toBe(o.precioOc)
 
-      // R4 / R6: STA19 del deposito de la OC, con fecha y hora de saldo.
+      // R4 / R6: STA19 del deposito de la OC, con fecha y hora de saldo donde
+      // la version de Tango tiene la columna (produccion no la tiene).
+      const conFechaSaldo = await tieneColumna('STA19', 'FECHA_ACTUALIZACION_SALDO')
       const s19 = (await tx.request().input('art', sql.VarChar(15), o.codArticu).input('dep', sql.VarChar(2), DEPOSITO_OC)
         .query(`
-          SELECT CANT_STOCK, DATEDIFF(second, FECHA_ACTUALIZACION_SALDO, GETDATE()) AS hace
+          SELECT CANT_STOCK${conFechaSaldo ? ', DATEDIFF(second, FECHA_ACTUALIZACION_SALDO, GETDATE()) AS hace' : ''}
           FROM STA19 WHERE COD_ARTICU = @art AND COD_DEPOSI = @dep`)).recordset[0]
       expect(Number(s19.CANT_STOCK)).toBe(stockAntes + o.cantidad)
-      expect(s19.hace).not.toBeNull()
-      expect(Number(s19.hace)).toBeGreaterThanOrEqual(0)
-      expect(Number(s19.hace)).toBeLessThan(300)
+      if (conFechaSaldo) {
+        expect(s19.hace).not.toBeNull()
+        expect(Number(s19.hace)).toBeGreaterThanOrEqual(0)
+        expect(Number(s19.hace)).toBeLessThan(300)
+      }
 
       // R7: una fila por unidad en STA06 y STA07, al deposito de la OC, con
       // las descripciones vacias iguales a la serie.

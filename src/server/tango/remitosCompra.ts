@@ -14,6 +14,7 @@ import { ncompInCEnCpa48 } from './remitosFactura'
 import { normalizarCodigo } from '@/lib/cotejoOc'
 import type { CandidatoFactura } from '@/lib/remitoFactura'
 import { actualizarEstadoStkEn, marcarModificacionOcEn } from './estadoCircuito'
+import { tieneColumna } from './esquema'
 
 /**
  * El alta de un REMITO DE PROVEEDOR en Tango: la entrada de mercadería que
@@ -90,7 +91,8 @@ import { actualizarEstadoStkEn, marcarModificacionOcEn } from './estadoCircuito'
  * - el renglón de la OC que queda sin pendiente de recibir lleva además
  *   `CIERRE = 1` y `REC_MAS_OC = 'S'`;
  * - la cabecera de la OC actualiza su auditoría de modificación;
- * - `STA19.FECHA_ACTUALIZACION_SALDO` = ahora;
+ * - `STA19.FECHA_ACTUALIZACION_SALDO` = ahora, donde la columna existe (no
+ *   está en el Tango de producción, que es de una versión anterior);
  * - `STA20.PRECIO_REM`, `PLISTA_REM` y `PRECIO_REMITO_VENTAS` llevan el
  *   precio del renglón de la factura (`CPA46.PRECIO_NET`); `PRECIO` sigue en 0;
  * - el depósito es el del renglón de la OC (`CPA36.COD_DEPOSI`) en `STA20`,
@@ -332,6 +334,15 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
   if (duplicado) {
     throw new Error(`El remito ${nComp} de este proveedor ya está en Tango (interno ${duplicado.ncompInS}).`)
   }
+
+  // STA19.FECHA_ACTUALIZACION_SALDO no existe en todas las versiones de
+  // Tango: la base de desarrollo (26.1) la tiene, la de produccion
+  // (SERVIDORT, version anterior) no (2026-11-18). Se graba solo donde esta.
+  // Es un fragmento fijo de SQL, no un valor del usuario.
+  const conFechaSaldo = await tieneColumna('STA19', 'FECHA_ACTUALIZACION_SALDO')
+  const setFechaSaldo = conFechaSaldo ? ', FECHA_ACTUALIZACION_SALDO = GETDATE()' : ''
+  const colFechaSaldo = conFechaSaldo ? ', FECHA_ACTUALIZACION_SALDO' : ''
+  const valFechaSaldo = conFechaSaldo ? ', GETDATE()' : ''
 
   // 4. Numero interno: el PROXIMO del talonario de remitos de Compras, sin
   // quedar por debajo de lo que ya existe (si alguien grabo un remito sin
@@ -591,9 +602,10 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
 
     // 7. STA19: el saldo del deposito sube. Si el articulo nunca tuvo saldo
     // en ese deposito la fila no existe y se crea. FECHA_ACTUALIZACION_SALDO
-    // con fecha y hora, como Tango (2026-11-17); el trigger
-    // TR_STA19_FECHA_ACTUALIZACION_SALDO la estampa igual ante un cambio de
-    // stock, pero no ante uno de pendiente (ver la baja de CANT_PEND).
+    // con fecha y hora, como Tango (2026-11-17), donde la columna existe
+    // (ver conFechaSaldo); el trigger TR_STA19_FECHA_ACTUALIZACION_SALDO la
+    // estampa igual ante un cambio de stock, pero no ante uno de pendiente
+    // (ver la baja de CANT_PEND).
     await tx.request()
       .input('art', sql.VarChar(15), r.codArticu)
       .input('dep', sql.VarChar(2), dep)
@@ -601,12 +613,11 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
       .input('idSta11', sql.Int, a.ID_STA11 ?? null)
       .input('idSta22', sql.Int, await idSta22De(dep))
       .query(`
-        UPDATE STA19 SET CANT_STOCK = ISNULL(CANT_STOCK, 0) + @cant, FECHA_ACTUALIZACION_SALDO = GETDATE()
+        UPDATE STA19 SET CANT_STOCK = ISNULL(CANT_STOCK, 0) + @cant${setFechaSaldo}
         WHERE COD_ARTICU = @art AND COD_DEPOSI = @dep;
         IF @@ROWCOUNT = 0
-          INSERT INTO STA19 (COD_ARTICU, COD_DEPOSI, CANT_STOCK, CANT_COMP, CANT_PEND, ID_STA11, ID_STA22,
-                             FECHA_ACTUALIZACION_SALDO)
-          VALUES (@art, @dep, @cant, 0, 0, @idSta11, @idSta22, GETDATE());`)
+          INSERT INTO STA19 (COD_ARTICU, COD_DEPOSI, CANT_STOCK, CANT_COMP, CANT_PEND, ID_STA11, ID_STA22${colFechaSaldo})
+          VALUES (@art, @dep, @cant, 0, 0, @idSta11, @idSta22${valFechaSaldo});`)
 
     if (factura) {
       // 7a. El vinculo factura <-> remito en CPA48, una fila por renglon con
@@ -724,8 +735,7 @@ export async function grabarRemitoEn(tx: sql.Transaction, datos: RemitoAGrabar):
         .input('baja', sql.Decimal(18, 4), baja)
         .query(`
           UPDATE STA19
-          SET CANT_PEND = CASE WHEN ISNULL(CANT_PEND, 0) - @baja < 0 THEN 0 ELSE ISNULL(CANT_PEND, 0) - @baja END,
-              FECHA_ACTUALIZACION_SALDO = GETDATE()
+          SET CANT_PEND = CASE WHEN ISNULL(CANT_PEND, 0) - @baja < 0 THEN 0 ELSE ISNULL(CANT_PEND, 0) - @baja END${setFechaSaldo}
           WHERE COD_ARTICU = @art AND COD_DEPOSI = @dep`)
 
       ocsAfectadas.set(`${oc.talonario}|${oc.nOrdenCo}`, { nOrdenCo: oc.nOrdenCo, talonario: oc.talonario })

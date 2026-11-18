@@ -22,6 +22,7 @@
 - **Todo cambio de código necesita rebuild + restart para que el operador lo vea, y un Ctrl+F5 en su navegador.** Sin el Ctrl+F5 se queda con el bundle viejo; ya generó un falso "no funciona" sobre un cambio que estaba aplicado.
 - **Los tests pegan contra la base real.** Los que escriben van en `conRollback`. `migrar()` sin prefijo corre contra las tablas `PHF_*` reales, así que correr la suite aplica las migraciones pendientes en producción (son idempotentes y solo tocan `PHF_*`).
 - **Escaneo de carpetas:** se configura en `/configuracion` (fila única de `PHF_CONFIGURACION`). Los PDF van sueltos en la raíz de `articulos/`, `conceptos/` o `tarjeta/`; `procesados/` y `error/` las maneja la app y **nunca se escanean**: un archivo dejado ahí a mano no entra nunca.
+- **El Tango de producción es de una versión anterior al de desarrollo (26.1).** No tiene `STA19.FECHA_ACTUALIZACION_SALDO`: el remito fallaba al grabar el saldo (2026-11-18) y ahora la escribe solo si existe (`tieneColumna`, `src/server/tango/esquema.ts`). Toda columna nueva que la app grabe en una tabla del ERP tiene que existir en producción o ir detrás de `tieneColumna`. No se relevó qué otras columnas que graba la app le faltan a producción.
 - **Base `CENTRAL`** (Tango de una versión anterior, sin remitos `RP`): la lectura se adapta sola (`src/server/tango/esquema.ts`), el registro no está adaptado.
 - **El historial de git se reescribió el 2026-11-03** antes del primer push a `PH_FAC`, para sacar la contraseña de SQL Server de tres commits viejos. Los hashes anteriores a esa fecha no coinciden con los de los documentos viejos. El historial original quedó en la rama local `respaldo-antes-de-limpiar` (no se sube). El repo anterior, `infosystuc-sys/factura`, quedó sin tocar.
 - **El historial se reescribió de nuevo el 2026-11-18**, antes del push, para sacar `docs/informes/` de los commits no publicados. Los commits hasta `083664d` conservaron su hash; desde ahí cambiaron (el merge del DNRPA, `ac46ad9`, es `efcfc8f`). Original en la rama local `respaldo-antes-de-quitar-informes`.
@@ -86,6 +87,7 @@ Los componentes importan cada server action de su archivo, no hay un índice com
 11. **`buscarProveedorPorCuit` (singular)** ya no tiene callers de producción, solo tests. Candidato a borrar.
 12. **Selector manual de remito** en la revisión: hoy el remito que consume una factura se elige solo (el más viejo). Solo si aparecen casos que lo pidan.
 13. ~~Regla de series del segundo proveedor de motos~~ — NEWSAN, hecho el 2026-11-16. Otro proveedor se agrega en `REGLAS_SERIES_POR_PROVEEDOR` (`src/lib/seriesProveedor.ts`).
+14. **Relevar el esquema de producción** contra todas las columnas que la app graba en tablas del ERP: la de `STA19` apareció recién al registrar un remito. Hace falta una consulta de solo lectura al catálogo de `SERVIDORT`.
 
 ---
 
